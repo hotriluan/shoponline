@@ -1,0 +1,20 @@
+{% extends "base.html" %}
+{% block title %}Lô đơn{% endblock %}
+{% block content %}
+<h1>Lô đơn</h1>
+{% if not batches %}<p class="muted">Chưa có lô nào. <a href="/imports">Tải file sàn</a> để bắt đầu.</p>{% else %}
+<table>
+  <tr><th>Ngày xử lý</th><th>Sàn</th><th>Ngày goods issue</th><th>Số đơn</th><th>Theo trạng thái</th><th>Xác nhận SO/DO</th></tr>
+  {% for b in batches %}
+  <tr>
+    <td><a href="/batches/{{ b.id }}">{{ b.processing_date.strftime('%d/%m/%Y') }}</a></td>
+    <td>{{ b.platform }}</td>
+    <td>{{ b.gi_date.strftime('%d/%m/%Y') }}</td>
+    <td class="num">{{ b.orders|length }}</td>
+    <td>{% for s, n in counts[b.id].items() %}<span class="tag s-{{ s }}">{{ STATUS_LABELS[s] }}: {{ n }}</span> {% endfor %}</td>
+    <td>{% if b.confirmed_at %}{{ b.confirmed_by }}, {{ b.confirmed_at|localtime('%d/%m %H:%M') }}{% else %}<span class="muted">chưa</span>{% endif %}</td>
+  </tr>
+  {% endfor %}
+</table>
+{% endif %}
+{% endblock %}

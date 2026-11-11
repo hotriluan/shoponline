@@ -1,0 +1,21 @@
+{% extends "base.html" %}
+{% block title %}Tải file sàn{% endblock %}
+{% block content %}
+<h1>Tải file "chờ giao hàng" của sàn</h1>
+<form class="box" method="post" action="/imports" enctype="multipart/form-data">
+  <div class="row">
+    <label>Sàn
+      <select name="platform">{% for p in platforms %}<option>{{ p }}</option>{% endfor %}</select>
+    </label>
+    <label>Ngày xử lý (D)
+      <input type="date" name="processing_date" value="{{ today }}" required>
+    </label>
+    <label>File .xlsx tải từ trang quản lý sàn
+      <input type="file" name="file" accept=".xlsx" required>
+    </label>
+    <button>Nhập file</button>
+  </div>
+  <p class="muted">Nhập lại cùng file không đổi dữ liệu. File thiếu cột bắt buộc hoặc có dòng lỗi bị từ chối toàn bộ.
+  Lazada chưa có bộ đọc: nhập tên và địa chỉ khách theo mã đơn ở trang Khách hàng.</p>
+</form>
+{% endblock %}

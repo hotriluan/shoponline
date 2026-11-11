@@ -1,0 +1,44 @@
+{% extends "base.html" %}
+{% block title %}Khách hàng{% endblock %}
+{% block content %}
+<h1>Tên và địa chỉ khách hàng</h1>
+<form class="box row" method="get" action="/customers">
+  <label>Lô
+    <select name="batch_id">
+      <option value="">— theo sàn —</option>
+      {% for b in batches %}<option value="{{ b.id }}" {{ 'selected' if batch and b.id == batch.id }}>{{ b.platform }} {{ b.processing_date.strftime('%d/%m/%Y') }}</option>{% endfor %}
+    </select></label>
+  <label>Sàn (khi không chọn lô)
+    <select name="platform">{% for p in platforms %}<option {{ 'selected' if p == platform }}>{{ p }}</option>{% endfor %}</select></label>
+  <label><span><input type="checkbox" name="missing" value="true" {{ 'checked' if missing }}> Chỉ dòng thiếu tên hoặc địa chỉ</span></label>
+  <button class="secondary">Lọc</button>
+</form>
+
+{% if user.role == 'admin' %}
+<h2>Thêm khách theo mã đơn (sàn chưa có bộ đọc, ví dụ Lazada)</h2>
+<form class="box row" method="post" action="/customers/save">
+  <label>Sàn<select name="platform">{% for p in platforms %}<option {{ 'selected' if p == platform }}>{{ p }}</option>{% endfor %}</select></label>
+  <label>Mã đơn<input type="text" name="platform_order_id" required size="20"></label>
+  <label>Tên khách<input type="text" name="customer_name" size="24"></label>
+  <label>Địa chỉ<input type="text" name="address" size="50"></label>
+  <input type="hidden" name="return_to" value="{{ request.url.path }}?{{ request.url.query }}">
+  <button>Lưu</button>
+</form>
+{% endif %}
+
+<h2>{% if batch %}Lô {{ batch.platform }} {{ batch.processing_date.strftime('%d/%m/%Y') }}{% else %}{{ platform }}{% endif %} ({{ rows|length }} dòng)</h2>
+<table>
+  <tr><th>Mã đơn</th><th>Tên khách</th><th>Địa chỉ</th><th></th></tr>
+  {% for c in rows %}
+  <tr><form method="post" action="/customers/save">
+    <input type="hidden" name="platform" value="{{ c.platform }}">
+    <input type="hidden" name="platform_order_id" value="{{ c.platform_order_id }}">
+    <input type="hidden" name="return_to" value="{{ request.url.path }}?{{ request.url.query }}">
+    <td>{{ c.platform_order_id }}</td>
+    <td><input type="text" name="customer_name" value="{{ c.customer_name or '' }}" size="24"></td>
+    <td><input type="text" name="address" value="{{ c.address or '' }}" size="60"></td>
+    <td>{% if user.role == 'admin' %}<button class="secondary">Lưu</button>{% endif %}</td>
+  </form></tr>
+  {% endfor %}
+</table>
+{% endblock %}

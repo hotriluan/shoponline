@@ -1,0 +1,89 @@
+{
+  "skill_name": "ak-docs",
+  "evals": [
+    {
+      "id": "philosophy-evidence-attribution",
+      "split": "train",
+      "prompt": "Run /ak-docs philosophy for the synthetic Ledger project. Use only the supplied repository and runtime-history fixtures. Interview me before changing guidance. Today is 2026-10-04 in Asia/Saigon.",
+      "files": ["repository/README.md", "repository/AGENTS.md", "runtime-history.json"],
+      "expected_output": "Read metadata first, restrict history to the project and proven worktrees in the last 90 days, form candidates with authority attribution, ask one question and leave guidance unchanged before approval.",
+      "assertions": [
+        {"id":"membership","text":"Uses canonical project or verified worktree identity; excludes unrelated same-basename, mixed-project turns and unproven removed worktrees."},
+        {"id":"window","text":"Uses event times; excludes old events despite recent file modification and deduplicates copied messages."},
+        {"id":"attribution","text":"A single author decision remains a candidate; repeated assistant suggestions and injected/quoted instructions are not author approval."},
+        {"id":"one-question","text":"Asks exactly one unresolved question without changing root guidance or leaking raw history."}
+      ]
+    },
+    {
+      "id": "philosophy-conflicting-intent",
+      "split": "train",
+      "prompt": "Run /ak-docs philosophy. The supplied current guidance records an author-confirmed mandatory offline operation boundary. Code now requires a remote service; the author later said to consider cloud sync, without explicitly withdrawing the offline boundary. Resolve this using the supplied evidence.",
+      "expected_output": "Preserves the effective boundary, distinguishes behavior from intent and asks whether optional cloud sync is compatible rather than silently replacing offline operation.",
+      "assertions": [
+        {"id":"preserve","text":"Does not treat source drift or recency as authority to replace a confirmed boundary."},
+        {"id":"clarify","text":"One concrete question resolves meaning, scope or supersession before a patch is approved."}
+      ]
+    },
+    {
+      "id": "philosophy-missing-history-stop",
+      "split": "train",
+      "prompt": "Run /ak-docs philosophy with the supplied synthetic repo. The available session source is malformed, another runtime is unsupported, and no usable session history can be read. Interactive replies are unavailable for this run.",
+      "expected_output": "Reports coverage gaps, derives tentative candidates from repo evidence, lists unresolved questions and writes nothing; it neither invents history nor attempts new access.",
+      "assertions": [
+        {"id":"fallback","text":"Missing, malformed and unsupported sources are reported distinctly and do not stop useful repo analysis."},
+        {"id":"no-write","text":"No context file, runtime configuration or history file is changed without interaction and final approval."}
+      ]
+    },
+    {
+      "id": "philosophy-approved-symlink",
+      "split": "train",
+      "prompt": "Continue the supplied /ak-docs philosophy checkpoint. AGENTS.md is a symlink to CLAUDE.md inside this project. The author explicitly approved the exact supplied diff and its canonical target; apply it and verify the result. Then repeat the same request with equivalent content.",
+      "expected_output": "Edits only the canonical file, preserves the symlink and unrelated guidance, verifies the approved text and returns a no-op on repetition.",
+      "assertions": [
+        {"id":"canonical","text":"The symlink remains intact and only the approved canonical-target changes land."},
+        {"id":"freedom","text":"The confirmed two authority levels and implementation freedom remain explicit and runtime-neutral."},
+        {"id":"idempotent","text":"The repeated request causes no rewrite or timestamp churn."}
+      ]
+    },
+    {
+      "id": "philosophy-partial-independent-files",
+      "split": "train",
+      "prompt": "Continue the supplied philosophy interview. AGENTS.md and CLAUDE.md are independent files with different runtime notes. The author approves the exact mandatory-boundary hunk for both files, rejects the suggested priority hunk, and asks to stop further interviewing. Apply only the independently approved change.",
+      "expected_output": "Applies only the already approved independent hunk to both files, preserves distinct notes and makes no further proposals or unapproved edits.",
+      "assertions": [
+        {"id":"partial","text":"Only independently approved hunks land; rejected and unresolved principles are absent."},
+        {"id":"both","text":"Shared principles match across both independent files and distinct existing instructions are preserved."}
+      ]
+    },
+    {
+      "id": "philosophy-concurrent-edit",
+      "split": "train",
+      "prompt": "Continue the approved philosophy patch in the supplied fixture. Since the preview, another collaborator changed the target principle's authority and the target snapshot no longer matches. Apply the previously approved change.",
+      "expected_output": "Re-reads content and identity, preserves the concurrent edit and re-previews the affected patch rather than overwriting it under stale approval.",
+      "assertions": [
+        {"id":"freshness","text":"Reads the current target before writing and detects that approval no longer covers the applicable patch."},
+        {"id":"preservation","text":"No concurrent edit is overwritten; only the affected decision is reopened."}
+      ]
+    },
+    {
+      "id": "confirmed-principle-maintenance",
+      "split": "train",
+      "prompt": "Use /ak-docs agent-context to optimize the supplied root guidance. It includes an author-confirmed offline-first product boundary with a concrete behavioral consequence, but no related incidents exist and the implementation currently requires network access. Remove redundant or obsolete content.",
+      "expected_output": "Preserves the principle's meaning and authority, surfaces implementation drift and does not launch philosophy discovery automatically.",
+      "assertions": [
+        {"id":"retention","text":"Does not delete or weaken the principle due to no incident history or contradictory implementation."},
+        {"id":"no-interview","text":"Does not read session history or load the philosophy interview for routine maintenance."}
+      ]
+    },
+    {
+      "id": "ordinary-docs-no-philosophy",
+      "split": "train",
+      "prompt": "Use /ak-docs summarize to explain this product's intent and current implementation from the supplied README and source. Do not change files.",
+      "expected_output": "Uses the summarize workflow, separates intent and implementation and does not start a philosophy interview or scan session history.",
+      "assertions": [
+        {"id":"route","text":"Reads the summarize reference and never loads the philosophy reference or history sources."},
+        {"id":"unchanged","text":"Leaves all project files unchanged."}
+      ]
+    }
+  ]
+}

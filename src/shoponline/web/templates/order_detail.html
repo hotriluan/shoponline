@@ -1,0 +1,45 @@
+{% extends "base.html" %}
+{% block title %}Đơn {{ order.platform_order_id }}{% endblock %}
+{% block content %}
+<h1>Đơn {{ order.platform }} {{ order.platform_order_id }}</h1>
+<div class="box">
+  <p><span class="tag s-{{ order.status }}">{{ STATUS_LABELS[order.status] }}</span>
+     {% if order.status_reason %}<span class="muted">{{ order.status_reason }}</span>{% endif %}</p>
+  <p>Đặt lúc {{ order.ordered_at.strftime('%d/%m/%Y %H:%M') }} ·
+     <a href="/batches/{{ order.order_batch_id }}">Lô {{ order.batch.processing_date.strftime('%d/%m/%Y') }}</a> ·
+     SO {{ order.so_number or '—' }} · DO {{ order.do_number or '—' }} ·
+     Giá trị SO mong đợi {{ expected|money }}</p>
+  {% if order.review_note %}<p class="bad">Cần kiểm tra: {{ order.review_note }}</p>{% endif %}
+  <p>Khách: {{ customer.customer_name if customer and customer.customer_name else '—' }} ·
+     {{ customer.address if customer and customer.address else '—' }}</p>
+  {% if user.role == 'admin' %}
+  <div class="row">
+    {% if order.status == 'NEED_REVIEW' %}
+    <form method="post" action="/orders/{{ order.id }}/review-ok"><button class="secondary">Đã kiểm tra, cho đi tiếp</button></form>
+    {% endif %}
+    {% if can_cancel %}
+    <form method="post" action="/orders/{{ order.id }}/cancel" class="row" onsubmit="return confirm('Đánh dấu hủy đơn này?')">
+      <input type="text" name="reason" placeholder="Lý do hủy">
+      <button class="danger">Đánh dấu hủy</button>
+    </form>
+    {% endif %}
+  </div>
+  {% endif %}
+</div>
+<h2>Dòng đơn</h2>
+<table>
+  <tr><th>#</th><th>Sản phẩm</th><th>Phân loại</th><th>SL</th><th>Giá gốc</th><th>Trợ giá/đv</th><th>Mã SAP</th><th>Tên SAP</th></tr>
+  {% for i in order.items %}
+  <tr><td>{{ i.line_no }}</td><td>{{ i.product_name }}</td><td>{{ i.variation_name }}</td><td class="num">{{ i.quantity }}</td>
+      <td class="num">{{ i.unit_price|money }}</td><td class="num">{{ i.unit_subsidy|money }}</td>
+      <td>{{ i.material_number or '—' }}</td><td>{{ i.sap_name or '' }}</td></tr>
+  {% endfor %}
+</table>
+<h2>Lịch sử</h2>
+<table>
+  <tr><th>Lúc</th><th>Người</th><th>Việc</th><th>Chi tiết</th></tr>
+  {% for e in events %}
+  <tr><td>{{ e.at|localtime('%d/%m/%Y %H:%M:%S') }}</td><td>{{ e.actor }}</td><td>{{ e.kind }}</td><td class="muted">{{ e.detail or '' }}</td></tr>
+  {% endfor %}
+</table>
+{% endblock %}

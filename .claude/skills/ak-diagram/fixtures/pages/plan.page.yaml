@@ -1,0 +1,55 @@
+version: 1
+meta:
+  title: Gateway migration plan
+  description: Move the public API to the new gateway without downtime.
+theme:
+  preset: editorial
+blocks:
+  - type: hero
+    eyebrow: Plan
+    title: Gateway migration plan
+    description: Move the public API to the new gateway without downtime.
+  - type: key-value
+    items:
+      - { key: Status, value: in progress }
+      - { key: Priority, value: P1 }
+      - { key: Branch, value: feat/gateway-migration }
+  - type: section
+    title: Phases
+    blocks:
+      - type: card-grid
+        items:
+          - { title: "1. Mirror traffic", text: Copy production requests to the new gateway. }
+          - { title: "2. Shift reads", text: Route read endpoints through the gateway. }
+          - { title: "3. Cut over", text: Move writes and retire the old path. }
+      - type: accordion
+        items:
+          - { title: "Phase 1 detail", text: "Enable request mirroring; compare responses; success = under 0.1% diff." }
+          - { title: "Phase 2 detail", text: "Flip read routes behind a flag; watch p95 latency." }
+  - type: section
+    title: Implementation workflow
+    blocks:
+      - type: diagram-panel
+        title: Delivery flow
+        spec:
+          schema_version: 1
+          diagram_type: workflow
+          meta: { title: Delivery flow }
+          lanes:
+            - { id: dev, label: Dev, role: user }
+            - { id: ops, label: Ops, role: system }
+          steps:
+            - { id: mirror, label: Mirror traffic, lane: ops, kind: action }
+            - { id: reads, label: Shift reads, lane: dev, kind: action }
+            - { id: cut, label: Cut over, lane: ops, kind: terminal-success }
+          transitions:
+            - { from: mirror, to: reads }
+            - { from: reads, to: cut }
+  - type: risk-matrix
+    title: Risks
+    items:
+      - { area: Response drift, impact: high, likelihood: medium, note: Mirror compares bodies before any shift. }
+  - type: list
+    title: Unresolved questions
+    items:
+      - { text: None }

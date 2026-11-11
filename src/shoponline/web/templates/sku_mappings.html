@@ -1,0 +1,51 @@
+{% extends "base.html" %}
+{% block title %}Ánh xạ SAP{% endblock %}
+{% block content %}
+<h1>Ánh xạ sản phẩm sang mã SAP</h1>
+<p>{% for p in platforms %}<a class="button {{ '' if p == platform else 'secondary' }}" href="/sku-mappings?platform={{ p }}">{{ p }}</a> {% endfor %}</p>
+
+{% if unmapped %}
+<h2 class="bad">Sản phẩm chưa có ánh xạ ({{ unmapped|length }})</h2>
+<table>
+  <tr><th>Tên sản phẩm</th><th>Tên phân loại</th><th>Mã SAP</th><th>Tên SAP</th><th></th></tr>
+  {% for product, variation in unmapped %}
+  <tr><form method="post" action="/sku-mappings">
+    <input type="hidden" name="platform" value="{{ platform }}">
+    <input type="hidden" name="product_name" value="{{ product }}">
+    <input type="hidden" name="variation_name" value="{{ variation }}">
+    <td>{{ product }}</td><td>{{ variation }}</td>
+    <td><input type="text" name="material_number" required size="12"></td>
+    <td><input type="text" name="sap_name" required size="34"></td>
+    <td>{% if user.role == 'admin' %}<button>Lưu</button>{% endif %}</td>
+  </form></tr>
+  {% endfor %}
+</table>
+{% endif %}
+
+{% if user.role == 'admin' %}
+<h2>Thêm hoặc sửa một dòng</h2>
+<form class="box row" method="post" action="/sku-mappings">
+  <input type="hidden" name="platform" value="{{ platform }}">
+  <label>Tên sản phẩm<input type="text" name="product_name" required size="40"></label>
+  <label>Tên phân loại<input type="text" name="variation_name" size="28"></label>
+  <label>Mã SAP<input type="text" name="material_number" required size="12"></label>
+  <label>Tên SAP<input type="text" name="sap_name" required size="30"></label>
+  <button>Lưu</button>
+</form>
+<h2>Nhập từ Excel</h2>
+<form class="box row" method="post" action="/sku-mappings/import" enctype="multipart/form-data">
+  <input type="hidden" name="platform" value="{{ platform }}">
+  <label>File .xlsx, sheet đầu tiên có cột: {{ columns|join(', ') }}<input type="file" name="file" accept=".xlsx" required></label>
+  <button>Nhập cho {{ platform }}</button>
+</form>
+{% endif %}
+
+<h2>Bảng ánh xạ {{ platform }} ({{ mappings|length }})</h2>
+<table>
+  <tr><th>Tên sản phẩm</th><th>Tên phân loại</th><th>Mã SAP</th><th>Tên SAP</th><th>Sửa lần cuối</th></tr>
+  {% for m in mappings %}
+  <tr><td>{{ m.product_name }}</td><td>{{ m.variation_name }}</td><td>{{ m.material_number }}</td><td>{{ m.sap_name }}</td>
+      <td class="muted">{{ m.updated_by }}, {{ m.updated_at|localtime('%d/%m/%Y') }}</td></tr>
+  {% endfor %}
+</table>
+{% endblock %}

@@ -1,0 +1,45 @@
+version: 1
+meta:
+  title: Notification delivery brief
+  description: Accepted outcome and approach for batching notifications.
+theme:
+  preset: warm-signal
+blocks:
+  - type: hero
+    eyebrow: Brainstorm
+    title: Notification delivery brief
+    description: Batch low-priority notifications into a digest.
+  - type: key-value
+    title: Contract
+    items:
+      - { key: Outcome, value: Users get one digest instead of many pings. }
+      - { key: Constraints, value: Urgent alerts stay immediate. }
+      - { key: Non-goals, value: No new channel. }
+      - { key: Acceptance, value: Digest sent hourly; urgent latency unchanged. }
+  - type: comparison
+    title: Approaches
+    left: { label: Queue digest, items: [Simple worker, Hourly cadence] }
+    right: { label: Client-side batching, items: [No server change, Inconsistent across devices] }
+  - type: callout
+    tone: success
+    title: Recommendation
+    text: Queue digest; it keeps urgent alerts on the existing path.
+  - type: diagram-panel
+    title: Implementation workflow
+    spec:
+      schema_version: 1
+      diagram_type: workflow
+      meta: { title: Digest flow }
+      lanes:
+        - { id: svc, label: Service, role: system }
+      steps:
+        - { id: enqueue, label: Enqueue, lane: svc, kind: action }
+        - { id: digest, label: Build digest, lane: svc, kind: action }
+        - { id: send, label: Send, lane: svc, kind: terminal-success }
+      transitions:
+        - { from: enqueue, to: digest }
+        - { from: digest, to: send }
+  - type: risk-matrix
+    title: Risks
+    items:
+      - { area: Missed urgent alert, impact: high, likelihood: low, note: Priority check before enqueue. }

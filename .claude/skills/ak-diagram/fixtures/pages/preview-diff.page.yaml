@@ -1,0 +1,23 @@
+version: 1
+meta:
+  title: Diff review for the cache change
+  description: Visual review of a branch that adds a read-through cache.
+theme:
+  preset: swiss-clean
+blocks:
+  - type: hero
+    eyebrow: Diff review
+    title: Read-through cache
+    description: Three files changed; one new module.
+  - type: key-value
+    items:
+      - { key: Files changed, value: "3" }
+      - { key: Tests added, value: "4" }
+  - type: comparison
+    title: Before and after
+    left: { label: Before, items: [Every read hits Postgres] }
+    right: { label: After, items: [Repeat reads served from Redis] }
+  - type: list
+    title: Findings
+    items:
+      - { text: Writes do not invalidate cached keys., badge: concern }

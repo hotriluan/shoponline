@@ -1,0 +1,41 @@
+version: 1
+meta:
+  title: How the request cache works
+  description: Explains the read-through cache in front of the orders service.
+theme:
+  preset: paper-ink
+blocks:
+  - type: hero
+    eyebrow: Explain
+    title: How the request cache works
+    description: A read-through cache answers repeat reads before they reach the database.
+  - type: diagram-panel
+    title: Read path
+    spec:
+      schema_version: 1
+      diagram_type: architecture
+      meta: { title: Read path }
+      components:
+        - { id: api, label: Orders API, role: backend, layer: 0 }
+        - { id: cache, label: Redis, role: cache, layer: 1 }
+        - { id: db, label: Postgres, role: database, layer: 2 }
+      connections:
+        - { from: api, to: cache, label: get }
+        - { from: cache, to: db, label: miss }
+  - type: steps
+    title: Walkthrough
+    items:
+      - { title: Lookup, text: The API asks the cache for the order key. }
+      - { title: Miss, text: On a miss the cache loads the row and stores it for 60 s. }
+  - type: code
+    language: text
+    title: Example trace
+    text: "GET /orders/42 -> cache miss -> db 4 ms -> cache set ttl=60"
+  - type: callout
+    tone: warning
+    title: Stale reads
+    text: Writes do not invalidate the key; readers can see data up to 60 s old.
+  - type: key-value
+    title: Glossary
+    items:
+      - { key: TTL, value: How long a cached entry stays valid. }

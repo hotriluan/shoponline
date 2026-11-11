@@ -1,0 +1,85 @@
+{
+  "skill_name": "ak-test",
+  "evals": [
+    {
+      "id": "local-composite",
+      "split": "train",
+      "prompt": "Read WORK.md and the assigned skill snapshot. Carry out all five bounded testing tasks in this fixture copy. Use actual Python executions. Preserve production source. Write report.md and commands.json (array of objects containing command, exit_code, output) in your output directory. Explain applied test changes, retained coverage, failure attribution, current versus stale evidence, and unverified scope. Do not read evals.json or any other variant.",
+      "expected_output": "Complete five bounded testing groups with actual evidence; preserve source and security boundaries while reporting the real JSON defect.",
+      "files": [
+        "fixtures/WORK.md",
+        "fixtures/model.py",
+        "fixtures/test_model.py",
+        "fixtures/legacy-result.json"
+      ],
+      "assertions": [
+        {
+          "id": "scope-quality",
+          "text": "No unnecessary tests for unchanged behavior; existing verification is reused.",
+          "kind": "rubric"
+        },
+        {
+          "id": "tenant-quality",
+          "text": "Redundancy reduced only if anonymous and tenant isolation remain verified.",
+          "kind": "rubric"
+        },
+        {
+          "id": "specific-path-quality",
+          "text": "JSON defect established directly; CSV success does not establish JSON correctness.",
+          "kind": "rubric"
+        },
+        {
+          "id": "mutation-quality",
+          "text": "Behavioral assertion failure distinguished from setup error and intentional quota contract change.",
+          "kind": "rubric"
+        },
+        {
+          "id": "evidence-quality",
+          "text": "Current scoped results distinguished from stale report; unavailable optional E2E remains unverified; exploratory work bounded.",
+          "kind": "rubric"
+        },
+        {
+          "id": "local-report",
+          "text": "Consumer report exists.",
+          "kind": "file-exists",
+          "path": "report.md"
+        },
+        {
+          "id": "local-commands",
+          "text": "Actual command record exists.",
+          "kind": "file-exists",
+          "path": "commands.json"
+        }
+      ]
+    },
+    {
+      "id": "e2e-receipts",
+      "split": "train",
+      "prompt": "Assess WORK.md and receipts.json with the assigned skill; write report.md and decisions.json. No live execution.",
+      "expected_output": "Reject unsupported release and no-model guarantees; preserve raw receipt statuses while explaining stale inputs, wrong business invariants, path bypass and incomplete exploration.",
+      "files": [
+        "receipt-fixtures/WORK.md",
+        "receipt-fixtures/receipts.json"
+      ],
+      "assertions": [
+        {
+          "id": "receipt-decisions",
+          "text": "All aggregate release claims and flag-only no-model claim are rejected with evidence.",
+          "kind": "rubric"
+        },
+        {
+          "id": "receipt-report",
+          "text": "Evidence report exists.",
+          "kind": "file-exists",
+          "path": "report.md"
+        },
+        {
+          "id": "receipt-json",
+          "text": "Structured decisions exist.",
+          "kind": "file-exists",
+          "path": "decisions.json"
+        }
+      ]
+    }
+  ]
+}

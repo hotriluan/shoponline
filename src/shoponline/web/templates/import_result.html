@@ -1,0 +1,21 @@
+{% extends "base.html" %}
+{% block title %}Kết quả nhập file{% endblock %}
+{% block content %}
+<h1>Đã nhập {{ record.file_name }}</h1>
+<div class="box">
+  <p>{{ result.new }} đơn mới, {{ result.updated }} đơn cập nhật, {{ result.unchanged }} đơn không đổi.</p>
+  <p><a class="button" href="/batches/{{ result.batch.id }}">Mở lô {{ result.batch.platform }} {{ result.batch.processing_date.strftime('%d/%m/%Y') }}</a></p>
+</div>
+{% if result.problem_orders %}
+<h2 class="bad">{{ result.problem_orders|length }} đơn cần xử lý</h2>
+<table>
+  <tr><th>Mã đơn</th><th>Trạng thái</th><th>Lý do</th></tr>
+  {% for o in result.problem_orders %}
+  <tr><td><a href="/orders/{{ o.id }}">{{ o.platform_order_id }}</a></td>
+      <td><span class="tag s-{{ o.status }}">{{ STATUS_LABELS[o.status] }}</span></td>
+      <td>{{ o.status_reason or '' }}</td></tr>
+  {% endfor %}
+</table>
+<p><a href="/sku-mappings?platform={{ result.batch.platform }}">Bổ sung ánh xạ</a></p>
+{% endif %}
+{% endblock %}

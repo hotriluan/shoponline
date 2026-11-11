@@ -1,0 +1,40 @@
+# Secrets
+.env
+.env.*
+!.env.example
+*.key
+*.pem
+docs/passwordapi.txt
+
+# Real platform/SAP files contain customer names and addresses
+docs/*.xlsx
+docs/*.XLSX
+docs/*.xls
+docs/*.pdf
+docs/*.png
+
+# Runtime data: uploads, exports, robot screenshots, backups
+data/
+uploads/
+exports/
+screenshots/
+backups/
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+.pytest_cache/
+.ruff_cache/
+*.egg-info/
+build/
+dist/
+
+# Editors / OS
+.vscode/
+.idea/
+Thumbs.db
+.DS_Store
+
+# Agent runtime logs
+.claude/hooks/.logs/

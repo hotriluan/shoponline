@@ -1,0 +1,32 @@
+version: 1
+meta:
+  title: Release workflow explainer
+  description: Fixture page that embeds an ak-diagram workflow through the diagram adapter.
+theme:
+  preset: blueprint
+blocks:
+  - type: hero
+    eyebrow: Fixture
+    title: Release workflow
+    description: How a commit reaches the beta channel.
+  - type: diagram-panel
+    title: Release workflow
+    caption: Developer, CI and QA lanes.
+    spec:
+      schema_version: 1
+      diagram_type: workflow
+      meta:
+        title: Release Workflow
+      lanes:
+        - { id: dev, label: Developer, role: user }
+        - { id: ci, label: CI Runner, role: system }
+        - { id: qa, label: QA Lead, role: approver }
+      steps:
+        - { id: commit, label: Push Commit, lane: dev, kind: action }
+        - { id: test, label: Run Matrix, lane: ci, kind: action }
+        - { id: gate, label: Audit Gate, lane: qa, kind: decision }
+        - { id: ship, label: Deploy Beta, lane: ci, kind: terminal-success }
+      transitions:
+        - { from: commit, to: test, label: Trigger }
+        - { from: test, to: gate, label: Pass }
+        - { from: gate, to: ship, label: Approve, kind: branch-true }

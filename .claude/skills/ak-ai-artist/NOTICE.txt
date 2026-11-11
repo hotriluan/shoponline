@@ -1,0 +1,22 @@
+ak-ai-artist
+Copyright (c) 2026 AgentKit. All Rights Reserved.
+
+This skill is part of a proprietary AgentKit kit. The AgentKit material in this
+directory is licensed under the AgentKit license terms. It also contains
+third-party material licensed under the Creative Commons Attribution 4.0
+International License (CC BY 4.0):
+
+  data/awesome-prompts.csv
+    Source: "Awesome Nano Banana Pro Prompts" by YouMind OpenLab
+            https://github.com/YouMind-OpenLab/awesome-nano-banana-pro-prompts
+    Copyright (c) 2025 YouMind OpenLab
+    License: CC BY 4.0, https://creativecommons.org/licenses/by/4.0/
+
+Changes: AgentKit converted the prompt collection into a CSV table (id,
+title, category, description, prompt, author, source) for local search. Titles,
+descriptions and prompt text may be edited, translated or abridged. The author
+and source columns carry each prompt's original credit.
+
+data/awesome-prompts.csv remains under CC BY 4.0. The AgentKit license terms do
+not restrict what CC BY 4.0 permits for that file. YouMind OpenLab does not
+endorse AgentKit.

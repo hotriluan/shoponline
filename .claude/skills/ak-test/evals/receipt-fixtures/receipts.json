@@ -1,0 +1,73 @@
+{
+  "schema_version": 1,
+  "synthetic": true,
+  "receipts": [
+    {
+      "id": "cold",
+      "status": "passed",
+      "revision": "s1",
+      "dirty_fingerprint": "d1",
+      "cache": "missing",
+      "strict_cache": true,
+      "execution": "live",
+      "model_calls": 2,
+      "tenant": "blue",
+      "plan": "team",
+      "cart_count": 2,
+      "total_cents": 1200,
+      "path": "checkout-button",
+      "orders_created": 1
+    },
+    {
+      "id": "warm",
+      "status": "passed",
+      "revision": "s2",
+      "dirty_fingerprint": "d2",
+      "cache": "hit",
+      "execution": "replay",
+      "model_calls": null,
+      "assertion_mode": "agent-says-success",
+      "tenant": "red",
+      "plan": "free",
+      "cart_count": 1,
+      "total_cents": 600,
+      "path": "billing-menu",
+      "orders_created": 1
+    },
+    {
+      "id": "alternate",
+      "status": "passed",
+      "revision": "s2",
+      "dirty_fingerprint": "d2",
+      "cache": "hit",
+      "model_calls": 0,
+      "tenant": "blue",
+      "plan": "team",
+      "cart_count": 2,
+      "total_cents": 1200,
+      "path": "direct-api",
+      "checkout_button": {
+        "status": "failed",
+        "error": "control-click-no-effect"
+      },
+      "orders_created": 1
+    },
+    {
+      "id": "explore",
+      "status": "passed",
+      "findings": [],
+      "revision": "s2",
+      "dirty_fingerprint": "d1",
+      "termination": "budget-exhausted",
+      "completed_steps": [
+        "landing",
+        "catalog"
+      ],
+      "unfinished_steps": [
+        "checkout",
+        "tenant-isolation"
+      ],
+      "model_calls": 1
+    }
+  ]
+}

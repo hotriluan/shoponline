@@ -1,0 +1,22 @@
+ak-agent-browser
+Copyright (c) 2026 AgentKit. All Rights Reserved.
+
+This skill is part of a proprietary AgentKit kit. It contains material
+derived from third-party work licensed under the Apache License, Version 2.0:
+
+  agent-browser skill (https://github.com/vercel-labs/agent-browser)
+  Copyright 2025 Vercel Inc.
+
+Derived material in this directory:
+  - SKILL.md: portions of the command descriptions and the specialized
+    skill list, adapted from the upstream skills/agent-browser/SKILL.md.
+
+AgentKit changed the upstream material listed above: it was restructured,
+rewritten in part and extended for AgentKit. Files listed as modified versions
+or adapted portions differ from upstream; a file listed as copied is unchanged.
+The upstream project does not distribute a NOTICE file of its own.
+
+The Apache License, Version 2.0 (LICENSE.txt in this directory) applies to the
+upstream material. Everything else in this directory is AgentKit-authored and
+distributed under the AgentKit proprietary license terms, not under the
+Apache License.

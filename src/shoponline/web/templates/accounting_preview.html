@@ -1,0 +1,16 @@
+{% extends "base.html" %}
+{% block title %}File gửi kế toán{% endblock %}
+{% block content %}
+<h1>{{ preview.file_name }}</h1>
+<div class="box">
+  <p>{{ row_count }} dòng DO trong file zrsd004; {{ delivered }} đơn chuyển sang "Đã có DO".</p>
+  {% if preview.warnings %}
+  <div class="flash error">{{ preview.warnings|length }} dòng còn thiếu thông tin. Có thể bổ sung ở trang
+    <a href="/customers">Khách hàng</a> rồi tải lại, hoặc vẫn xuất file:</div>
+  <ul>{% for w in preview.warnings %}<li>{{ w }}</li>{% endfor %}</ul>
+  {% else %}
+  <p class="flash">Mọi dòng đã có mã đơn, tên khách và địa chỉ.</p>
+  {% endif %}
+  <a class="button" href="/sap-reports/zrsd004/{{ record.id }}/accounting-file">Tải {{ preview.file_name }}</a>
+</div>
+{% endblock %}

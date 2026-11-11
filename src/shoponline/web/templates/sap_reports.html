@@ -1,0 +1,31 @@
+{% extends "base.html" %}
+{% block title %}Báo cáo SAP{% endblock %}
+{% block content %}
+<h1>Báo cáo SAP</h1>
+{% if user.role == 'admin' %}
+<h2>zrsd001 (lựa chọn "Complete") – lưu số SO và đối chiếu</h2>
+<form class="box row" method="post" action="/sap-reports/zrsd001" enctype="multipart/form-data">
+  <label>Lô đang xác nhận (để kiểm tra bộ lọc)
+    <select name="batch_id">
+      <option value="">— không chọn —</option>
+      {% for b in batches %}<option value="{{ b.id }}" {{ 'selected' if b.id == selected_batch }}>{{ b.platform }} {{ b.processing_date.strftime('%d/%m/%Y') }}</option>{% endfor %}
+    </select></label>
+  <label>File zrsd001 xuất từ SAP<input type="file" name="file" accept=".xlsx,.XLSX" required></label>
+  <button>Tải lên</button>
+</form>
+<h2>zrsd004 – file gửi kế toán</h2>
+<form class="box row" method="post" action="/sap-reports/zrsd004" enctype="multipart/form-data">
+  <label>File zrsd004 xuất từ SAP<input type="file" name="file" accept=".xlsx,.XLSX" required></label>
+  <button>Tải lên và xem trước</button>
+</form>
+{% endif %}
+<h2>Lần tải gần đây</h2>
+<table>
+  <tr><th>Lúc</th><th>Loại</th><th>File</th><th>Người</th><th>Mới / cập nhật / không đổi</th><th></th></tr>
+  {% for r in recent %}
+  <tr><td>{{ r.imported_at|localtime('%d/%m/%Y %H:%M') }}</td><td>{{ r.kind }}</td><td>{{ r.file_name }}</td><td>{{ r.imported_by }}</td>
+      <td>{{ r.new_count }} / {{ r.updated_count }} / {{ r.unchanged_count }}</td>
+      <td>{% if r.kind == 'zrsd004' %}<a href="/sap-reports/zrsd004/{{ r.id }}/accounting-file">Tải file kế toán</a>{% endif %}</td></tr>
+  {% endfor %}
+</table>
+{% endblock %}
