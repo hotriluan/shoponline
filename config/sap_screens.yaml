@@ -1,0 +1,12 @@
+# SAP GUI element IDs by screen and logical name.
+# Fill each screen from the recorder script recorded on Production (AEP/300) with the robot
+# user AL17016 (same resolution, language and SAP GUI version as the robot machine).
+# Never guess IDs.
+screens:
+  # Standard SAP login screen (SAPMSYST). Confirm against the recording before the first run.
+  login:
+    user: wnd[0]/usr/txtRSYST-BNAME
+    password: wnd[0]/usr/pwdRSYST-BCODE
+    language: wnd[0]/usr/txtRSYST-LANGU
+  # zrsd001: add when the recorder script for "Open" and "Complete" is available.
+  # zrsd004: add when the recorder script and the filter screenshot are available.

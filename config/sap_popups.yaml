@@ -1,0 +1,12 @@
+# Dialogs the robot may answer. Anything not matched here stops the job as NEED_REVIEW with a
+# screenshot, and the robot presses nothing.
+#
+# Each entry:
+#   name:            short name shown in logs
+#   title_contains:  part of the dialog title (case-insensitive); empty matches any title
+#   text_contains:   part of the dialog text (case-insensitive); empty matches any text
+#   button:          element ID inside the dialog, relative to wnd[n], e.g. tbar[0]/btn[0]
+#   outcome:         optional signal for the transaction, e.g. no_data
+# At least one of title_contains / text_contains must be set.
+# Add entries only from dialogs seen in the recordings or in NEED_REVIEW screenshots.
+popups: []

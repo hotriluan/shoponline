@@ -8,8 +8,7 @@ from sqlalchemy.orm import Session
 from shoponline.db.models import AppUser, ImportBatch, OrderBatch
 from shoponline.exports.accounting_workbook import build_accounting_workbook, database_lookup
 from shoponline.importers.excel_table import FileRejected
-from shoponline.importers.sap_reports import read_zrsd001, read_zrsd004
-from shoponline.reconcile.so_link import mark_delivered, store_so_reports
+from shoponline.reconcile.report_ingest import ingest_zrsd001, ingest_zrsd004
 from shoponline.web.app import current_user, flash, get_db, redirect, render, require_admin
 from shoponline.web.uploads import UploadRejected, save_generated, save_upload
 
@@ -55,10 +54,7 @@ async def upload_zrsd001(
         record = await save_upload(
             request.app.state.settings, file, kind="zrsd001", platform=None, actor=user.username
         )
-        reports = read_zrsd001(Path(record.stored_path))
-        db.add(record)
-        db.flush()
-        result = store_so_reports(db, reports, user.username, record, expect_batch=batch)
+        result = ingest_zrsd001(db, record, user.username, expect_batch=batch)
     except (UploadRejected, FileRejected) as exc:
         db.rollback()
         return _page(request, db, user, error=str(exc), selected_batch=batch_id)
@@ -84,12 +80,7 @@ async def upload_zrsd004(
         record = await save_upload(
             request.app.state.settings, file, kind="zrsd004", platform=None, actor=user.username
         )
-        rows = read_zrsd004(Path(record.stored_path))
-        preview = build_accounting_workbook(Path(record.stored_path), database_lookup(db))
-        db.add(record)
-        db.flush()
-        delivered = mark_delivered(db, rows, user.username)
-        record.updated_count = delivered
+        imported = ingest_zrsd004(db, record, user.username)
     except (UploadRejected, FileRejected) as exc:
         db.rollback()
         return _page(request, db, user, error=str(exc))
@@ -99,9 +90,9 @@ async def upload_zrsd004(
         "accounting_preview.html",
         user,
         record=record,
-        preview=preview,
-        delivered=delivered,
-        row_count=len(rows),
+        preview=imported.preview,
+        delivered=imported.delivered,
+        row_count=len(imported.rows),
     )
 
 

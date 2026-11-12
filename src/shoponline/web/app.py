@@ -16,9 +16,12 @@ from shoponline.config import Settings
 from shoponline.db.models import AppUser
 from shoponline.db.session import session_factory as default_session_factory
 from shoponline.domain import states
+from shoponline.sapjobs.queue import LABELS as JOB_LABELS
+from shoponline.sapjobs.queue import control as robot_control
 
 TEMPLATES = Jinja2Templates(directory=str(Path(__file__).parent / "templates"))
 TEMPLATES.env.globals["STATUS_LABELS"] = states.LABELS
+TEMPLATES.env.globals["JOB_LABELS"] = JOB_LABELS
 TEMPLATES.env.filters["money"] = lambda v: "" if v is None else f"{int(v):,}".replace(",", ".")
 TEMPLATES.env.filters["localtime"] = lambda v, fmt="%d/%m/%Y %H:%M": (
     "" if v is None else (v.astimezone() if v.tzinfo else v).strftime(fmt)
@@ -75,6 +78,17 @@ def backup_warning(settings: Settings) -> str | None:
     return None
 
 
+def robot_warning(request: Request) -> str | None:
+    """The robot stopped itself or was stopped; shown on every page until an admin resumes it."""
+    if request.app.state.settings.sap_target is None:
+        return None
+    with request.app.state.session_factory() as db:
+        row = robot_control(db)
+        if not row.paused:
+            return None
+        return f"Robot SAP đang dừng: {row.paused_reason or 'không rõ lý do'}"
+
+
 def render(request: Request, template: str, user: AppUser | None, **context):
     messages = request.session.pop("flash", [])
     settings: Settings = request.app.state.settings
@@ -85,6 +99,8 @@ def render(request: Request, template: str, user: AppUser | None, **context):
             "user": user,
             "messages": messages,
             "backup_warning": backup_warning(settings) if user else None,
+            "robot_warning": robot_warning(request) if user else None,
+            "robot_enabled": settings.sap_target is not None,
             **context,
         },
     )
@@ -101,6 +117,7 @@ def create_app(settings: Settings, session_factory: Callable[[], Session] | None
         imports,
         login,
         orders,
+        robot,
         sap_reports,
         sku_mapping,
     )
@@ -129,6 +146,6 @@ def create_app(settings: Settings, session_factory: Callable[[], Session] | None
     def home():
         return redirect("/batches")
 
-    for module in (login, imports, batches, orders, sku_mapping, customers, sap_reports):
+    for module in (login, imports, batches, orders, sku_mapping, customers, sap_reports, robot):
         app.include_router(module.router)
     return app

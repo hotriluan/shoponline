@@ -24,6 +24,7 @@
   .banner { background:#fff4e5; color:var(--warn); padding:6px 16px; border-bottom:1px solid #f5d9b0; }
   .tag { display:inline-block; padding:1px 6px; border-radius:3px; font-size:12px; background:#eef2f6; }
   .s-READY { background:#e6f4ea; color:var(--ok); } .s-MAPPING_ERROR, .s-NEED_REVIEW { background:#fdecea; color:var(--bad); }
+  .j-FAILED, .j-UNKNOWN, .j-NEED_REVIEW { background:#fdecea; color:var(--bad); } .j-DONE { background:#e6f4ea; color:var(--ok); } .j-PENDING, .j-RUNNING { background:#e8f0fe; color:var(--accent); }
   .s-SO_LINKED, .s-DELIVERED { background:#e8f0fe; color:var(--accent); } .s-CANCELLED { background:#eee; color:var(--muted); }
   .muted { color:var(--muted); } .bad { color:var(--bad); }
   form.inline { display:inline; }
@@ -46,12 +47,14 @@
     <a href="/sku-mappings">Ánh xạ SAP</a>
     <a href="/customers">Khách hàng</a>
     <a href="/sap-reports">Báo cáo SAP</a>
+    <a href="/robot">Robot SAP</a>
   </nav>
   <span class="who">{{ user.username }} ({{ user.role }})
     <form class="inline" method="post" action="/logout"><button class="secondary">Đăng xuất</button></form>
   </span>
 </header>
 {% if backup_warning %}<div class="banner">⚠ {{ backup_warning }}</div>{% endif %}
+{% if robot_warning %}<div class="banner">⚠ {{ robot_warning }} – <a href="/robot">xem hàng đợi</a></div>{% endif %}
 {% endif %}
 <main>
   {% for m in messages %}{% if m.message %}<div class="flash {{ m.kind }}">{{ m.message }}</div>{% endif %}{% endfor %}

@@ -215,3 +215,39 @@ class SapSoRefItem(Base):
     net_value_incl: Mapped[int] = mapped_column(BigInteger)
 
     so_ref: Mapped[SapSoRef] = relationship(back_populates="items")
+
+
+class SapJob(Base):
+    """One unit of SAP work for the robot. The target system is part of every job."""
+
+    __tablename__ = "sap_job"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    kind: Mapped[str] = mapped_column(String(30))
+    target_system: Mapped[str] = mapped_column(String(10))
+    target_client: Mapped[str] = mapped_column(String(3))
+    dedupe_key: Mapped[str] = mapped_column(String(120))
+    payload: Mapped[str] = mapped_column(Text, default="{}")
+    status: Mapped[str] = mapped_column(String(15), index=True)
+    attempts: Mapped[int] = mapped_column(Integer, default=0)
+    created_by: Mapped[str] = mapped_column(String(50))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    result: Mapped[str | None] = mapped_column(Text)
+    error: Mapped[str | None] = mapped_column(Text)
+    evidence_path: Mapped[str | None] = mapped_column(String(500))
+    import_batch_id: Mapped[int | None] = mapped_column(ForeignKey("import_batch.id"))
+
+
+class RobotControl(Base):
+    """Single row (id=1): stop switch and consecutive failure counter of the robot."""
+
+    __tablename__ = "robot_control"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    paused: Mapped[bool] = mapped_column(default=False)
+    paused_reason: Mapped[str | None] = mapped_column(Text)
+    changed_by: Mapped[str | None] = mapped_column(String(50))
+    changed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    consecutive_failures: Mapped[int] = mapped_column(Integer, default=0)

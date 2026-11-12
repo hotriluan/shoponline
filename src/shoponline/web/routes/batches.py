@@ -10,6 +10,8 @@ from shoponline.db.models import AppUser, CustomerInfo, OrderBatch, PlatformSett
 from shoponline.domain import states
 from shoponline.exports.order_workbook import build_order_workbook
 from shoponline.reconcile.so_link import LinkError, batch_report, link_manually
+from shoponline.sapjobs.queue import DuplicateJob
+from shoponline.sapjobs.report_requests import request_zrsd001, request_zrsd004
 from shoponline.web.app import current_user, flash, get_db, redirect, render, require_admin
 from shoponline.web.uploads import save_generated
 
@@ -140,8 +142,44 @@ def confirm_batch(
             platform=batch.platform,
             detail={"batch_id": batch.id},
         )
+        target = request.app.state.settings.sap_target
+        if target is None:
+            message = "Đã ghi nhận sales admin đã tạo SO và DO. Tải zrsd001 lên để đối chiếu."
+        else:
+            try:
+                job = request_zrsd001(db, target, batch, user.username)
+                message = f"Đã xác nhận lô; robot sẽ đọc zrsd001 (việc #{job.id})."
+            except DuplicateJob as exc:
+                message = f"Đã xác nhận lô. {exc}"
         db.commit()
-        flash(request, "Đã ghi nhận sales admin đã tạo SO và DO. Tải zrsd001 lên để đối chiếu.")
+        flash(request, message)
+    return redirect(f"/batches/{batch_id}")
+
+
+@router.post("/batches/{batch_id}/accounting-file")
+def request_accounting_file(
+    request: Request,
+    batch_id: int,
+    db: Session = Depends(get_db),
+    user: AppUser = Depends(require_admin),
+):
+    """Ask the robot to read zrsd004 for the batch's goods issue date."""
+    batch = _batch(db, batch_id)
+    target = request.app.state.settings.sap_target
+    if target is None:
+        flash(request, "Robot chưa được bật; tải zrsd004 lên ở trang Báo cáo SAP.", "error")
+        return redirect(f"/batches/{batch_id}")
+    try:
+        job = request_zrsd004(db, target, batch.gi_date, user.username)
+    except DuplicateJob as exc:
+        flash(request, str(exc), "error")
+        return redirect(f"/batches/{batch_id}")
+    db.commit()
+    flash(
+        request,
+        f"Robot sẽ đọc zrsd004 ngày {batch.gi_date:%d/%m/%Y} (việc #{job.id}); "
+        "file gửi kế toán có ở trang Báo cáo SAP khi việc xong.",
+    )
     return redirect(f"/batches/{batch_id}")
 
 

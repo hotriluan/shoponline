@@ -29,6 +29,13 @@ async def save_upload(
     data = await upload.read(MAX_UPLOAD_BYTES + 1)
     if len(data) > MAX_UPLOAD_BYTES:
         raise UploadRejected("File lớn hơn 20 MB")
+    return store_file(settings, data, name, kind=kind, platform=platform, actor=actor)
+
+
+def store_file(
+    settings: Settings, data: bytes, name: str, *, kind: str, platform: str | None, actor: str
+) -> ImportBatch:
+    """Store the file by content hash under the upload dir; the caller adds the record."""
     if not data:
         raise UploadRejected("File rỗng")
     digest = hashlib.sha256(data).hexdigest()

@@ -1,0 +1,63 @@
+{% extends "base.html" %}
+{% block title %}Robot SAP{% endblock %}
+{% block content %}
+<h1>Robot SAP</h1>
+<div class="box row">
+  {% if target %}
+  <span>Hệ thống đích của việc mới: <strong>{{ target }}</strong></span>
+  {% else %}
+  <span class="muted">Robot chưa được bật (chưa đặt SHOPONLINE_SAP_SYSTEM và SHOPONLINE_SAP_CLIENT); báo cáo SAP tải lên bằng tay.</span>
+  {% endif %}
+  {% if control.paused %}
+  <span class="bad">Đang dừng: {{ control.paused_reason }} ({{ control.changed_by }}, {{ control.changed_at|localtime }})</span>
+  {% if user.role == 'admin' %}
+  <form method="post" action="/robot/resume" class="inline"
+        onsubmit="return confirm('Đã xem nguyên nhân dừng và muốn bật lại robot?')"><button>Bật lại robot</button></form>
+  {% endif %}
+  {% else %}
+  <span>Đang bật; lỗi liên tiếp: {{ control.consecutive_failures }}</span>
+  {% if user.role == 'admin' %}
+  <form method="post" action="/robot/pause" class="row">
+    <label>Lý do dừng<input type="text" name="reason" size="30"></label>
+    <button class="danger">Tạm dừng robot</button>
+  </form>
+  {% endif %}
+  {% endif %}
+</div>
+
+<h2>Hàng đợi</h2>
+<p>
+  <a href="/robot">Tất cả</a>{% for code, label in JOB_LABELS.items() %} · <a href="/robot?status={{ code }}">{{ label }}</a>{% endfor %}
+</p>
+<div class="scroll">
+<table>
+  <tr><th>#</th><th>Loại</th><th>Hệ thống</th><th>Nội dung</th><th>Trạng thái</th><th>Lần</th><th>Tạo</th><th>Xong</th><th>Kết quả hoặc lỗi</th><th></th></tr>
+  {% for j in jobs %}
+  {% set p = payload_of(j) %}
+  <tr>
+    <td>{{ j.id }}</td>
+    <td>{{ j.kind }}</td>
+    <td>{{ j.target_system }}/{{ j.target_client }}</td>
+    <td>{% if p.batch_id %}<a href="/batches/{{ p.batch_id }}">lô {{ p.platform }} {{ p.date_from }}</a>{% elif p.gi_date %}ngày GI {{ p.gi_date }}{% endif %}</td>
+    <td><span class="tag j-{{ j.status }}">{{ JOB_LABELS[j.status] }}</span></td>
+    <td class="num">{{ j.attempts }}</td>
+    <td>{{ j.created_at|localtime('%d/%m %H:%M') }} {{ j.created_by }}</td>
+    <td>{{ j.finished_at|localtime('%d/%m %H:%M') }}</td>
+    <td>{% if j.error %}<span class="bad">{{ j.error }}</span>{% elif j.result %}{% set r = result_of(j) %}
+        {% for k, v in r.items() if k != 'warnings' %}{{ k }}: {{ v }}{% if not loop.last %}, {% endif %}{% endfor %}
+        {% if r.warnings %}<br><span class="bad">{{ r.warnings|join('; ') }}</span>{% endif %}
+        {% if j.kind == 'read_zrsd004' and j.import_batch_id %}<br><a href="/sap-reports/zrsd004/{{ j.import_batch_id }}/accounting-file">Tải file kế toán</a>{% endif %}
+        {% endif %}</td>
+    <td>
+      {% if j.evidence_path %}<a href="/robot/jobs/{{ j.id }}/evidence" target="_blank">Ảnh</a>{% endif %}
+      {% if user.role == 'admin' and j.kind in read_kinds and j.status in retryable %}
+      <form method="post" action="/robot/jobs/{{ j.id }}/retry" class="inline"><button class="secondary">Chạy lại</button></form>
+      {% endif %}
+    </td>
+  </tr>
+  {% else %}
+  <tr><td colspan="10" class="muted">Chưa có việc nào.</td></tr>
+  {% endfor %}
+</table>
+</div>
+{% endblock %}

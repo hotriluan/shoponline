@@ -8,11 +8,19 @@
   Refuses to register when something already listens on the web port, so no second web
   process is started next to a stale one.
 
+  With -RobotUser it registers only the SAP robot task instead: it starts when that account
+  logs on (the robot needs the account's desktop for SAP GUI) and never runs twice at once.
+  Run it after the robot machine is set up as in docs/robot-machine-setup.md.
+
 .EXAMPLE
   pwsh -ExecutionPolicy Bypass -File scripts\windows\register-tasks.ps1 -User MAYCHU\shoponline -BackupTime 23:00
+
+.EXAMPLE
+  pwsh -ExecutionPolicy Bypass -File scripts\windows\register-tasks.ps1 -RobotUser MAYCHU\saprobot
 #>
 param(
-    [Parameter(Mandatory = $true)][string]$User,
+    [string]$User,
+    [string]$RobotUser,
     [string]$BackupTime = "23:00",
     [int]$WebPort = 8750,
     [string]$Uv = (Get-Command uv -ErrorAction SilentlyContinue).Source
@@ -21,6 +29,24 @@ param(
 $ErrorActionPreference = "Stop"
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..\..")).Path
 if (-not $Uv) { throw "Không thấy uv; truyền -Uv <đường dẫn uv.exe>" }
+
+if ($RobotUser) {
+    $running = Get-CimInstance Win32_Process -Filter "Name = 'python.exe' OR Name = 'uv.exe'" |
+        Where-Object { $_.CommandLine -match 'shoponline(\.exe)?"?\s+robot(\s|$)' }
+    if ($running) {
+        throw "Robot đang chạy (PID $($running.ProcessId -join ', ')). Dừng nó trước khi đăng ký lại."
+    }
+    $robotAction = New-ScheduledTaskAction -Execute $Uv -Argument "run shoponline robot" -WorkingDirectory $repoRoot
+    $robotPrincipal = New-ScheduledTaskPrincipal -UserId $RobotUser -LogonType Interactive -RunLevel Limited
+    $robotSettings = New-ScheduledTaskSettingsSet -MultipleInstances IgnoreNew -RestartCount 3 `
+        -RestartInterval (New-TimeSpan -Minutes 1) -ExecutionTimeLimit ([TimeSpan]::Zero)
+    Register-ScheduledTask -TaskName "shoponline-robot" -Action $robotAction `
+        -Trigger (New-ScheduledTaskTrigger -AtLogOn -User $RobotUser) -Principal $robotPrincipal `
+        -Settings $robotSettings -Force | Out-Null
+    Write-Host "Đã đăng ký shoponline-robot (chạy khi $RobotUser đăng nhập)"
+    return
+}
+if (-not $User) { throw "Truyền -User (web và sao lưu) hoặc -RobotUser (robot SAP)" }
 
 $listening = Get-NetTCPConnection -LocalPort $WebPort -State Listen -ErrorAction SilentlyContinue
 if ($listening) {
