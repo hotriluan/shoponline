@@ -14,9 +14,10 @@ docs/*.pdf
 docs/*.png
 
 # Runtime data: uploads, exports, robot screenshots, backups
+# (exports anchored to the root: src/shoponline/exports is source code)
 data/
 uploads/
-exports/
+/exports/
 screenshots/
 backups/
 
