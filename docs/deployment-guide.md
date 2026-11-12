@@ -70,6 +70,8 @@ Script dừng lại nếu cổng web đang có tiến trình khác giữ; khi đ
 
 Mở cổng web trên Windows Firewall cho mạng nội bộ (profile Domain hoặc Private), không mở ra Internet.
 
+Robot SAP (phase 5 trở đi) đăng ký riêng bằng `-RobotUser`, sau khi dựng máy theo [robot-machine-setup.md](robot-machine-setup.md).
+
 ## 6. Kiểm tra sau khi triển khai
 
 1. Mở `http://<IP máy>:8750` từ máy admin, đăng nhập được.
