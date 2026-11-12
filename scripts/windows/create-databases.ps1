@@ -61,7 +61,8 @@ try {
         Write-Host "Role $AppRole đã có, giữ nguyên"
     }
 
-    $databases = if ($Environment -eq "dev") { @("shoponline_dev", "shoponline_test") } else { @("shoponline") }
+    # @() keeps a one-element list a list; otherwise $databases[0] is the first character.
+    $databases = @(if ($Environment -eq "dev") { "shoponline_dev", "shoponline_test" } else { "shoponline" })
     foreach ($db in $databases) {
         $exists = Invoke-Sql "postgres" "SELECT 1 FROM pg_database WHERE datname = '$db'"
         if ($exists) {
