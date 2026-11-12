@@ -72,6 +72,31 @@ Mở cổng web trên Windows Firewall cho mạng nội bộ (profile Domain ho�
 
 Robot SAP (phase 5 trở đi) đăng ký riêng bằng `-RobotUser`, sau khi dựng máy theo [robot-machine-setup.md](robot-machine-setup.md).
 
+**Máy chỉ một người đăng nhập** (không có tài khoản `shoponline` riêng): thêm `-AtLogOn` và dùng chính tài khoản đang đăng nhập. Hai tác vụ khi đó chạy trong phiên của người dùng mỗi lần đăng nhập, không lưu mật khẩu Windows và không cần quyền quản trị. Đổi lại, web chỉ chạy khi người dùng đó đang đăng nhập.
+
+```powershell
+pwsh -ExecutionPolicy Bypass -File scripts\windows\register-tasks.ps1 -User $env:USERDOMAIN\$env:USERNAME -AtLogOn
+```
+
+## 5b. Tự động triển khai khi push `main`
+
+[`.github/workflows/deploy.yml`](../.github/workflows/deploy.yml) chạy test trên GitHub (PostgreSQL 16), sau đó giao bước deploy cho self-hosted runner có nhãn `shoponline-prod` trên máy chạy thật. Runner gọi [`update-production.ps1`](../scripts/windows/update-production.ps1) trong `C:\shoponline`. Script dừng web, sao lưu database, fast-forward tới commit vừa push, chạy `uv sync --frozen --no-dev` và `migrate`, khởi động lại web rồi chờ trang `/login` trả lời. Nếu lỗi, nó in commit cũ để lùi lại và vẫn cố khởi động web.
+
+Cài runner một lần, bằng tài khoản sở hữu `C:\shoponline` (cần `gh` đăng nhập với quyền admin repo):
+
+```powershell
+pwsh -ExecutionPolicy Bypass -File scripts\windows\install-deploy-runner.ps1
+```
+
+Script tải runner bản mới nhất, kiểm tra SHA-256, đăng ký vào repo, và tạo tác vụ `shoponline-deploy-runner` chạy khi người dùng đăng nhập. Push lúc runner đang tắt thì job deploy chờ trong hàng đợi cho tới khi runner chạy lại.
+
+Ràng buộc an toàn:
+
+- `C:\shoponline` chỉ được cập nhật qua GitHub. Sửa tay trong thư mục này làm deploy dừng lại.
+- Workflow không có trigger `pull_request`. Repo bật chế độ bắt buộc duyệt workflow của mọi người đóng góp bên ngoài (`fork-pr-contributor-approval = all_external_contributors`), nên code từ fork không tự chạy trên máy chạy thật.
+- Thay đổi trong `update-production.ps1` chỉ có hiệu lực từ lần deploy kế tiếp, vì runner chạy bản đang có trên đĩa.
+- Chạy lại deploy bằng tay: tab Actions, workflow `deploy`, **Run workflow**.
+
 ## 6. Kiểm tra sau khi triển khai
 
 1. Mở `http://<IP máy>:8750` từ máy admin, đăng nhập được.
@@ -85,6 +110,8 @@ Robot SAP (phase 5 trở đi) đăng ký riêng bằng `-RobotUser`, sau khi d�
    Script đọc database đích từ `SHOPONLINE_RESTORE_DATABASE_URL` và từ chối ghi vào `shoponline` nếu thiếu `-AllowProduction`.
 
 ## Cập nhật phiên bản
+
+Khi đã cài runner (mục 5b), chỉ cần push lên `main`. Cập nhật tay, khi không có runner:
 
 ```powershell
 Stop-ScheduledTask shoponline-web
