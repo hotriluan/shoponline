@@ -7,7 +7,7 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 from fastapi import Depends, FastAPI, Request
-from fastapi.responses import RedirectResponse
+from fastapi.responses import JSONResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session
 from starlette.middleware.sessions import SessionMiddleware
@@ -106,6 +106,15 @@ def render(request: Request, template: str, user: AppUser | None, **context):
     )
 
 
+def is_autosave(request: Request) -> bool:
+    """Set by the page script that saves a row or field as soon as it is edited."""
+    return request.headers.get("x-autosave") == "1"
+
+
+def autosave_reply(message: str, ok: bool = True, status: int | None = None) -> JSONResponse:
+    return JSONResponse({"ok": ok, "message": message}, status_code=status or (200 if ok else 422))
+
+
 def redirect(url: str) -> RedirectResponse:
     return RedirectResponse(url, status_code=303)
 
@@ -135,10 +144,14 @@ def create_app(settings: Settings, session_factory: Callable[[], Session] | None
 
     @app.exception_handler(LoginRequired)
     async def _login_required(request: Request, _exc: LoginRequired):
+        if is_autosave(request):
+            return autosave_reply("Phiên đăng nhập đã hết, hãy đăng nhập lại.", False, 401)
         return redirect("/login")
 
     @app.exception_handler(AdminRequired)
     async def _admin_required(request: Request, _exc: AdminRequired):
+        if is_autosave(request):
+            return autosave_reply("Tài khoản xem không được thay đổi dữ liệu.", False, 403)
         flash(request, "Tài khoản xem không được thay đổi dữ liệu.", "error")
         return redirect(request.headers.get("referer") or "/batches")
 

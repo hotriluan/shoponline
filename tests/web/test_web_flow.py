@@ -8,7 +8,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from shoponline.config import Settings
-from shoponline.db.models import OrderBatch, SalesOrder
+from shoponline.db.models import OrderBatch, SalesOrder, SkuMapping
 from shoponline.domain import states
 from shoponline.web.app import create_app
 from shoponline.web.auth import set_user
@@ -187,3 +187,139 @@ def test_cancel_order(app, db, tmp_path):
     db.refresh(order)
     assert order.status == states.CANCELLED
     assert "khách hủy" in client.get(f"/orders/{order.id}").text
+
+
+def _three_unmapped_orders(client, tmp_path):
+    shopee = shopee_orders_file(
+        tmp_path / "s.xlsx",
+        [
+            shopee_row("A1", variation="Màu 01,1 lít"),
+            shopee_row("A2", variation="Màu 02,1 lít"),
+            shopee_row("A3", variation="Màu 03,1 lít"),
+        ],
+    )
+    _upload(client, "/imports", shopee, platform="SHOPEE", processing_date="2026-11-11")
+
+
+def _bulk(client, rows):
+    data = {
+        "platform": "SHOPEE",
+        "product_name": [],
+        "variation_name": [],
+        "material_number": [],
+        "sap_name": [],
+    }
+    for variation, material, sap_name in rows:
+        data["product_name"].append("Sơn thử A")
+        data["variation_name"].append(variation)
+        data["material_number"].append(material)
+        data["sap_name"].append(sap_name)
+    return client.post("/sku-mappings/bulk", data=data, follow_redirects=False)
+
+
+def test_bulk_save_keeps_every_filled_row(app, db, tmp_path):
+    client = _client(app, "admin", "admin-password")
+    _three_unmapped_orders(client, tmp_path)
+    resp = _bulk(
+        client,
+        [
+            ("Màu 01,1 lít", "100000001", "SAP 1"),
+            ("Màu 02,1 lít", "100000002", "SAP 2"),
+            ("Màu 03,1 lít", "", ""),  # left blank: skipped, still unmapped
+        ],
+    )
+    assert resp.status_code == 303
+    mapped = set(db.scalars(select(SkuMapping.material_number)))
+    assert mapped == {"100000001", "100000002"}
+    statuses = {o.platform_order_id: o.status for o in db.scalars(select(SalesOrder))}
+    assert statuses == {"A1": states.READY, "A2": states.READY, "A3": states.MAPPING_ERROR}
+
+
+def test_bulk_save_rejects_all_and_keeps_typed_values(app, db, tmp_path):
+    client = _client(app, "admin", "admin-password")
+    _three_unmapped_orders(client, tmp_path)
+    resp = _bulk(
+        client,
+        [
+            ("Màu 01,1 lít", "100000001", "SAP 1"),
+            ("Màu 02,1 lít", "ABC", "SAP 2"),
+            ("Màu 03,1 lít", "100000003", "SAP 3"),
+        ],
+    )
+    assert resp.status_code == 200
+    assert db.scalar(select(SkuMapping)) is None
+    for typed in ("100000001", "ABC", "SAP 3", "Mã SAP phải là chữ số"):
+        assert typed in resp.text
+
+
+def test_unmapped_excel_round_trip(app, db, tmp_path):
+    client = _client(app, "admin", "admin-password")
+    _three_unmapped_orders(client, tmp_path)
+    resp = client.get("/sku-mappings/unmapped.xlsx?platform=SHOPEE")
+    assert resp.status_code == 200
+    workbook = load_workbook(BytesIO(resp.content))
+    sheet = workbook.active
+    assert [c.value for c in sheet[1]] == ["Tên sản phẩm", "Tên phân loại", "Mã SAP", "Tên SAP"]
+    assert sheet.max_row == 4
+    sheet["C2"], sheet["D2"] = "100000001", "SAP 1"
+    sheet["C3"], sheet["D3"] = "100000002", "SAP 2"
+    filled = tmp_path / "filled.xlsx"
+    workbook.save(filled)
+    resp = _upload(client, "/sku-mappings/import", filled, platform="SHOPEE")
+    assert resp.status_code == 303
+    page = client.get("/sku-mappings?platform=SHOPEE").text
+    assert "Đã lưu 2 ánh xạ" in page and "1 dòng để trống bỏ qua" in page
+    statuses = {o.platform_order_id: o.status for o in db.scalars(select(SalesOrder))}
+    assert sorted(statuses.values()) == sorted([states.READY, states.READY, states.MAPPING_ERROR])
+
+
+AUTOSAVE = {"X-Autosave": "1"}
+
+
+def test_autosave_answers_json_and_saves_one_row(app, db, tmp_path):
+    client = _client(app, "admin", "admin-password")
+    _three_unmapped_orders(client, tmp_path)
+    page = client.get("/sku-mappings?platform=SHOPEE").text
+    assert 'data-autosave="/sku-mappings"' in page
+
+    row = {"platform": "SHOPEE", "product_name": "Sơn thử A", "variation_name": "Màu 01,1 lít"}
+    resp = client.post(
+        "/sku-mappings", data={**row, "material_number": "X1", "sap_name": "S"}, headers=AUTOSAVE
+    )
+    assert resp.status_code == 422 and "chữ số" in resp.json()["message"]
+    resp = client.post(
+        "/sku-mappings",
+        data={**row, "material_number": "100000001", "sap_name": "S"},
+        headers=AUTOSAVE,
+    )
+    assert resp.json() == {"ok": True, "message": "Đã lưu, 1 đơn sẵn sàng"}
+
+    resp = client.post(
+        "/customers/save",
+        data={"platform": "SHOPEE", "platform_order_id": "A1", "customer_name": "Người Thử"},
+        headers=AUTOSAVE,
+    )
+    assert resp.json()["ok"] is True
+    assert "Người Thử" in client.get("/customers?platform=SHOPEE").text
+
+    batch = db.scalar(select(OrderBatch))
+    resp = client.post(
+        f"/batches/{batch.id}/gi-date", data={"gi_date": "2026-11-01"}, headers=AUTOSAVE
+    )
+    assert resp.status_code == 422 and resp.json()["ok"] is False
+    resp = client.post(
+        f"/batches/{batch.id}/gi-date", data={"gi_date": "2026-11-13"}, headers=AUTOSAVE
+    )
+    assert resp.json()["ok"] is True
+    db.refresh(batch)
+    assert batch.gi_date == date(2026, 11, 13)
+
+
+def test_autosave_refused_for_viewer_and_expired_login(app, db, tmp_path):
+    form = {"platform": "SHOPEE", "platform_order_id": "A1", "customer_name": "X"}
+    resp = _client(app).post("/customers/save", data=form, headers=AUTOSAVE)
+    assert resp.status_code == 401 and "đăng nhập" in resp.json()["message"]
+    viewer = _client(app, "viewer", "viewer-password")
+    resp = viewer.post("/customers/save", data=form, headers=AUTOSAVE)
+    assert resp.status_code == 403 and resp.json()["ok"] is False
+    assert 'data-autosave="/customers/save"' not in viewer.get("/customers?platform=SHOPEE").text

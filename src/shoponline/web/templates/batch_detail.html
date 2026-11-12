@@ -4,9 +4,10 @@
 <h1>Lô {{ batch.platform }} ngày {{ batch.processing_date.strftime('%d/%m/%Y') }}</h1>
 
 <div class="box row">
-  <form method="post" action="/batches/{{ batch.id }}/gi-date" class="row">
-    <label>Ngày goods issue <input type="date" name="gi_date" value="{{ batch.gi_date.isoformat() }}"></label>
-    {% if user.role == 'admin' %}<button class="secondary">Lưu ngày</button>{% endif %}
+  <form method="post" action="/batches/{{ batch.id }}/gi-date" class="row"
+        {% if user.role == 'admin' %}data-autosave="/batches/{{ batch.id }}/gi-date" data-autosave-require="gi_date" data-autosave-reload{% endif %}>
+    <label>Ngày goods issue <input type="date" name="gi_date" value="{{ batch.gi_date.isoformat() }}" required></label>
+    {% if user.role == 'admin' %}<span class="muted" data-autosave-status>Đổi ngày là tự lưu</span>{% endif %}
   </form>
   <a class="button" href="/batches/{{ batch.id }}/order-file">Tải file ĐƠN HÀNG ONLINE</a>
   <a class="button secondary" href="/customers?batch_id={{ batch.id }}">Nhập tên khách</a>

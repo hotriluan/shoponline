@@ -1,4 +1,8 @@
-"""Mapping table upload: one sheet with columns Tên sản phẩm, Tên phân loại, Mã SAP, Tên SAP."""
+"""Mapping table upload: one sheet with columns Tên sản phẩm, Tên phân loại, Mã SAP, Tên SAP.
+
+Rows whose Mã SAP and Tên SAP are both blank are skipped, so the downloaded list of unmapped
+products can be uploaded back with only some rows filled in.
+"""
 
 from __future__ import annotations
 
@@ -6,6 +10,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import BinaryIO
 
+from openpyxl import Workbook
+from openpyxl.styles import Font
 from sqlalchemy.orm import Session
 
 from shoponline.domain.sku_mapping import upsert_mapping, validate_material_number
@@ -24,6 +30,25 @@ class MappingImportResult:
     saved: int
     unchanged: int
     fixed_orders: int
+    skipped: int = 0
+
+
+def build_mapping_template(pairs: list[tuple[str, str]]) -> Workbook:
+    """Workbook in the upload layout, product and variation filled, SAP columns left blank."""
+    workbook = Workbook()
+    sheet = workbook.active
+    sheet.title = "Ánh xạ"
+    sheet.append(list(REQUIRED))
+    for cell in sheet[1]:
+        cell.font = Font(bold=True)
+    for product, variation in pairs:
+        sheet.append([product, variation or "", "", ""])
+    for column, width in zip("ABCD", (60, 30, 14, 40), strict=True):
+        sheet.column_dimensions[column].width = width
+    # Text format keeps leading zeros and stops Excel turning long codes into numbers.
+    for row in sheet.iter_rows(min_row=2, min_col=3, max_col=3):
+        row[0].number_format = "@"
+    return workbook
 
 
 def import_mapping_file(
@@ -31,7 +56,11 @@ def import_mapping_file(
 ) -> MappingImportResult:
     table = read_table(source, required=REQUIRED)
     rows, errors = [], []
+    skipped = 0
     for row in table.rows:
+        if not row[COL_MATERIAL] and not row[COL_SAP_NAME]:
+            skipped += 1
+            continue
         try:
             if not row[COL_PRODUCT]:
                 raise ValueError(f"{COL_PRODUCT} trống")
@@ -44,7 +73,7 @@ def import_mapping_file(
     if errors:
         raise FileRejected("Bảng ánh xạ có dòng sai, không nhập gì", errors)
     if not rows:
-        raise FileRejected("Bảng ánh xạ không có dòng nào")
+        raise FileRejected("Bảng ánh xạ không có dòng nào điền Mã SAP và Tên SAP")
     saved = unchanged = 0
     for row in rows:
         _, changed = upsert_mapping(
@@ -59,4 +88,6 @@ def import_mapping_file(
         saved += changed
         unchanged += not changed
     fixed = reevaluate_mapping_errors(session, platform, actor)
-    return MappingImportResult(saved=saved, unchanged=unchanged, fixed_orders=fixed)
+    return MappingImportResult(
+        saved=saved, unchanged=unchanged, fixed_orders=fixed, skipped=skipped
+    )

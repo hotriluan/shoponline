@@ -27,18 +27,18 @@
 {% endif %}
 
 <h2>{% if batch %}Lô {{ batch.platform }} {{ batch.processing_date.strftime('%d/%m/%Y') }}{% else %}{{ platform }}{% endif %} ({{ rows|length }} dòng)</h2>
+{% if user.role == 'admin' %}<p class="muted">Gõ xong một ô rồi chuyển sang ô khác là dòng đó tự lưu; kết quả hiện ở cột cuối.</p>{% endif %}
 <table>
   <tr><th>Mã đơn</th><th>Tên khách</th><th>Địa chỉ</th><th></th></tr>
   {% for c in rows %}
-  <tr><form method="post" action="/customers/save">
-    <input type="hidden" name="platform" value="{{ c.platform }}">
-    <input type="hidden" name="platform_order_id" value="{{ c.platform_order_id }}">
-    <input type="hidden" name="return_to" value="{{ request.url.path }}?{{ request.url.query }}">
-    <td>{{ c.platform_order_id }}</td>
+  <tr{% if user.role == 'admin' %} data-autosave="/customers/save"{% endif %}>
+    <td>{{ c.platform_order_id }}
+      <input type="hidden" name="platform" value="{{ c.platform }}">
+      <input type="hidden" name="platform_order_id" value="{{ c.platform_order_id }}"></td>
     <td><input type="text" name="customer_name" value="{{ c.customer_name or '' }}" size="24"></td>
     <td><input type="text" name="address" value="{{ c.address or '' }}" size="60"></td>
-    <td>{% if user.role == 'admin' %}<button class="secondary">Lưu</button>{% endif %}</td>
-  </form></tr>
+    <td data-autosave-status></td>
+  </tr>
   {% endfor %}
 </table>
 {% endblock %}

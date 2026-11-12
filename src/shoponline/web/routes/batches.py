@@ -12,7 +12,16 @@ from shoponline.exports.order_workbook import build_order_workbook
 from shoponline.reconcile.so_link import LinkError, batch_report, link_manually
 from shoponline.sapjobs.queue import DuplicateJob
 from shoponline.sapjobs.report_requests import request_zrsd001, request_zrsd004
-from shoponline.web.app import current_user, flash, get_db, redirect, render, require_admin
+from shoponline.web.app import (
+    autosave_reply,
+    current_user,
+    flash,
+    get_db,
+    is_autosave,
+    redirect,
+    render,
+    require_admin,
+)
 from shoponline.web.uploads import save_generated
 
 router = APIRouter()
@@ -82,6 +91,8 @@ def set_gi_date(
 ):
     batch = _batch(db, batch_id)
     if gi_date < batch.processing_date:
+        if is_autosave(request):
+            return autosave_reply("Ngày goods issue không được trước ngày xử lý.", ok=False)
         flash(request, "Ngày goods issue không được trước ngày xử lý.", "error")
         return redirect(f"/batches/{batch_id}")
     old = batch.gi_date
@@ -94,6 +105,8 @@ def set_gi_date(
         detail={"batch_id": batch.id, "from": old.isoformat(), "to": gi_date.isoformat()},
     )
     db.commit()
+    if is_autosave(request):
+        return autosave_reply(f"Đã lưu ngày {gi_date:%d/%m/%Y}")
     flash(request, f"Đã đặt ngày goods issue {gi_date:%d/%m/%Y}.")
     return redirect(f"/batches/{batch_id}")
 

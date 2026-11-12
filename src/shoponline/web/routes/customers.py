@@ -3,7 +3,16 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from shoponline.db.models import AppUser, CustomerInfo, OrderBatch, PlatformSetting, SalesOrder
-from shoponline.web.app import current_user, flash, get_db, redirect, render, require_admin
+from shoponline.web.app import (
+    autosave_reply,
+    current_user,
+    flash,
+    get_db,
+    is_autosave,
+    redirect,
+    render,
+    require_admin,
+)
 
 router = APIRouter()
 
@@ -78,6 +87,8 @@ def save_customer(
 ):
     order_id = platform_order_id.strip()
     if not order_id or db.get(PlatformSetting, platform) is None:
+        if is_autosave(request):
+            return autosave_reply("Cần sàn và mã đơn.", ok=False)
         flash(request, "Cần sàn và mã đơn.", "error")
         return redirect(_safe(return_to))
     info = db.scalar(
@@ -97,6 +108,8 @@ def save_customer(
     )
     db.commit()
     note = "" if has_order or platform == "LAZADA" else " (chưa có đơn nào mang mã này)"
+    if is_autosave(request):
+        return autosave_reply(f"Đã lưu{note}")
     flash(request, f"Đã lưu khách hàng của đơn {order_id}{note}.")
     return redirect(_safe(return_to))
 

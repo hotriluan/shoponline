@@ -6,20 +6,26 @@
 
 {% if unmapped %}
 <h2 class="bad">Sản phẩm chưa có ánh xạ ({{ unmapped|length }})</h2>
+<p class="muted">Điền đủ Mã SAP và Tên SAP của một dòng rồi chuyển sang ô khác là dòng đó tự lưu; kết quả hiện ở cột cuối.
+  Nút <b>Lưu tất cả</b> lưu lại mọi dòng đã điền một lần nữa (dòng để trống được bỏ qua).
+  Nhiều dòng thì <a href="/sku-mappings/unmapped.xlsx?platform={{ platform }}">tải danh sách này ra Excel</a>, điền rồi nhập lại ở mục "Nhập từ Excel".</p>
+<form method="post" action="/sku-mappings/bulk">
+<input type="hidden" name="platform" value="{{ platform }}">
 <table>
   <tr><th>Tên sản phẩm</th><th>Tên phân loại</th><th>Mã SAP</th><th>Tên SAP</th><th></th></tr>
-  {% for product, variation in unmapped %}
-  <tr><form method="post" action="/sku-mappings">
-    <input type="hidden" name="platform" value="{{ platform }}">
-    <input type="hidden" name="product_name" value="{{ product }}">
-    <input type="hidden" name="variation_name" value="{{ variation }}">
-    <td>{{ product }}</td><td>{{ variation }}</td>
-    <td><input type="text" name="material_number" required size="12"></td>
-    <td><input type="text" name="sap_name" required size="34"></td>
-    <td>{% if user.role == 'admin' %}<button>Lưu</button>{% endif %}</td>
-  </form></tr>
+  {% for row in unmapped %}
+  <tr{% if user.role == 'admin' %} data-autosave="/sku-mappings" data-autosave-require="material_number,sap_name"{% endif %}>
+    <td>{{ row.product_name }}<input type="hidden" name="product_name" value="{{ row.product_name }}">
+      <input type="hidden" name="platform" value="{{ platform }}"></td>
+    <td>{{ row.variation_name }}<input type="hidden" name="variation_name" value="{{ row.variation_name }}"></td>
+    <td><input type="text" name="material_number" value="{{ row.material_number }}" size="12"></td>
+    <td><input type="text" name="sap_name" value="{{ row.sap_name }}" size="34"></td>
+    <td class="bad" data-autosave-status>{{ row.error }}</td>
+  </tr>
   {% endfor %}
 </table>
+{% if user.role == 'admin' %}<p><button>Lưu tất cả</button></p>{% endif %}
+</form>
 {% endif %}
 
 {% if user.role == 'admin' %}
@@ -35,7 +41,7 @@
 <h2>Nhập từ Excel</h2>
 <form class="box row" method="post" action="/sku-mappings/import" enctype="multipart/form-data">
   <input type="hidden" name="platform" value="{{ platform }}">
-  <label>File .xlsx, sheet đầu tiên có cột: {{ columns|join(', ') }}<input type="file" name="file" accept=".xlsx" required></label>
+  <label>File .xlsx, sheet đầu tiên có cột: {{ columns|join(', ') }} (dòng để trống Mã SAP và Tên SAP được bỏ qua)<input type="file" name="file" accept=".xlsx" required></label>
   <button>Nhập cho {{ platform }}</button>
 </form>
 {% endif %}
