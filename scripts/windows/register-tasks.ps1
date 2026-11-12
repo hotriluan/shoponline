@@ -16,12 +16,18 @@
   pwsh -ExecutionPolicy Bypass -File scripts\windows\register-tasks.ps1 -User MAYCHU\shoponline -BackupTime 23:00
 
 .EXAMPLE
+  pwsh -ExecutionPolicy Bypass -File scripts\windows\register-tasks.ps1 -User $env:USERDOMAIN\$env:USERNAME -AtLogOn
+
+.EXAMPLE
   pwsh -ExecutionPolicy Bypass -File scripts\windows\register-tasks.ps1 -RobotUser MAYCHU\saprobot
 #>
 param(
     [string]$User,
     [string]$RobotUser,
     [string]$BackupTime = "23:00",
+    # Run web and backup in -User's session when that user logs on (no stored password, no
+    # admin rights needed when -User is the current user). For a machine one person logs on to.
+    [switch]$AtLogOn,
     [int]$WebPort = 8750,
     [string]$Uv = (Get-Command uv -ErrorAction SilentlyContinue).Source
 )
@@ -54,21 +60,33 @@ if ($listening) {
     throw "Cổng $WebPort đang được $($owner.ProcessName) (PID $($listening[0].OwningProcess)) dùng. Dừng tiến trình đó hoặc đổi SHOPONLINE_WEB_PORT trước."
 }
 
-$secure = Read-Host -Prompt "Mật khẩu Windows của $User" -AsSecureString
-$plain = [Runtime.InteropServices.Marshal]::PtrToStringBSTR([Runtime.InteropServices.Marshal]::SecureStringToBSTR($secure))
+if ($AtLogOn) {
+    # Single-user machine: tasks run in the user's session, so no password is stored.
+    $account = @{ Principal = New-ScheduledTaskPrincipal -UserId $User -LogonType Interactive -RunLevel Limited }
+    $webTrigger = New-ScheduledTaskTrigger -AtLogOn -User $User
+    $webWhen = "khi $User đăng nhập"
+} else {
+    $secure = Read-Host -Prompt "Mật khẩu Windows của $User" -AsSecureString
+    $plain = [Runtime.InteropServices.Marshal]::PtrToStringBSTR([Runtime.InteropServices.Marshal]::SecureStringToBSTR($secure))
+    $account = @{ User = $User; Password = $plain; RunLevel = "Limited" }
+    $webTrigger = New-ScheduledTaskTrigger -AtStartup
+    $webWhen = "khi máy khởi động"
+}
 $settings = New-ScheduledTaskSettingsSet -StartWhenAvailable -RestartCount 3 -RestartInterval (New-TimeSpan -Minutes 1) -ExecutionTimeLimit ([TimeSpan]::Zero)
 
-$webAction = New-ScheduledTaskAction -Execute $Uv -Argument "run shoponline web" -WorkingDirectory $repoRoot
-Register-ScheduledTask -TaskName "shoponline-web" -Action $webAction -Trigger (New-ScheduledTaskTrigger -AtStartup) `
-    -Settings $settings -User $User -Password $plain -RunLevel Limited -Force | Out-Null
-Write-Host "Đã đăng ký shoponline-web (chạy khi máy khởi động)"
-
+# Hidden pwsh wrapper: an interactive-logon task would otherwise open a console window someone could close.
 $pwsh = (Get-Command pwsh).Source
+$webAction = New-ScheduledTaskAction -Execute $pwsh `
+    -Argument "-NoProfile -WindowStyle Hidden -Command `"& '$Uv' run --no-dev shoponline web`"" -WorkingDirectory $repoRoot
+Register-ScheduledTask -TaskName "shoponline-web" -Action $webAction -Trigger $webTrigger `
+    -Settings $settings @account -Force | Out-Null
+Write-Host "Đã đăng ký shoponline-web (chạy $webWhen)"
+
 $backupAction = New-ScheduledTaskAction -Execute $pwsh `
-    -Argument "-NoProfile -ExecutionPolicy Bypass -File `"$repoRoot\scripts\windows\backup-db.ps1`"" -WorkingDirectory $repoRoot
+    -Argument "-NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File `"$repoRoot\scripts\windows\backup-db.ps1`"" -WorkingDirectory $repoRoot
 $backupSettings = New-ScheduledTaskSettingsSet -StartWhenAvailable -ExecutionTimeLimit (New-TimeSpan -Hours 1)
 Register-ScheduledTask -TaskName "shoponline-backup" -Action $backupAction -Trigger (New-ScheduledTaskTrigger -Daily -At $BackupTime) `
-    -Settings $backupSettings -User $User -Password $plain -RunLevel Limited -Force | Out-Null
+    -Settings $backupSettings @account -Force | Out-Null
 Write-Host "Đã đăng ký shoponline-backup (hằng ngày lúc $BackupTime)"
 
 Start-ScheduledTask -TaskName "shoponline-web"
