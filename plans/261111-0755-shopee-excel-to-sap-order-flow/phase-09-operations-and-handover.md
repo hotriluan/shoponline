@@ -3,14 +3,14 @@ title: "Phase 9: Vận hành và bàn giao"
 status: todo
 priority: P1
 effort: 3d
-dependencies: [1, 2, 3, 4, 5, 6, 7, 8]
+dependencies: [1, 2, 3, 4, 5]
 ---
 
 # Phase 9: Vận hành và bàn giao
 
 ## Overview
 
-Hoàn thiện những gì cần để hệ thống chạy lâu dài mà không phụ thuộc lập trình viên: diễn tập dựng lại máy, thời hạn lưu dữ liệu khách, rà soát quyền, sổ tay vận hành, đào tạo. Sao lưu và cảnh báo cơ bản đã có từ phase 4 và 5; phase này kiểm chứng và khóa chúng lại.
+Hoàn thiện những gì cần để hệ thống chạy lâu dài mà không phụ thuộc lập trình viên: diễn tập dựng lại máy, thời hạn lưu dữ liệu khách, rà soát quyền, sổ tay vận hành, đào tạo. Sao lưu và cảnh báo cơ bản đã có từ phase 4 và 5; phase này kiểm chứng và khóa chúng lại. Robot chỉ đọc báo cáo trên Production, nên mọi buổi diễn tập liên quan tới SAP chạy trên Production và chỉ đọc.
 
 ## Requirements
 
@@ -28,13 +28,13 @@ Hoàn thiện những gì cần để hệ thống chạy lâu dài mà không p
 
 ## Implementation Steps
 
-1. **Diễn tập dựng lại máy.** Trên một máy Windows trống, làm theo `deployment-guide.md`: cài PostgreSQL, SAP GUI, Python, gói `shoponline[robot]`, cấu hình theo `robot-machine-setup.md`, khôi phục database bằng `restore-db.ps1` một lần từ ổ mạng công ty và một lần từ Google Drive, đăng ký tác vụ. Kiểm tra đơn, hàng đợi, và robot đọc được `zrsd001` trên QA. Ghi thời gian thực tế.
+1. **Diễn tập dựng lại máy.** Trên một máy Windows trống, làm theo `deployment-guide.md`: cài PostgreSQL, SAP GUI, Python, gói `shoponline[robot]`, cấu hình theo `robot-machine-setup.md`, khôi phục database bằng `restore-db.ps1` một lần từ ổ mạng công ty và một lần từ Google Drive, đăng ký tác vụ. Kiểm tra đơn, hàng đợi, và robot đọc được `zrsd001` trên Production. Ghi thời gian thực tế.
 2. **Kế hoạch khi máy hỏng.** Chốt với chủ dự án: máy thay thế lấy ở đâu, ai dựng lại, và trong lúc chờ admin làm Excel tay thế nào.
 3. **Thời hạn lưu.** Viết `retention.py` theo thời hạn công ty chốt. Chạy ở chế độ chỉ liệt kê trong tuần đầu, có người xem danh sách trước khi bật xóa thật.
-4. **Rà soát quyền.** PostgreSQL chỉ nghe trên `localhost`; tường lửa chỉ mở cổng web cho mạng nội bộ; tài khoản Windows của robot không dùng cho việc khác; rà vai trò người dùng web và quyền T-code của user robot.
-5. **Rà soát bí mật.** Quét lịch sử git; lập lịch đổi mật khẩu SAP của robot; cảnh báo khi mật khẩu sắp hết hạn.
-6. **Sổ tay vận hành.** Một mục cho mỗi tình huống: robot dừng, popup lạ, phiên SAP bị đăng xuất, đơn ở `NEED_REVIEW`, đơn thiếu ánh xạ, SO gõ sai mã đơn, bản ghi `ZDI1` còn sót, đơn hủy sau khi có chứng từ, sàn đổi mẫu file, chuyển một sàn về chế độ `manual`, làm tay khi máy dừng. Mỗi mục có dấu hiệu, việc cần làm, và khi nào gọi lập trình viên.
-7. **Diễn tập sự cố.** Cùng người vận hành thử ba tình huống trên QA: tắt robot giữa lượt, rút mạng khi robot đang tạo SO, tải lên file sàn thiếu cột. Sửa sổ tay ở chỗ họ vướng.
+4. **Rà soát quyền.** PostgreSQL chỉ nghe trên `localhost`; tường lửa chỉ mở cổng web cho mạng nội bộ; tài khoản Windows của robot không dùng cho việc khác; rà vai trò người dùng web và quyền T-code của user robot; chạy lại test lớp chặn T-code và xác nhận danh sách T-code được phép vẫn chỉ gồm `ZRSD001`, `ZRSD004`, màn hình đăng nhập và menu chính. User robot `AL17016` có quyền sửa SO (chủ dự án chọn giữ nguyên ngày 2026-11-12), nên phải bảo vệ máy robot: mật khẩu SAP chỉ nằm trong kho bí mật Windows của tài khoản `saprobot`; tài khoản `saprobot` không dùng cho việc khác và không có quyền admin Windows; không ai đăng nhập SAP bằng tay với `AL17016`; Remote Desktop vào máy chỉ cho người quản trị; máy đặt nơi có kiểm soát người ra vào.
+5. **Rà soát bí mật.** Quét lịch sử git; `AL17016` là user Service nên mật khẩu không hết hạn; vẫn đổi mật khẩu khi có người rời vai trò vận hành hoặc nghi lộ mật khẩu (hệ thống nhớ 5 mật khẩu gần nhất nên không dùng lại được); định kỳ xem nhật ký đăng nhập của `AL17016` (`RSUSR200` hoặc `SM20`) để phát hiện đăng nhập không phải từ máy robot.
+6. **Sổ tay vận hành.** Một mục cho mỗi tình huống: robot dừng, robot tự tạm dừng vì gặp T-code ngoài danh sách, popup lạ, phiên SAP bị đăng xuất, việc ở `NEED_REVIEW`, đơn thiếu ánh xạ, SO gõ sai mã đơn, đơn hủy sau khi có chứng từ, sàn đổi mẫu file, tải báo cáo tay khi robot dừng, làm tay khi máy dừng. Mỗi mục có dấu hiệu, việc cần làm, và khi nào gọi lập trình viên.
+7. **Diễn tập sự cố.** Cùng người vận hành thử ba tình huống trên Production, chỉ đọc: tắt robot giữa lượt, rút mạng khi robot đang đọc báo cáo, tải lên file sàn thiếu cột. Sửa sổ tay ở chỗ họ vướng.
 8. **Tài liệu.** Viết kiến trúc, bảo mật và lưu dữ liệu; cập nhật `README.md`. Đối chiếu từng lệnh và đường dẫn trong tài liệu với mã thật.
 9. **Bàn giao.** Đào tạo admin shop online, sales admin và người quản trị; chốt người nhận từng loại cảnh báo; ghi cách thêm một sàn mới (một bộ đọc file, một dòng `platform_setting`, bảng ánh xạ của sàn).
 
@@ -78,4 +78,4 @@ Phase này không đổi luồng nghiệp vụ. Việc xóa theo thời hạn kh
 
 ## Next Steps
 
-Việc kế tiếp có thể cân nhắc: bộ đọc Lazada khi có file mẫu, và mở robot cho TikTok nếu sản lượng tăng.
+Việc kế tiếp có thể cân nhắc: bộ đọc Lazada khi có file mẫu. Robot ghi SO và DO (phase 6–8 đã bỏ) chỉ mở lại thành dự án riêng nếu sản lượng tăng tới mức sales admin không làm kịp.

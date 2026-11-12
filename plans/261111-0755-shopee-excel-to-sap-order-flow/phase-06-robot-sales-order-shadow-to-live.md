@@ -1,12 +1,14 @@
 ---
 title: "Phase 6: Robot tạo SO Shopee, shadow rồi ghi thật"
-status: todo
+status: cancelled
 priority: P1
 effort: 5d
 dependencies: [5]
 ---
 
 # Phase 6: Robot tạo SO Shopee, shadow rồi ghi thật
+
+> **Đã bỏ ngày 2026-11-12.** Robot không ghi vào SAP; sales admin tiếp tục tạo SO và DO. Robot chỉ đọc `zrsd001` và `zrsd004` trên Production (phase 5). Lý do: [báo cáo brainstorm thu hẹp robot](../reports/brainstorm-261112-0915-robot-read-only-production-scope.md). Nội dung bên dưới giữ lại để tham khảo nếu sau này mở lại thành dự án riêng.
 
 ## Overview
 
