@@ -40,15 +40,15 @@ function Test-WebUp {
 
 function Stop-Web {
     Stop-ScheduledTask -TaskName "shoponline-web"
+    # Stopping the task ends only its wrapper; the Python processes it started keep the port.
+    # Stop the web processes of this checkout's venv (the venv launcher and its child).
+    $venvWeb = [regex]::Escape((Join-Path $script:RepoRoot ".venv\Scripts\shoponline.exe")) + '"?\s+web(\s|$)'
     $deadline = (Get-Date).AddSeconds($WaitSeconds)
     while ((Get-Date) -lt $deadline) {
-        $listener = Get-NetTCPConnection -LocalPort $port -State Listen -ErrorAction SilentlyContinue
-        if (-not $listener) { return }
-        # Only a process running from this checkout is ours to stop.
-        $owner = Get-Process -Id $listener[0].OwningProcess -ErrorAction SilentlyContinue
-        if ($owner -and $owner.Path -and $owner.Path.StartsWith($script:RepoRoot, [StringComparison]::OrdinalIgnoreCase)) {
-            Stop-Process -Id $owner.Id
-        }
+        Get-CimInstance Win32_Process -Filter "Name = 'python.exe'" |
+            Where-Object { $_.CommandLine -match $venvWeb } |
+            ForEach-Object { Stop-Process -Id $_.ProcessId -ErrorAction SilentlyContinue }
+        if (-not (Get-NetTCPConnection -LocalPort $port -State Listen -ErrorAction SilentlyContinue)) { return }
         Start-Sleep -Seconds 1
     }
     throw "Cổng $port vẫn bị giữ sau $WaitSeconds giây; kiểm tra tiến trình đang nghe cổng đó"
