@@ -106,6 +106,8 @@ def download_accounting_file(
     record = db.get(ImportBatch, record_id)
     if record is None or record.kind != "zrsd004":
         raise HTTPException(404, "Không có file zrsd004 này")
+    if not Path(record.stored_path).is_file():
+        raise HTTPException(404, "File zrsd004 này đã quá thời hạn lưu và bị xóa")
     result = build_accounting_workbook(Path(record.stored_path), database_lookup(db))
     path = save_generated(
         db,

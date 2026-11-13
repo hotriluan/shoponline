@@ -30,6 +30,8 @@ class Settings:
     sap_target: SapTarget | None = None
     robot_max_failures: int = 3
     evidence_keep_days: int = 30
+    # Customer names, addresses and stored workbooks are deleted after this many days.
+    retention_days: int = 90
 
     @property
     def upload_dir(self) -> Path:
@@ -92,6 +94,7 @@ def load_settings(env: dict[str, str] | None = None) -> Settings:
         sap_target=SapTarget(system, client) if system else None,
         robot_max_failures=_positive_int(env, "SHOPONLINE_ROBOT_MAX_FAILURES", 3),
         evidence_keep_days=_positive_int(env, "SHOPONLINE_ROBOT_EVIDENCE_KEEP_DAYS", 30),
+        retention_days=_positive_int(env, "SHOPONLINE_RETENTION_DAYS", 90),
     )
 
 

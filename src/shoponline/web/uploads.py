@@ -41,7 +41,9 @@ def store_file(
     digest = hashlib.sha256(data).hexdigest()
     settings.upload_dir.mkdir(parents=True, exist_ok=True)
     stored = settings.upload_dir / f"{digest}.xlsx"
-    if not stored.exists():
+    if stored.exists():
+        stored.touch()  # same content uploaded again: restart its retention period
+    else:
         stored.write_bytes(data)
     return ImportBatch(
         kind=kind,

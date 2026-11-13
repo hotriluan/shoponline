@@ -156,6 +156,12 @@ def test_manual_mode_end_to_end(app, db, tmp_path):
     db.expire_all()
     assert {o.status for o in db.scalars(select(SalesOrder))} == {states.DELIVERED}
 
+    # 7. once retention deleted the stored zrsd004, the download says so instead of failing
+    for stored in app.state.settings.upload_dir.glob("*.xlsx"):
+        stored.unlink()
+    resp = client.get(f"/sap-reports/zrsd004/{record_id}/accounting-file")
+    assert resp.status_code == 404 and "thời hạn lưu" in resp.text
+
 
 def test_viewer_cannot_change_data(app, db, tmp_path):
     client = _client(app, "viewer", "viewer-password")

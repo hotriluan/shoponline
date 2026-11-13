@@ -126,6 +126,38 @@ def _cmd_robot_switch(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_retention(args: argparse.Namespace) -> int:
+    from datetime import datetime
+
+    from shoponline.db.session import session_scope
+    from shoponline.maintenance import retention
+
+    settings = load_settings()
+    with session_scope(settings.database_url) as session:
+        plan = retention.find_expired(session, settings)
+        if args.apply:
+            retention.apply(session, plan, getpass.getuser())
+    if args.apply:
+        retention.delete_files(settings, plan)
+    verb = "Đã xóa" if args.apply else "Sẽ xóa (chế độ liệt kê, thêm --apply để xóa thật)"
+    lines = [
+        f"{datetime.now():%Y-%m-%d %H:%M} thời hạn {settings.retention_days} ngày, "
+        f"mốc {plan.cutoff:%Y-%m-%d}",
+        f"{verb}: tên và địa chỉ của {len(plan.customer_orders)} đơn, {len(plan.files)} file",
+        *(f"  đơn {platform} {order_id}" for platform, order_id in plan.customer_orders),
+        *(f"  file {path}" for path in plan.files),
+        f"Giữ lại vì đơn chưa có file gửi kế toán: {len(plan.held_orders)} đơn",
+        *(f"  đơn {platform} {order_id}" for platform, order_id in plan.held_orders),
+    ]
+    text = "\n".join(lines)
+    print(text)
+    log_dir = settings.data_dir / "logs"
+    log_dir.mkdir(parents=True, exist_ok=True)
+    with (log_dir / "retention.log").open("a", encoding="utf-8") as log:
+        log.write(text + "\n\n")
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     for stream in (sys.stdout, sys.stderr):
         if hasattr(stream, "reconfigure"):
@@ -145,6 +177,11 @@ def main(argv: list[str] | None = None) -> int:
     pause.add_argument("--reason", default="")
     pause.set_defaults(func=_cmd_robot_switch)
     sub.add_parser("robot-resume", help="Bật lại robot SAP").set_defaults(func=_cmd_robot_switch)
+    keep = sub.add_parser(
+        "retention", help="Liệt kê (hoặc xóa với --apply) dữ liệu khách quá thời hạn lưu"
+    )
+    keep.add_argument("--apply", action="store_true", help="Xóa thật thay vì chỉ liệt kê")
+    keep.set_defaults(func=_cmd_retention)
 
     args = parser.parse_args(argv)
     try:
