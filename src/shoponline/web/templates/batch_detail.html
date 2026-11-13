@@ -21,6 +21,10 @@
   <a class="button secondary" href="/sap-reports?batch_id={{ batch.id }}">Tải zrsd001</a>
   {% if robot_enabled and user.role == 'admin' %}
   {% if robot_verified %}
+  <form method="post" action="/batches/{{ batch.id }}/read-zrsd001" class="inline"
+        onsubmit="return confirm('Robot sẽ đọc lại zrsd001 của lô này?')">
+    <button class="secondary">Đọc lại zrsd001</button>
+  </form>
   <form method="post" action="/batches/{{ batch.id }}/accounting-file" class="inline">
     <button class="secondary">Xuất file gửi kế toán (robot đọc zrsd004 ngày {{ batch.gi_date.strftime('%d/%m/%Y') }})</button>
   </form>

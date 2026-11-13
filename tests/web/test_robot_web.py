@@ -12,7 +12,7 @@ from shoponline.importers.order_import import import_orders
 from shoponline.importers.shopee_orders import read_shopee_orders
 from shoponline.sapjobs import queue
 from shoponline.sapjobs.queue import SapTarget
-from shoponline.web.app import create_app
+from shoponline.web.app import UNVERIFIED_MESSAGE, create_app
 from shoponline.web.auth import set_user
 from tests.fixtures.build_fixtures import shopee_orders_file, shopee_row
 from tests.sap_setup import NO_ENV, configure_sap
@@ -111,3 +111,105 @@ def test_retry_failed_read_job_and_evidence_stays_inside_folder(db, tmp_path):
     client.post(f"/robot/jobs/{job.id}/retry")
     db.expire_all()
     assert db.get(SapJob, job.id).status == queue.PENDING
+
+
+def _finish(db, job):
+    queue.claim(db)
+    queue.complete(db, job, {})
+
+
+def test_reread_zrsd001_after_the_first_read_is_done(db, tmp_path, batch):
+    client = _login(_app(db, tmp_path, QA), "admin")
+    client.post(f"/batches/{batch.id}/confirm")
+    first = _jobs(db)[0]
+
+    page = client.post(f"/batches/{batch.id}/read-zrsd001").text
+    assert f"Đã có việc #{first.id}" in page  # still open: refused with the job number
+    assert len(_jobs(db)) == 1
+
+    _finish(db, first)
+    page = client.post(f"/batches/{batch.id}/read-zrsd001").text
+    assert "Robot sẽ đọc lại zrsd001" in page
+    assert [j.kind for j in _jobs(db)] == [queue.READ_ZRSD001, queue.READ_ZRSD001]
+
+
+def test_reread_is_refused_for_unconfirmed_batch(db, tmp_path, batch):
+    client = _login(_app(db, tmp_path, QA), "admin")
+    page = client.post(f"/batches/{batch.id}/read-zrsd001").text
+    assert "Lô chưa xác nhận" in page and _jobs(db) == []
+
+
+def test_robot_form_queues_the_same_zrsd004_as_the_batch_button(db, tmp_path, batch):
+    client = _login(_app(db, tmp_path, QA), "admin")
+    client.post(f"/batches/{batch.id}/accounting-file")
+    from_button = queue.payload_of(_jobs(db)[0])
+    _finish(db, _jobs(db)[0])
+
+    form = {"report": "zrsd004", "platform": "SHOPEE", "gi_date": "2026-11-12"}
+    assert "Robot sẽ đọc zrsd004" in client.post("/robot/jobs/new", data=form).text
+    assert queue.payload_of(_jobs(db)[1]) == from_button
+    assert "Đã có việc" in client.post("/robot/jobs/new", data=form).text
+    assert len(_jobs(db)) == 2
+
+
+def test_robot_form_reads_a_day_without_batches_but_not_the_future(db, tmp_path):
+    client = _login(_app(db, tmp_path, QA), "admin")
+    ok = {"report": "zrsd004", "platform": "SHOPEE", "gi_date": "2026-01-05"}
+    client.post("/robot/jobs/new", data=ok)
+    assert queue.payload_of(_jobs(db)[0])["gi_date"] == "2026-01-05"
+
+    future = {**ok, "gi_date": "2999-01-01"}
+    assert "chưa tới" in client.post("/robot/jobs/new", data=future).text
+    unknown = {**ok, "platform": "NOPE"}
+    assert "Không có sàn NOPE" in client.post("/robot/jobs/new", data=unknown).text
+    assert len(_jobs(db)) == 1
+
+
+def test_robot_form_zrsd001_needs_a_confirmed_batch(db, tmp_path, batch):
+    client = _login(_app(db, tmp_path, QA), "admin")
+    form = {"report": "zrsd001", "batch_id": str(batch.id)}
+    assert "chưa xác nhận" in client.post("/robot/jobs/new", data=form).text
+    assert "Chọn một lô" in client.post("/robot/jobs/new", data={"report": "zrsd001"}).text
+    assert _jobs(db) == []
+
+    client.post(f"/batches/{batch.id}/confirm")
+    _finish(db, _jobs(db)[0])
+    assert "Robot sẽ đọc zrsd001" in client.post("/robot/jobs/new", data=form).text
+    assert len(_jobs(db)) == 2
+    assert client.post("/robot/jobs/new", data={"report": "zrsd005"}).status_code == 400
+
+
+def test_commands_are_refused_until_the_connection_is_verified(db, tmp_path, batch):
+    app = _app(db, tmp_path, QA)
+    client = _login(app, "admin")
+    client.post(f"/batches/{batch.id}/confirm")
+    _finish(db, _jobs(db)[0])
+    configure_sap(db, SapTarget("QAS", "400"), verified=False)  # a changed system is unchecked
+    db.expire_all()
+    assert UNVERIFIED_MESSAGE in client.post(f"/batches/{batch.id}/read-zrsd001").text
+    form = {"report": "zrsd004", "platform": "SHOPEE", "gi_date": "2026-11-12"}
+    assert UNVERIFIED_MESSAGE in client.post("/robot/jobs/new", data=form).text
+    assert len(_jobs(db)) == 1
+    assert "Đọc zrsd001" not in client.get("/robot").text
+
+
+def test_viewer_cannot_command_and_sees_no_form(db, tmp_path, batch):
+    app = _app(db, tmp_path, QA)
+    admin = _login(app, "admin")
+    admin.post(f"/batches/{batch.id}/confirm")
+    _finish(db, _jobs(db)[0])
+    assert 'action="/robot/jobs/new"' in admin.get("/robot").text
+    assert "Đọc lại zrsd001" in admin.get(f"/batches/{batch.id}").text
+
+    viewer = _login(app, "viewer")
+    form = {"report": "zrsd004", "platform": "SHOPEE", "gi_date": "2026-11-12"}
+    viewer.post("/robot/jobs/new", data=form)
+    viewer.post(f"/batches/{batch.id}/read-zrsd001")
+    assert len(_jobs(db)) == 1
+    assert 'action="/robot/jobs/new"' not in viewer.get("/robot").text
+    assert "Đọc lại zrsd001" not in viewer.get(f"/batches/{batch.id}").text
+
+
+def test_robot_without_target_shows_no_form(db, tmp_path):
+    client = _login(_app(db, tmp_path, None), "admin")
+    assert 'action="/robot/jobs/new"' not in client.get("/robot").text

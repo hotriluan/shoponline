@@ -26,6 +26,34 @@
   {% endif %}
 </div>
 
+{% if user.role == 'admin' and target %}
+<h2>Ra lệnh cho robot</h2>
+<div class="box">
+  {% if command_refusal %}
+  <span class="muted">{{ command_refusal }}</span>
+  {% else %}
+  <form method="post" action="/robot/jobs/new" class="row"
+        onsubmit="return confirm('Robot sẽ đọc lại zrsd001 của lô này?')">
+    <input type="hidden" name="report" value="zrsd001">
+    <label>Lô đã xác nhận
+      <select name="batch_id" required>
+        {% for b in batches %}<option value="{{ b.id }}">{{ b.platform }} {{ b.processing_date.strftime('%d/%m/%Y') }}</option>{% endfor %}
+      </select></label>
+    <button class="secondary">Đọc zrsd001</button>
+  </form>
+  <form method="post" action="/robot/jobs/new" class="row">
+    <input type="hidden" name="report" value="zrsd004">
+    <label>Sàn
+      <select name="platform" required>
+        {% for p in platforms %}<option value="{{ p.platform }}">{{ p.display_name }}</option>{% endfor %}
+      </select></label>
+    <label>Ngày GI <input type="date" name="gi_date" value="{{ today.isoformat() }}" max="{{ today.isoformat() }}" required></label>
+    <button class="secondary">Đọc zrsd004</button>
+  </form>
+  {% endif %}
+</div>
+{% endif %}
+
 <h2>Hàng đợi</h2>
 <p>
   <a href="/robot">Tất cả</a>{% for code, label in JOB_LABELS.items() %} · <a href="/robot?status={{ code }}">{{ label }}</a>{% endfor %}

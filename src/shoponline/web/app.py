@@ -92,6 +92,20 @@ def sap_config(request: Request, db: Session) -> sap_settings.SapSettings:
     return sap_settings.load(db, request.app.state.env)
 
 
+UNVERIFIED_MESSAGE = (
+    "Đã đổi hệ thống SAP, cần kiểm tra kết nối thành công trước (trang Kết nối SAP)"
+)
+
+
+def robot_refusal(config: sap_settings.SapSettings) -> str | None:
+    """Why the robot cannot be given a job now, or None when it can."""
+    if config.target is None:
+        return "Robot chưa được bật; tải báo cáo SAP lên bằng tay."
+    if not config.target_verified:
+        return UNVERIFIED_MESSAGE
+    return None
+
+
 def robot_state(request: Request) -> RobotState:
     with request.app.state.session_factory() as db:
         config = sap_config(request, db)

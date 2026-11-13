@@ -1,4 +1,5 @@
 import json
+from datetime import date
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Request
@@ -6,8 +7,9 @@ from fastapi.responses import FileResponse
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from shoponline.db.models import AppUser, SapJob
+from shoponline.db.models import AppUser, OrderBatch, PlatformSetting, SapJob
 from shoponline.sapjobs import queue, sap_settings
+from shoponline.sapjobs.report_requests import request_zrsd001, request_zrsd004
 from shoponline.sapjobs.sap_settings import SapSettingsError
 from shoponline.web.app import (
     current_user,
@@ -16,10 +18,13 @@ from shoponline.web.app import (
     redirect,
     render,
     require_admin,
+    robot_refusal,
     sap_config,
 )
 
 router = APIRouter()
+
+RECENT_BATCHES = 60  # confirmed batches offered in the command form
 
 
 @router.get("/robot")
@@ -32,6 +37,16 @@ def robot_page(
     stmt = select(SapJob).order_by(SapJob.id.desc()).limit(200)
     if status in queue.LABELS:
         stmt = stmt.where(SapJob.status == status)
+    config = sap_config(request, db)
+    batches = platforms = []
+    if user.role == "admin" and config.target is not None:
+        batches = db.scalars(
+            select(OrderBatch)
+            .where(OrderBatch.confirmed_at.is_not(None))
+            .order_by(OrderBatch.processing_date.desc(), OrderBatch.platform)
+            .limit(RECENT_BATCHES)
+        ).all()
+        platforms = db.scalars(select(PlatformSetting).order_by(PlatformSetting.platform)).all()
     return render(
         request,
         "robot.html",
@@ -41,7 +56,11 @@ def robot_page(
         status=status,
         read_kinds=queue.READ_KINDS,
         retryable=(queue.FAILED, queue.UNKNOWN, queue.NEED_REVIEW),
-        target=sap_config(request, db).target,
+        target=config.target,
+        command_refusal=robot_refusal(config),
+        batches=batches,
+        platforms=platforms,
+        today=date.today(),
         payload_of=queue.payload_of,
         result_of=queue.result_of,
     )
@@ -67,6 +86,51 @@ def resume_robot(
     queue.resume(db, user.username)
     db.commit()
     flash(request, "Đã bật lại robot.")
+    return redirect("/robot")
+
+
+@router.post("/robot/jobs/new")
+def command_robot(
+    request: Request,
+    report: str = Form(...),
+    batch_id: str = Form(""),
+    platform: str = Form(""),
+    gi_date: str = Form(""),
+    db: Session = Depends(get_db),
+    user: AppUser = Depends(require_admin),
+):
+    """Ask the robot to read zrsd001 for a confirmed batch or zrsd004 for a platform and GI date."""
+    if report not in ("zrsd001", "zrsd004"):
+        raise HTTPException(400, "Báo cáo không hợp lệ")
+    config = sap_config(request, db)
+    refusal = robot_refusal(config)
+    if refusal:
+        flash(request, refusal, "error")
+        return redirect("/robot")
+    try:
+        if report == "zrsd001":
+            batch = db.get(OrderBatch, int(batch_id)) if batch_id.strip().isdigit() else None
+            if batch is None:
+                raise ValueError("Chọn một lô để đọc zrsd001.")
+            if batch.confirmed_at is None:
+                raise ValueError("Lô chưa xác nhận nên chưa đọc zrsd001 được.")
+            job = request_zrsd001(db, config.target, batch, user.username)
+            done = f"Robot sẽ đọc zrsd001 của lô {batch.platform} {batch.processing_date:%d/%m/%Y}"
+        else:
+            try:
+                day = date.fromisoformat(gi_date)
+            except ValueError:
+                raise ValueError("Chọn ngày goods issue để đọc zrsd004.") from None
+            if day > date.today():
+                raise ValueError("Ngày goods issue chưa tới nên SAP chưa có dữ liệu.")
+            job = request_zrsd004(db, config.target, platform, day, user.username)
+            done = f"Robot sẽ đọc zrsd004 của {platform} ngày {day:%d/%m/%Y}"
+    except ValueError as exc:  # includes DuplicateJob, which names the open job
+        db.rollback()
+        flash(request, str(exc), "error")
+        return redirect("/robot")
+    db.commit()
+    flash(request, f"{done} (việc #{job.id}).")
     return redirect("/robot")
 
 

@@ -110,6 +110,24 @@ def test_zrsd001_read_goes_through_the_upload_functions(db, settings, batch, tmp
     assert worker.run_once() is False  # queue empty
 
 
+def test_reading_zrsd001_twice_creates_no_duplicate_links(db, settings, batch, tmp_path):
+    report = zrsd001_file(
+        tmp_path / "export.xlsx", [zrsd001_row("210000001", "A1", "100000001", 2, 200000)]
+    )
+    txn = Transaction(lambda ctx: TransactionResult(file=report), False)
+    results = []
+    for _ in range(2):
+        job = request_zrsd001(db, QA, batch, "admin")
+        _worker(db, settings, _qa_session(), {queue.READ_ZRSD001: txn}).run_once()
+        results.append(queue.result_of(_job(db, job.id)))
+
+    assert results[0]["linked"] == 1
+    assert results[1].get("new", 0) == 0 and results[1].get("linked", 0) == 0
+    assert len(db.scalars(select(SapSoRef)).all()) == 1
+    order = db.scalar(select(SalesOrder).where(SalesOrder.platform_order_id == "A1"))
+    assert order.so_number == "210000001"
+
+
 def test_zrsd004_read_marks_delivered(db, settings, batch, tmp_path):
     from shoponline.importers.sap_reports import read_zrsd001
     from shoponline.reconcile.so_link import store_so_reports
@@ -117,7 +135,7 @@ def test_zrsd004_read_marks_delivered(db, settings, batch, tmp_path):
     z1 = zrsd001_file(tmp_path / "z1.xlsx", [zrsd001_row("210000001", "A1", "100000001", 2)])
     store_so_reports(db, read_zrsd001(z1), "t")
     z4 = zrsd004_file(tmp_path / "z4.xlsx", [zrsd004_row("1900000001", "210000001", "100000001")])
-    job = request_zrsd004(db, QA, batch, "admin")
+    job = request_zrsd004(db, QA, batch.platform, batch.gi_date, "admin")
     assert queue.payload_of(job)["sold_to"] == "1200001145"
     txn = Transaction(lambda ctx: TransactionResult(file=z4), False)
     _worker(db, settings, _qa_session(), {queue.READ_ZRSD004: txn}).run_once()
