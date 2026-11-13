@@ -39,3 +39,6 @@ Thumbs.db
 
 # Agent runtime logs
 .claude/hooks/.logs/
+
+# SAP recorder scripts, screenshots and sample exports hold real customer data
+docs/sap-recordings/
