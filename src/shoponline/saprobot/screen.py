@@ -5,7 +5,8 @@ Elements are reached only through the guarded session; keys and T-codes live in 
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from datetime import date
 from pathlib import Path
 
 import yaml
@@ -17,6 +18,7 @@ from shoponline.saprobot.guard import GuardedElement, GuardedSession
 @dataclass(frozen=True)
 class Screens:
     elements: dict[str, dict[str, str]]
+    formats: dict[str, str] = field(default_factory=dict)
 
     @classmethod
     def load(cls, path: Path) -> Screens:
@@ -24,7 +26,13 @@ class Screens:
         screens = data.get("screens") or {}
         if not isinstance(screens, dict) or not all(isinstance(v, dict) for v in screens.values()):
             raise ValueError(f"{path}: 'screens' phải là bảng tên màn hình → tên phần tử → ID")
-        return cls({name: {k: str(v) for k, v in els.items()} for name, els in screens.items()})
+        formats = data.get("formats") or {}
+        if not isinstance(formats, dict):
+            raise ValueError(f"{path}: 'formats' phải là bảng tên → định dạng")
+        return cls(
+            {name: {k: str(v) for k, v in els.items()} for name, els in screens.items()},
+            {k: str(v) for k, v in formats.items()},
+        )
 
     def id(self, screen: str, element: str) -> str:
         try:
@@ -33,6 +41,13 @@ class Screens:
             raise ScreenConfigMissing(
                 f"Thiếu ID '{screen}.{element}' trong config/sap_screens.yaml"
             ) from exc
+
+    def date_text(self, day: date) -> str:
+        """A date as the SAP user types it on filter screens."""
+        try:
+            return day.strftime(self.formats["date"])
+        except KeyError as exc:
+            raise ScreenConfigMissing("Thiếu 'formats.date' trong config/sap_screens.yaml") from exc
 
     def find(self, session: GuardedSession, screen: str, element: str) -> GuardedElement:
         return session.find(self.id(screen, element))

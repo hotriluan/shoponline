@@ -21,6 +21,7 @@ from shoponline.domain import states
 from shoponline.reconcile.report_ingest import ingest_zrsd001, ingest_zrsd004
 from shoponline.sapjobs import queue
 from shoponline.saprobot import evidence
+from shoponline.saprobot.desktop import SaveDialogs, WindowsDesktop
 from shoponline.saprobot.errors import GuardViolation, RobotError, UnknownPopup, WrongSystem
 from shoponline.saprobot.guard import GuardedSession
 from shoponline.saprobot.popups import PopupRule, SeenPopup, handle_popups
@@ -48,6 +49,7 @@ class JobContext:
     screens: Screens
     popups: list[PopupRule]
     work_dir: Path
+    desktop: SaveDialogs = field(default_factory=WindowsDesktop)
     seen_popups: list[SeenPopup] = field(default_factory=list)
 
     def step(self) -> StatusMessage:
@@ -137,6 +139,7 @@ class Worker:
         screens: Screens,
         popups: list[PopupRule],
         transactions: dict[str, Transaction] | None = None,
+        desktop: SaveDialogs | None = None,
     ):
         self.settings = settings
         self.session_factory = session_factory
@@ -145,6 +148,7 @@ class Worker:
         self.screens = screens
         self.popups = popups
         self.transactions = TRANSACTIONS if transactions is None else transactions
+        self.desktop = desktop or WindowsDesktop()
 
     def run_once(self) -> bool:
         """Process at most one job. Returns False when paused or nothing is pending."""
@@ -177,6 +181,7 @@ class Worker:
                 screens=self.screens,
                 popups=self.popups,
                 work_dir=self.settings.robot_work_dir / f"job-{job_id}",
+                desktop=self.desktop,
             )
             ctx.work_dir.mkdir(parents=True, exist_ok=True)
             out = txn.run(ctx)

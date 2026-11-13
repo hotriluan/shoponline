@@ -112,7 +112,8 @@ def test_zrsd004_read_marks_delivered(db, settings, batch, tmp_path):
     z1 = zrsd001_file(tmp_path / "z1.xlsx", [zrsd001_row("210000001", "A1", "100000001", 2)])
     store_so_reports(db, read_zrsd001(z1), "t")
     z4 = zrsd004_file(tmp_path / "z4.xlsx", [zrsd004_row("1900000001", "210000001", "100000001")])
-    job = request_zrsd004(db, QA, date(2026, 11, 12), "admin")
+    job = request_zrsd004(db, QA, batch, "admin")
+    assert queue.payload_of(job)["sold_to"] == "1200001145"
     txn = Transaction(lambda ctx: TransactionResult(file=z4), False)
     _worker(db, settings, _qa_session(), {queue.READ_ZRSD004: txn}).run_once()
     job = _job(db, job.id)

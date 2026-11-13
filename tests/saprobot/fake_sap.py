@@ -36,10 +36,25 @@ class Element:
         self.session = session
         self.id = element_id
         self.text = ""
+        self.selected = False
 
     def press(self) -> None:
         self.session.actions.append(("press", self.id))
         self.session.on_press(self.id)
+
+    def select(self) -> None:
+        self.session.actions.append(("select", self.id))
+        self.selected = True
+
+    def setCurrentCell(self, row: int, column: str) -> None:  # noqa: N802
+        self.session.actions.append(("cell", self.id, row, column))
+
+    def contextMenu(self) -> None:  # noqa: N802
+        self.session.actions.append(("menu", self.id))
+
+    def selectContextMenuItem(self, item: str) -> None:  # noqa: N802
+        self.session.actions.append(("menu_item", self.id, item))
+        self.session.on_menu_item(item)
 
     def sendVKey(self, key: int) -> None:  # noqa: N802
         self.session.actions.append(("vkey", self.id, key))
@@ -103,6 +118,9 @@ class FakeSession:
             self.windows.pop()
 
     def on_vkey(self, key: int) -> None:
+        pass
+
+    def on_menu_item(self, item: str) -> None:
         pass
 
     def popup(self, title: str, text: str = "") -> None:

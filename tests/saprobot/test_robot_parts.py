@@ -1,5 +1,6 @@
 import os
 import time
+from datetime import date
 
 import pytest
 
@@ -89,9 +90,17 @@ def test_popup_config_loads_and_rejects_rules_matching_everything(tmp_path):
 def test_repo_config_files_load():
     from shoponline.cli import REPO_ROOT
 
-    assert load_rules(REPO_ROOT / "config" / "sap_popups.yaml") == []
+    rules = load_rules(REPO_ROOT / "config" / "sap_popups.yaml")
+    assert [r.name for r in rules] == ["select_spreadsheet"]
+    assert rules[0].matches("Select Spreadsheet", "") and not rules[0].matches("Information", "")
     screens = Screens.load(REPO_ROOT / "config" / "sap_screens.yaml")
     assert screens.id("login", "user").startswith("wnd[0]/usr/")
+    assert screens.date_text(date(2026, 11, 2)) == "02.11.2026"
+
+
+def test_missing_date_format_names_the_key():
+    with pytest.raises(ScreenConfigMissing, match="formats.date"):
+        SCREENS.date_text(date(2026, 11, 2))
 
 
 def test_missing_screen_id_names_the_key():

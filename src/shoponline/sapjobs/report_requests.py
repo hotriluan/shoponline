@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-from datetime import date
-
 from sqlalchemy.orm import Session
 
 from shoponline.db.models import OrderBatch, PlatformSetting, SapJob
@@ -32,13 +30,19 @@ def request_zrsd001(session: Session, target: SapTarget, batch: OrderBatch, acto
     )
 
 
-def request_zrsd004(session: Session, target: SapTarget, gi_date: date, actor: str) -> SapJob:
-    """zrsd004 covers every platform, so one read per goods issue date."""
+def request_zrsd004(session: Session, target: SapTarget, batch: OrderBatch, actor: str) -> SapJob:
+    """zrsd004 filtered to the platform's SAP customer: one read per platform and GI date.
+
+    Without the customer filter the report lists every delivery of the sales organization,
+    and the accounting file built from it would carry other customers' rows.
+    """
+    setting = session.get(PlatformSetting, batch.platform)
+    day = batch.gi_date.isoformat()
     return queue.enqueue(
         session,
         queue.READ_ZRSD004,
         target,
-        f"{queue.READ_ZRSD004}:{gi_date.isoformat()}",
-        {"gi_date": gi_date.isoformat()},
+        f"{queue.READ_ZRSD004}:{batch.platform}:{day}",
+        {"platform": batch.platform, "sold_to": setting.sap_customer, "gi_date": day},
         actor,
     )

@@ -27,7 +27,10 @@ Robot điều khiển SAP GUI nên cần màn hình đăng nhập thật, không
 2. Phía máy khách: SAP GUI Options → Accessibility & Scripting → Scripting: bật scripting, bỏ chọn hai ô "Notify when a script attaches to SAP GUI" và "Notify when a script opens a connection".
 3. Phía máy chủ: Basis bật tham số `sapgui/user_scripting` cho `AEP`.
 4. Trong SAP Logon tạo một mục trỏ đúng `AEP`. Tên mục này là `SHOPONLINE_SAP_CONNECTION`.
-5. Ngôn ngữ đăng nhập cố định, giống lúc ghi recorder.
+5. Ngôn ngữ đăng nhập cố định, giống lúc ghi recorder. Robot nhận diện cửa sổ theo tiêu đề tiếng Anh ("Save As", "SAP GUI Security", "Select Spreadsheet"), nên ngôn ngữ đăng nhập và ngôn ngữ Windows là tiếng Anh. Định dạng ngày của `AL17016` là `DD.MM.YYYY` (`formats.date` trong `config/sap_screens.yaml`).
+6. Cài Microsoft Excel. SAP mở file vừa xuất bằng Excel, rồi robot đóng cửa sổ đó.
+7. Không đặt luật SAP GUI Security "Deny" cho thư mục `<SHOPONLINE_DATA_DIR>\robot-work`. Robot tự bấm Allow cho đúng file nó vừa xuất. Có thể thêm luật "Allow" cho thư mục này để SAP không hỏi.
+8. Đăng nhập `AL17016` một lần, xuất thử một báo cáo bằng tay ra Excel, chọn "Excel (in Office 2007 XLSX Format)" và tick "Always Use Selected Format". Nếu không tick, robot vẫn trả lời được hộp chọn định dạng.
 
 ## 3. Cấu hình
 
@@ -43,7 +46,7 @@ Robot đọc cùng `.env` với `web`. Thêm:
 | `SHOPONLINE_ROBOT_MAX_FAILURES` | cả hai | Số việc lỗi liên tiếp thì robot tự dừng (mặc định 3) |
 | `SHOPONLINE_ROBOT_EVIDENCE_KEEP_DAYS` | cả hai | Số ngày giữ ảnh chụp màn hình lỗi (mặc định 30) |
 
-Chỉ đặt `SHOPONLINE_SAP_SYSTEM` khi thao tác đọc `zrsd001` và `zrsd004` đã được viết từ bản ghi recorder. Trước đó, việc nào được xếp cũng sẽ lỗi "Chưa có thao tác SAP".
+Thao tác đọc `zrsd001` và `zrsd004` đã được viết từ bản ghi recorder. Đặt `SHOPONLINE_SAP_SYSTEM` khi máy robot đã sẵn sàng và mục Kiểm tra bên dưới đã qua.
 
 Robot so hệ thống, client và user của phiên đang mở với việc trước khi làm (`AEP`, `300`, `AL17016`). Không khớp thì robot từ chối việc và tự tạm dừng.
 

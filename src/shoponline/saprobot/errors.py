@@ -17,6 +17,10 @@ class SapMessageError(RobotError):
     """SAP showed an error or abort message in the status bar."""
 
 
+class NoReportData(RobotError):
+    """The report ran but SAP found nothing for the filters ("No data to display")."""
+
+
 class UnknownPopup(RobotError):
     """A dialog not listed in config/sap_popups.yaml; the robot presses nothing."""
 

@@ -72,6 +72,7 @@ def _robot_login(env: dict[str, str]):
 
 
 def _cmd_robot(_args: argparse.Namespace) -> int:
+    import shoponline.saprobot.transactions  # noqa: F401 - registers the recorded report reads
     from shoponline.db.session import get_engine, session_factory
     from shoponline.saprobot.popups import load_rules
     from shoponline.saprobot.screen import Screens

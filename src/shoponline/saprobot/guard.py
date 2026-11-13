@@ -28,6 +28,9 @@ VKEY_F8_EXECUTE = 8
 VKEY_SAVE = 11  # Ctrl+S: never sent, even if someone adds it to ALLOWED_VKEYS
 ALLOWED_VKEYS = frozenset({VKEY_ENTER, VKEY_F8_EXECUTE})
 
+# ALV context menu items the robot may pick: "&XXL" is Spreadsheet export (recorded 2026-11-12).
+ALLOWED_CONTEXT_MENU_ITEMS = frozenset({"&XXL"})
+
 # Methods that only read an element (ALV grid cells and column titles).
 READ_METHODS = frozenset({"GetCellValue", "GetColumnTitles", "GetDisplayedColumnTitle"})
 READABLE_TYPES = (str, int, float, bool, type(None))
@@ -127,11 +130,23 @@ class GuardedElement:
         self._session._act(lambda: setattr(self._raw, "text", value))
 
     def select(self) -> None:
-        """Tick a radio button or checkbox."""
-        self._session._act(lambda: setattr(self._raw, "selected", True))
+        """Choose a radio button (GuiRadioButton.select, as the recorder writes it)."""
+        self._session._act(self._raw.select)
 
     def press(self) -> None:
         self._session._act(self._raw.press)
+
+    def set_current_cell(self, row: int, column: str) -> None:
+        """Put the ALV cursor on a cell; the context menu opens there."""
+        self._session._act(lambda: self._raw.setCurrentCell(row, column))
+
+    def open_context_menu(self) -> None:
+        self._session._act(self._raw.contextMenu)
+
+    def select_context_menu_item(self, item: str) -> None:
+        if item not in ALLOWED_CONTEXT_MENU_ITEMS:
+            self._session._trip(f"mục menu '{item}' không nằm trong danh sách được phép")
+        self._session._act(lambda: self._raw.selectContextMenuItem(item))
 
     def get(self, name: str):
         """Read a plain property value; methods and sub-objects are refused."""

@@ -183,7 +183,7 @@ def request_accounting_file(
         flash(request, "Robot chưa được bật; tải zrsd004 lên ở trang Báo cáo SAP.", "error")
         return redirect(f"/batches/{batch_id}")
     try:
-        job = request_zrsd004(db, target, batch.gi_date, user.username)
+        job = request_zrsd004(db, target, batch, user.username)
     except DuplicateJob as exc:
         flash(request, str(exc), "error")
         return redirect(f"/batches/{batch_id}")

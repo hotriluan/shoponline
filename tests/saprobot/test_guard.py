@@ -113,7 +113,37 @@ def test_set_text_select_and_press_pass_on_allowed_screens():
     gui.send_vkey(VKEY_F8_EXECUTE)
     assert raw.text_of("wnd[0]/usr/ctxtPO") == "A1"
     assert raw.elements["wnd[0]/usr/radCOMPLETE"].selected is True
-    assert raw.actions == [("vkey", "wnd[0]", VKEY_F8_EXECUTE)]
+    assert raw.actions == [
+        ("select", "wnd[0]/usr/radCOMPLETE"),
+        ("vkey", "wnd[0]", VKEY_F8_EXECUTE),
+    ]
+
+
+def test_spreadsheet_export_menu_is_the_only_context_menu_item():
+    assert frozenset({"&XXL"}) == guard.ALLOWED_CONTEXT_MENU_ITEMS
+    raw = _session("ZRSD001")
+    grid = GuardedSession(raw).find("wnd[0]/usr/grid")
+    grid.set_current_cell(0, "BSTNK")
+    grid.open_context_menu()
+    grid.select_context_menu_item("&XXL")
+    assert [a[0] for a in raw.actions] == ["cell", "menu", "menu_item"]
+
+
+@pytest.mark.parametrize("item", ["&DETAIL", "&PC", "&SEND", ""])
+def test_other_context_menu_items_trip_the_guard(item):
+    raw = _session("ZRSD001")
+    gui = GuardedSession(raw)
+    with pytest.raises(GuardViolation, match="mục menu"):
+        gui.find("wnd[0]/usr/grid").select_context_menu_item(item)
+    assert raw.actions == [] and gui.tripped
+
+
+def test_export_that_lands_on_a_foreign_tcode_trips():
+    raw = _session("ZRSD001")
+    raw.on_menu_item = _go_to(raw, "VA03")
+    gui = GuardedSession(raw)
+    with pytest.raises(GuardViolation, match="VA03"):
+        gui.find("wnd[0]/usr/grid").select_context_menu_item("&XXL")
 
 
 # ---------------------------------------------------------------- keys

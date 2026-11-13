@@ -1,12 +1,38 @@
 # SAP GUI element IDs by screen and logical name.
-# Fill each screen from the recorder script recorded on Production (AEP/300) with the robot
-# user AL17016 (same resolution, language and SAP GUI version as the robot machine).
-# Never guess IDs.
+# Taken from the recorder scripts (kept outside git: they hold real customer data) recorded on
+# Production AEP/300 with robot user AL17016, language EN, 2026-11-12. The robot machine must
+# use the same SAP GUI version, language and user settings. Never guess IDs.
+
+# How AL17016 shows dates (user defaults, seen on the filter screens as 12.11.2026).
+formats:
+  date: "%d.%m.%Y"
+
 screens:
   # Standard SAP login screen (SAPMSYST). Confirm against the recording before the first run.
   login:
     user: wnd[0]/usr/txtRSYST-BNAME
     password: wnd[0]/usr/pwdRSYST-BCODE
     language: wnd[0]/usr/txtRSYST-LANGU
-  # zrsd001: add when the recorder script for "Open" and "Complete" is available.
-  # zrsd004: add when the recorder script and the filter screenshot are available.
+
+  # zrsd001 filter screen (program ZRSD00B, screen 1000). Sales Organization is pre-filled
+  # with 1000 and is not touched. "Open Sales Order" is the default radio button.
+  zrsd001:
+    sales_office: wnd[0]/usr/ctxtP_VKBUR-LOW
+    doc_date: wnd[0]/usr/ctxtP_AUDAT-LOW
+    sold_to: wnd[0]/usr/ctxtP_KUNNR-LOW
+    complete: wnd[0]/usr/radP_RAD2
+    execute: wnd[0]/tbar[1]/btn[8]
+    # ALV result (SAPLSLVC_FULLSCREEN, screen 500); Info.Transaction stays ZRSD001.
+    result_grid: wnd[0]/usr/cntlGRID1/shellcont/shell/shellcont[1]/shell
+    # Column whose cell is right-clicked for the export menu (PO No, from the export recording).
+    result_column: BSTNK
+
+  # zrsd004 filter screen (program ZRSD00F, screen 1000).
+  zrsd004:
+    sales_org: wnd[0]/usr/ctxtP_VKORG
+    sold_to: wnd[0]/usr/ctxtP_KUNAG-LOW
+    gi_date: wnd[0]/usr/ctxtP_WADAT-LOW
+    execute: wnd[0]/tbar[1]/btn[8]
+    # ALV result and right-clicked column (SO Reference), from the export recording.
+    result_grid: wnd[0]/usr/cntlGRID1/shellcont/shell/shellcont[1]/shell
+    result_column: VGBEL

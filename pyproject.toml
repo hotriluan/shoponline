@@ -18,7 +18,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-robot = ["pywin32>=311; sys_platform == 'win32'"]
+robot = ["pywin32>=311; sys_platform == 'win32'", "pywinauto>=0.6.9; sys_platform == 'win32'"]
 
 [project.scripts]
 shoponline = "shoponline.cli:main"

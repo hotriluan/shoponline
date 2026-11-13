@@ -8,10 +8,23 @@ Robot chỉ đọc SAP, không tạo chứng từ nào. Nó chạy trên Product
 
 | Khi nào | Việc | Kết quả |
 |---|---|---|
-| Admin bấm "Sales admin đã tạo SO và DO" trên một lô | `read_zrsd001`: `zrsd001` lựa chọn "Complete", lọc theo khách hàng SAP của sàn và ngày xử lý của lô | Lưu số SO, nối đơn, báo lệch trên trang lô, giống hệt khi tải file lên |
-| Admin bấm "Xuất file gửi kế toán" trên lô vào ngày goods issue | `read_zrsd004` cho ngày goods issue | Đơn có DO chuyển "Đã có DO"; link "Tải file kế toán" hiện ở trang Robot SAP và trang Báo cáo SAP |
+| Admin bấm "Sales admin đã tạo SO và DO" trên một lô | `read_zrsd001`: `zrsd001` với Sales Office `1401`, ngày chứng từ là ngày xử lý của lô, Sold-To là khách hàng SAP của sàn, lựa chọn "Complete" | Lưu số SO, nối đơn, báo lệch trên trang lô, giống hệt khi tải file lên |
+| Admin bấm "Xuất file gửi kế toán" trên lô vào ngày goods issue | `read_zrsd004`: `zrsd004` với Sales Organization `1000`, Sold-to là khách hàng SAP của sàn, Actual GI là ngày goods issue của lô. Mỗi sàn và mỗi ngày đọc một lần | Đơn có DO chuyển "Đã có DO"; link "Tải file kế toán" hiện ở trang Robot SAP và trang Báo cáo SAP |
 
-Kết quả robot đọc đi qua đúng các hàm nhập file của trang **Báo cáo SAP**. Khi robot dừng, admin vẫn tải hai file báo cáo lên bằng tay như trước.
+Bộ lọc lấy theo bản ghi recorder ngày 2026-11-12 (`docs/sap-recordings/` trên máy phát triển, không đưa vào git vì có dữ liệu khách thật). Robot gõ ngày thẳng vào ô lọc theo định dạng của `AL17016` (`formats.date` trong `config/sap_screens.yaml`), không mở lịch F4 như bản ghi. SAP báo "No data to display" thì việc chuyển "Lỗi" với lý do không có dữ liệu.
+
+Robot lấy dữ liệu bằng chức năng xuất Excel của báo cáo, giống thao tác của admin, chứ không đọc lưới trên màn hình. Lý do: file gửi kế toán được dựng thẳng từ file `zrsd004` và phải khớp từng ô với file admin tự làm (cổng G1); đọc lưới chỉ ra chữ, mất kiểu ngày, kiểu số và dòng tổng. File robot xuất đi qua đúng các hàm nhập file của trang **Báo cáo SAP**. Khi robot dừng, admin vẫn tải hai file báo cáo lên bằng tay như trước.
+
+Cách robot xuất (theo bản ghi xuất Excel ngày 2026-11-12, `docs/sap-recordings/exportexcel/`):
+
+1. Chuột phải vào lưới kết quả, chọn **Spreadsheet...** (`&XXL`, mục menu duy nhất lớp chặn cho phép).
+2. Nếu SAP hỏi định dạng ("Select Spreadsheet"), robot bấm tiếp theo luật trong `config/sap_popups.yaml`. Nếu đã tick "Always Use Selected Format" thì SAP không hỏi.
+3. Các cửa sổ sau đó là cửa sổ Windows, SAP GUI Scripting không với tới. Robot trả lời chúng bằng [desktop.py](../src/shoponline/saprobot/desktop.py):
+   - **Save As**: gõ đường dẫn đầy đủ `<SHOPONLINE_DATA_DIR>\robot-work\job-<số việc>\<báo cáo>-job-<số việc>.xlsx` rồi bấm Save. File cũ của cùng việc bị xóa trước, nên khi chạy lại không có hộp hỏi ghi đè.
+   - **SAP GUI Security**: chỉ bấm Allow khi hộp này nêu đúng file vừa lưu, và không tick "Remember My Decision". Hộp hỏi về file khác thì robot bấm Deny và việc chuyển "Lỗi".
+   - **Excel** tự mở file vừa xuất: robot đóng cửa sổ đó rồi đọc file.
+
+Việc báo lỗi "Không thấy hộp Save As", "Hộp Save As khác dự kiến" hoặc "Hết giờ chờ hộp thoại lưu file" nghĩa là các cửa sổ Windows khác với lúc ghi. Xem ảnh của việc, kiểm tra màn hình máy robot không bị khóa, rồi bấm "Chạy lại". Nếu Excel hoặc hộp Save As còn mở trên máy robot, đóng chúng bằng tay trước.
 
 ## Trạng thái việc
 
@@ -46,6 +59,7 @@ User `AL17016` mở được cả `VA02`, nên role phía SAP không ngăn robot
 | T-code robot được tự mở | `ZRSD001`, `ZRSD004` | Chỉ mở qua ô lệnh bằng `/n<T-code>`; không có đường nào khác ghi vào ô lệnh `okcd` |
 | Phím được gửi | Enter, F8 | Phím lưu (Ctrl+S, `sendVKey 11`) luôn bị cấm |
 | Hàm đọc phần tử | `GetCellValue`, `GetColumnTitles`, `GetDisplayedColumnTitle` | Đọc lưới ALV; robot không bấm đúp vào dòng |
+| Mục menu chuột phải trên lưới | `&XXL` (Spreadsheet...) | Xuất Excel; mục khác (ví dụ Details, gửi email) bị cấm |
 
 Robot đọc `Info.Transaction` của phiên ngay khi nhận phiên, rồi trước và sau mỗi thao tác (gõ chữ, chọn, bấm nút, gửi phím, trả lời cửa sổ phụ). Khi gặp T-code ngoài danh sách, hoặc một phím hay thao tác bị cấm:
 
@@ -72,10 +86,6 @@ Giới hạn: lớp chặn bảo vệ trước lỗi trong mã robot và trướ
 
 ## Chưa có, chờ bản ghi recorder
 
-Các mục dưới đây được điền khi có bản ghi recorder trên `AEP`/300 bằng `AL17016`. Chưa có thì không viết:
-
-- ID phần tử màn hình lọc và lưới kết quả của `zrsd001` và `zrsd004` trong `config/sap_screens.yaml`.
-- Cách lấy dữ liệu báo cáo: đọc thẳng lưới hay xuất Excel ra thư mục cố định.
-- Danh sách cửa sổ phụ đã biết trong `config/sap_popups.yaml`.
+Màn hình lọc, lưới kết quả và bước xuất Excel của hai báo cáo đã có trong `config/sap_screens.yaml` và `config/sap_popups.yaml` (bản ghi ngày 2026-11-12). Chưa chạy trên SAP thật. Các mục dưới đây điền sau lần chạy thử:
 - Thời gian một lần đọc báo cáo.
 - Biên bản chạy thử trên Production ngoài giờ cao điểm (50 việc đọc liên tiếp, ngắt mạng, sai hệ thống đích) và 5 ngày so robot với file tải lên.

@@ -9,4 +9,10 @@
 #   outcome:         optional signal for the transaction, e.g. no_data
 # At least one of title_contains / text_contains must be set.
 # Add entries only from dialogs seen in the recordings or in NEED_REVIEW screenshots.
-popups: []
+popups:
+  # Spreadsheet export asks for the format (XLSX already chosen) unless "Always Use Selected
+  # Format" was ticked. Continue (green tick), as in the export recordings of 2026-11-12.
+  - name: select_spreadsheet
+    title_contains: Select Spreadsheet
+    text_contains: ""
+    button: tbar[0]/btn[0]

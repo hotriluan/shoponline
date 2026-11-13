@@ -72,7 +72,11 @@ def test_confirm_queues_zrsd001_and_button_queues_zrsd004(db, tmp_path, batch):
         (queue.READ_ZRSD001, "QAS", "300"),
         (queue.READ_ZRSD004, "QAS", "300"),
     ]
-    assert queue.payload_of(jobs[1]) == {"gi_date": "2026-11-12"}
+    assert queue.payload_of(jobs[1]) == {
+        "platform": "SHOPEE",
+        "sold_to": "1200001145",
+        "gi_date": "2026-11-12",
+    }
     page = client.get("/robot").text
     assert "read_zrsd001" in page and "QAS/300" in page
 
