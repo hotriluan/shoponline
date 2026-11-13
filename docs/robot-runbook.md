@@ -26,6 +26,26 @@ Cách robot xuất (theo bản ghi xuất Excel ngày 2026-11-12, `docs/sap-reco
 
 Việc báo lỗi "Không thấy hộp Save As", "Hộp Save As khác dự kiến" hoặc "Hết giờ chờ hộp thoại lưu file" nghĩa là các cửa sổ Windows khác với lúc ghi. Xem ảnh của việc, kiểm tra màn hình máy robot không bị khóa, rồi bấm "Chạy lại". Nếu Excel hoặc hộp Save As còn mở trên máy robot, đóng chúng bằng tay trước.
 
+## Kiểm tra kết nối SAP
+
+Trang **Robot SAP → Kết nối SAP** có nút **Kiểm tra**: web xếp một việc `check_connection`, robot đăng nhập thử, đọc hệ thống/client/user của phiên rồi đăng xuất, và trang hiện kết quả (tự tải lại mỗi 3 giây trong lúc chờ). Việc này không gửi T-code nào, vẫn đi qua lớp chặn T-code và so khớp phiên, và chạy được cả khi robot đang tạm dừng. Lỗi kiểm tra không tăng bộ đếm lỗi liên tiếp và không làm robot tự dừng. Không chụp ảnh màn hình khi đăng nhập lỗi vì màn hình đó có ô mật khẩu.
+
+| Mã lỗi | Nghĩa | Cách sửa |
+|---|---|---|
+| `missing_settings` | Thiếu mục SAP Logon hoặc user SAP | Điền ở trang Kết nối SAP |
+| `missing_password` | Máy robot chưa có mật khẩu của user | Chạy `uv run --extra robot shoponline sap-password set` dưới tài khoản chạy robot |
+| `saplogon_not_running` | Không mở được SAP Logon | Mở SAP Logon bằng tay hoặc sửa `SHOPONLINE_SAPLOGON_PATH` |
+| `scripting_disabled` | SAP Logon chạy nhưng scripting tắt | Bật scripting ở phía máy khách (xem [robot-machine-setup.md](robot-machine-setup.md)); phía máy chủ Basis bật `sapgui/user_scripting` |
+| `connection_not_found` | Tên mục SAP Logon không tồn tại | Chọn lại đúng mục trong danh sách |
+| `logon_failed` | SAP từ chối đăng nhập (thông báo nguyên văn của SAP hiện kèm) | Kiểm tra user và mật khẩu; sai nhiều lần sẽ khóa user, nên sửa rồi mới thử lại |
+| `wrong_system` | Đăng nhập vào hệ thống hoặc client khác cấu hình | Mục SAP Logon đang trỏ nhầm hệ thống: chọn mục khác hoặc sửa hệ thống và client |
+| `foreign_session` | Máy robot đang có phiên SAP của người khác | Đóng phiên đó rồi kiểm tra lại; robot không đăng nhập cạnh phiên lạ |
+| `guard_violation`, `unknown_popup`, `error` | Phiên đang ở T-code ngoài danh sách, hộp thoại lạ hoặc lỗi khác | Xem thông báo và ảnh của việc trong hàng đợi |
+
+Nếu robot không chạy (không có heartbeat trong 30 giây) trang báo "Robot không chạy" và việc kiểm tra nằm chờ; bấm Kiểm tra lần nữa thì lần mới thay lần đang chờ. Robot đang làm việc khác thì trang báo "Đang chờ robot xong việc #N".
+
+**Đổi hệ thống hoặc client thì phải kiểm tra trước.** Cho đến khi một lần kiểm tra thành công với đúng hệ thống và client mới, web không xếp việc đọc báo cáo (nút bị khóa, có thanh cảnh báo trên mọi trang) và robot không nhận việc nào ngoài kiểm tra kết nối. Việc đọc báo cáo đã xếp cho hệ thống cũ sẽ lỗi "nhắm X nhưng cấu hình hiện là Y" mà không đăng nhập; xếp lại sau khi kiểm tra.
+
 ## Trạng thái việc
 
 | Trạng thái | Nghĩa | Làm gì |
@@ -41,7 +61,7 @@ Việc báo lỗi "Không thấy hộp Save As", "Hộp Save As khác dự kiế
 
 Robot dừng và hiện dòng cảnh báo trên mọi trang khi:
 
-- số việc lỗi liên tiếp đạt `SHOPONLINE_ROBOT_MAX_FAILURES`;
+- số việc lỗi liên tiếp đạt giá trị "Số lỗi liên tiếp thì dừng" trên trang Kết nối SAP (mặc định 3; việc kiểm tra kết nối không tính);
 - phiên SAP đang mở không đúng hệ thống, client hoặc user của việc. Robot không đăng nhập thêm khi đã có phiên của hệ thống khác; nó từ chối việc và dừng;
 - lớp chặn T-code bắt được T-code, phím hoặc thao tác ngoài danh sách được phép (xem mục dưới).
 
@@ -80,12 +100,12 @@ Giới hạn: lớp chặn bảo vệ trước lỗi trong mã robot và trướ
 
 ## Đăng nhập theo việc, khởi động lại và mất phiên
 
-- Robot chỉ đăng nhập SAP khi có việc: nhận việc, đăng nhập `AL17016` qua mục SAP Logon đã cấu hình, kiểm tra hệ thống, client, user, làm việc, rồi đăng xuất ngay (kể cả khi việc lỗi, sau khi chụp ảnh). Giữa hai việc robot không giữ phiên SAP nào.
+- Robot chỉ đăng nhập SAP khi có việc: nhận việc, đăng nhập `AL17016` qua mục SAP Logon đã cấu hình trên web (đọc lại ở mỗi việc, mật khẩu lấy từ Windows Credential Manager), kiểm tra hệ thống, client, user, làm việc, rồi đăng xuất ngay (kể cả khi việc lỗi, sau khi chụp ảnh). Giữa hai việc robot không giữ phiên SAP nào.
 - SAP Logon chưa mở thì robot tự mở `saplogon.exe` (đường dẫn mặc định của bộ cài, đổi bằng `SHOPONLINE_SAPLOGON_PATH`).
 - Đang có phiên SAP của người khác (ví dụ người dùng máy đang làm tay bằng user của mình) thì robot không đăng nhập bên cạnh: việc lỗi và robot tự tạm dừng (mục **Robot tự dừng**). Robot không bao giờ đăng xuất phiên của người khác.
 - Robot khởi động (sau mỗi lần deploy hoặc khi đăng nhập Windows) thì đăng xuất phiên `AL17016` còn sót từ lần chạy trước.
 - Robot bị tắt giữa lúc đang chạy một việc đọc: lần khởi động sau việc đó về "Chờ" và chạy lại.
-- Ảnh chụp màn hình lỗi nằm ở `<SHOPONLINE_DATA_DIR>\robot-evidence` và tự xóa sau `SHOPONLINE_ROBOT_EVIDENCE_KEEP_DAYS` ngày, vì có thể chứa dữ liệu khách.
+- Ảnh chụp màn hình lỗi nằm ở `<SHOPONLINE_DATA_DIR>\robot-evidence` và tự xóa sau số ngày đặt ở trang Kết nối SAP (mặc định 30), vì có thể chứa dữ liệu khách.
 
 ## Chưa có, chờ bản ghi recorder
 

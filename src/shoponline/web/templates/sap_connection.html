@@ -1,0 +1,99 @@
+{% extends "base.html" %}
+{% block title %}Kết nối SAP{% endblock %}
+{% block head %}{% if checking %}<meta http-equiv="refresh" content="3">{% endif %}{% endblock %}
+{% block content %}
+{% set admin = user.role == 'admin' %}
+{% set locked = checking or not admin %}
+<h1>Kết nối SAP</h1>
+
+<div class="box">
+  <div class="row">
+    <span>
+      Robot:
+      {% if alive %}<strong class="ok">đang chạy</strong>{% else %}<strong class="bad">không chạy</strong>{% endif %}
+      {% if control.robot_host %}<span class="muted">máy {{ control.robot_host }}{% if control.last_seen_at %}, thấy lần cuối {{ control.last_seen_at|localtime('%d/%m %H:%M:%S') }}{% endif %}</span>{% elif not alive %}<span class="muted">(chưa từng báo về)</span>{% endif %}
+    </span>
+    <span>
+      Mật khẩu SAP trên máy robot:
+      {% if control.password_present is none %}<span class="muted">chưa biết (robot chưa báo)</span>
+      {% elif control.password_present %}<strong class="ok">đã có</strong>
+      {% else %}<strong class="bad">chưa có</strong> — chạy trên máy robot, dưới tài khoản chạy robot: <code>uv run shoponline sap-password set</code>{% endif %}
+    </span>
+    <span>
+      Cấu hình:
+      {% if not config.target %}<span class="muted">chưa đặt hệ thống</span>
+      {% elif config.target_verified %}<strong class="ok">đã xác nhận {{ config.target }}</strong>
+      {% else %}<strong class="bad">chưa xác nhận {{ config.target }}</strong> — robot chưa đọc báo cáo cho đến khi kiểm tra thành công{% endif %}
+    </span>
+  </div>
+</div>
+
+<form method="post" action="/robot/sap-connection" class="box">
+  <fieldset {% if locked %}disabled{% endif %} style="border:0; padding:0; margin:0">
+    <div class="row">
+      <label>Hệ thống (SID)
+        <input type="text" name="system" value="{{ form.system }}" size="5" maxlength="3" placeholder="AEP">
+      </label>
+      <label>Client
+        <input type="text" name="client" value="{{ form.client }}" size="5" maxlength="3" placeholder="300">
+      </label>
+      <label>Mục trong SAP Logon
+        {% if entries %}
+        <select name="connection">
+          {% if form.connection not in entries %}<option value="{{ form.connection }}" selected>{{ form.connection or '(chưa chọn)' }}{% if form.connection %} — không có trong SAP Logon{% endif %}</option>{% endif %}
+          {% for name in entries %}<option value="{{ name }}" {% if name == form.connection %}selected{% endif %}>{{ name }}</option>{% endfor %}
+        </select>
+        {% else %}
+        <input type="text" name="connection" value="{{ form.connection }}" size="32" placeholder="Tên mục đúng từng ký tự">
+        {% endif %}
+      </label>
+      <label>User SAP
+        <input type="text" name="sap_user" value="{{ form.sap_user }}" size="14">
+      </label>
+      <label>Ngôn ngữ
+        <input type="text" name="language" value="{{ form.language }}" size="3" maxlength="2" placeholder="EN">
+      </label>
+      <label>Số lỗi liên tiếp thì dừng
+        <input type="text" name="max_failures" value="{{ form.max_failures }}" size="4" inputmode="numeric">
+      </label>
+      <label>Giữ ảnh lỗi (ngày)
+        <input type="text" name="evidence_keep_days" value="{{ form.evidence_keep_days }}" size="4" inputmode="numeric">
+      </label>
+    </div>
+    {% if not entries %}<p class="muted">Danh sách mục SAP Logon sẽ hiện ở đây khi robot chạy và báo về; hiện cần gõ tên đúng từng ký tự.</p>{% endif %}
+    {% if admin %}
+    <div class="row" style="margin-top:12px">
+      <button name="action" value="save_check">Lưu và kiểm tra</button>
+      <button name="action" value="save" class="secondary">Lưu</button>
+      <button name="action" value="check" class="secondary" formnovalidate>Kiểm tra</button>
+    </div>
+    {% endif %}
+  </fieldset>
+  {% if not admin %}<p class="muted">Tài khoản xem chỉ xem được cấu hình.</p>{% endif %}
+  {% if checking %}<p class="muted">Đang kiểm tra nên form tạm khóa; trang tự tải lại mỗi 3 giây.</p>{% endif %}
+  <p class="muted">Mật khẩu không nhập trên web: đặt bằng lệnh <code>shoponline sap-password set</code> trên máy robot.</p>
+</form>
+
+<h2>Kết quả kiểm tra gần nhất</h2>
+<div class="box">
+  {% if check is none %}
+  <span class="muted">Chưa kiểm tra lần nào.</span>
+  {% else %}
+  <div>
+    <span class="tag j-{{ check.status }}">{{ JOB_LABELS[check.status] }}</span>
+    việc #{{ check.id }} cho {{ check.target_system }}/{{ check.target_client }},
+    {{ check.created_by }} bấm lúc {{ check.created_at|localtime('%d/%m %H:%M:%S') }}
+  </div>
+  {% if checking %}
+  <p><strong>{{ wait_message }}</strong></p>
+  {% elif check.status == 'DONE' %}
+  <p class="ok">Đăng nhập thành công: hệ thống <strong>{{ check_result.system }}/{{ check_result.client }}</strong>,
+    user <strong>{{ check_result.user }}</strong>{% if check_result.logged_on_at %}, lúc {{ check_result.logged_on_at }}{% endif %}{% if check_result.gui_version %}, SAP GUI {{ check_result.gui_version }}{% endif %}.
+    Robot đã đăng xuất ngay sau đó.</p>
+  {% elif check.error %}
+  <p class="bad">{{ check.error }}</p>
+  {% if check_result.reason %}<p class="muted">Mã lỗi: {{ check_result.reason }}</p>{% endif %}
+  {% endif %}
+  {% endif %}
+</div>
+{% endblock %}

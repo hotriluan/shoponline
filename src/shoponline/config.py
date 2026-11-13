@@ -6,8 +6,6 @@ import os
 from dataclasses import dataclass
 from pathlib import Path
 
-from shoponline.sapjobs.queue import SapTarget
-
 REQUIRED_VARS = (
     "SHOPONLINE_DATABASE_URL",
     "SHOPONLINE_SECRET_KEY",
@@ -26,10 +24,6 @@ class Settings:
     data_dir: Path
     web_host: str = "127.0.0.1"
     web_port: int = 8750
-    # SAP system the robot works on; None keeps the robot out of the flow (upload files instead).
-    sap_target: SapTarget | None = None
-    robot_max_failures: int = 3
-    evidence_keep_days: int = 30
     # Customer names, addresses and stored workbooks are deleted after this many days.
     retention_days: int = 90
 
@@ -81,19 +75,12 @@ def load_settings(env: dict[str, str] | None = None) -> Settings:
     port_text = env.get("SHOPONLINE_WEB_PORT") or "8750"
     if not port_text.isdigit():
         raise ConfigError("SHOPONLINE_WEB_PORT phải là số")
-    system = (env.get("SHOPONLINE_SAP_SYSTEM") or "").strip().upper()
-    client = (env.get("SHOPONLINE_SAP_CLIENT") or "").strip()
-    if bool(system) != bool(client):
-        raise ConfigError("Đặt cả SHOPONLINE_SAP_SYSTEM và SHOPONLINE_SAP_CLIENT, hoặc bỏ cả hai")
     return Settings(
         database_url=env["SHOPONLINE_DATABASE_URL"],
         secret_key=secret,
         data_dir=Path(env["SHOPONLINE_DATA_DIR"]),
         web_host=env.get("SHOPONLINE_WEB_HOST") or "127.0.0.1",
         web_port=int(port_text),
-        sap_target=SapTarget(system, client) if system else None,
-        robot_max_failures=_positive_int(env, "SHOPONLINE_ROBOT_MAX_FAILURES", 3),
-        evidence_keep_days=_positive_int(env, "SHOPONLINE_ROBOT_EVIDENCE_KEEP_DAYS", 30),
         retention_days=_positive_int(env, "SHOPONLINE_RETENTION_DAYS", 90),
     )
 

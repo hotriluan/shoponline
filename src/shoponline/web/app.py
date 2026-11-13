@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable, Iterator
+import os
+from collections.abc import Callable, Iterator, Mapping
+from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
@@ -16,6 +18,7 @@ from shoponline.config import Settings
 from shoponline.db.models import AppUser
 from shoponline.db.session import session_factory as default_session_factory
 from shoponline.domain import states
+from shoponline.sapjobs import sap_settings
 from shoponline.sapjobs.queue import LABELS as JOB_LABELS
 from shoponline.sapjobs.queue import control as robot_control
 
@@ -78,20 +81,42 @@ def backup_warning(settings: Settings) -> str | None:
     return None
 
 
-def robot_warning(request: Request) -> str | None:
-    """The robot stopped itself or was stopped; shown on every page until an admin resumes it."""
-    if request.app.state.settings.sap_target is None:
-        return None
+@dataclass(frozen=True)
+class RobotState:
+    enabled: bool = False  # a SAP system and client are configured
+    verified: bool = True  # a connection check succeeded for that system and client
+    warning: str | None = None  # shown on every page until an admin acts
+
+
+def sap_config(request: Request, db: Session) -> sap_settings.SapSettings:
+    return sap_settings.load(db, request.app.state.env)
+
+
+def robot_state(request: Request) -> RobotState:
     with request.app.state.session_factory() as db:
+        config = sap_config(request, db)
+        if config.target is None:
+            return RobotState()
+        if not config.target_verified:
+            return RobotState(
+                True,
+                False,
+                f"Cấu hình SAP {config.target} chưa được xác nhận: robot chưa đọc báo cáo "
+                "cho đến khi kiểm tra kết nối thành công.",
+            )
         row = robot_control(db)
         if not row.paused:
-            return None
-        return f"Robot SAP đang dừng: {row.paused_reason or 'không rõ lý do'}"
+            return RobotState(True, True)
+        reason = row.paused_reason or "không rõ lý do"
+        return RobotState(True, True, f"Robot SAP đang dừng: {reason}")
 
 
-def render(request: Request, template: str, user: AppUser | None, **context):
+def render(
+    request: Request, template: str, user: AppUser | None, status_code: int = 200, **context
+):
     messages = request.session.pop("flash", [])
     settings: Settings = request.app.state.settings
+    robot = robot_state(request) if user else RobotState()
     return TEMPLATES.TemplateResponse(
         request,
         template,
@@ -99,10 +124,12 @@ def render(request: Request, template: str, user: AppUser | None, **context):
             "user": user,
             "messages": messages,
             "backup_warning": backup_warning(settings) if user else None,
-            "robot_warning": robot_warning(request) if user else None,
-            "robot_enabled": settings.sap_target is not None,
+            "robot_warning": robot.warning,
+            "robot_enabled": robot.enabled,
+            "robot_verified": robot.verified,
             **context,
         },
+        status_code=status_code,
     )
 
 
@@ -119,7 +146,11 @@ def redirect(url: str) -> RedirectResponse:
     return RedirectResponse(url, status_code=303)
 
 
-def create_app(settings: Settings, session_factory: Callable[[], Session] | None = None) -> FastAPI:
+def create_app(
+    settings: Settings,
+    session_factory: Callable[[], Session] | None = None,
+    env: Mapping[str, str] | None = None,
+) -> FastAPI:
     from shoponline.web.routes import (
         batches,
         customers,
@@ -133,6 +164,8 @@ def create_app(settings: Settings, session_factory: Callable[[], Session] | None
 
     app = FastAPI(title="shoponline", docs_url=None, redoc_url=None, openapi_url=None)
     app.state.settings = settings
+    # The SAP settings in the database fall back to these environment values.
+    app.state.env = dict(os.environ if env is None else env)
     app.state.session_factory = session_factory or default_session_factory(settings.database_url)
     app.add_middleware(
         SessionMiddleware,

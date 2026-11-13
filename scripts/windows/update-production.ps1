@@ -12,8 +12,8 @@
   4. Fast-forward to the commit, uv sync without dev tools, migrate.
   5. Register the Task Scheduler jobs that are still missing, for the account running this
      script (register-tasks.ps1 -AtLogOn -OnlyMissing): web, backup, retention, robot.
-  6. Start shoponline-web and wait until the login page answers. Start shoponline-robot when
-     the SAP login settings are present; otherwise warn with the names of the missing ones.
+  6. Start shoponline-web and wait until the login page answers, then shoponline-robot. The
+     robot starts even with no SAP settings; the web page "Kết nối SAP" shows what is missing.
   Steps 5 and 6 also run when the checkout is already at the commit, so re-running the
   workflow repairs missing tasks. On failure it still tries to start web and robot and prints
   the previous commit for a rollback.
@@ -36,7 +36,6 @@ $webHost = Get-Setting "SHOPONLINE_WEB_HOST" "127.0.0.1"
 if ($webHost -eq "0.0.0.0") { $webHost = "127.0.0.1" }
 $loginUrl = "http://${webHost}:$port/login"
 $me = "$env:USERDOMAIN\$env:USERNAME"
-$robotSettings = "SHOPONLINE_SAP_CONNECTION", "SHOPONLINE_SAP_USER", "SHOPONLINE_SAP_PASSWORD"
 $robotPattern = 'shoponline(\.exe)?"?\s+robot(\s|$)'
 
 function Invoke-Native([string]$what) {
@@ -100,13 +99,9 @@ function Register-MissingTasks {
     Invoke-Native "Đăng ký tác vụ robot"
 }
 
-# Returns $false when the robot should run but does not; missing SAP settings only warn.
+# The robot always runs: it starts without SAP settings and reports on the web page "Kết nối SAP"
+# what is missing. Returns $false when it exits right after being started.
 function Start-Robot {
-    $missing = $robotSettings | Where-Object { -not (Get-Setting $_) }
-    if ($missing) {
-        Write-Warning "Robot chưa chạy: thiếu cấu hình $($missing -join ', ') (xem docs/robot-machine-setup.md)"
-        return $true
-    }
     if (Get-RobotProcess) { Write-Host "Robot đang chạy"; return $true }
     Start-ScheduledTask -TaskName "shoponline-robot"
     # A robot that cannot start (bad settings, a second robot) exits within seconds.

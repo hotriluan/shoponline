@@ -24,7 +24,7 @@ Lệnh `shoponline retention` ([retention.py](../src/shoponline/maintenance/rete
 - Giữ đơn, dòng hàng, số SO, số DO: không phải dữ liệu cá nhân, và cần để nhập lại file cũ không tạo đơn trùng.
 - Ghi một dòng `retention_purge` vào `event_log` (chỉ số lượng).
 
-Ảnh màn hình robot có thời hạn riêng, 30 ngày (`SHOPONLINE_ROBOT_EVIDENCE_KEEP_DAYS`); robot tự xóa.
+Ảnh màn hình robot có thời hạn riêng, mặc định 30 ngày (đặt ở trang Kết nối SAP); robot tự xóa.
 
 Bản sao lưu giữ 30 ngày (`SHOPONLINE_BACKUP_KEEP_DAYS`), nên dữ liệu đã xóa còn trong bản sao lưu tối đa 30 ngày nữa.
 
@@ -51,13 +51,14 @@ Chạy tay: `uv run shoponline retention` để xem, `uv run shoponline retentio
 - `AL17016` trên `AEP`/300, kiểu **Service** (đổi ngày 2026-11-12): mật khẩu không hết hạn, và SAP không báo đăng nhập trùng.
 - `AL17016` có quyền sửa SO (`VA02`). Chủ dự án chọn giữ nguyên quyền ngày 2026-11-12. Phía robot, lớp chặn T-code là hàng rào duy nhất ([robot-runbook.md](robot-runbook.md#lớp-chặn-t-code)).
 - Vì vậy phải bảo vệ máy robot:
-  - Mật khẩu SAP chỉ nằm trong biến môi trường người dùng của tài khoản `saprobot` (`SHOPONLINE_SAP_PASSWORD`), không đặt trong `.env` dùng chung với web.
+  - Mật khẩu SAP chỉ nằm trong Windows Credential Manager của tài khoản chạy robot (đặt bằng `shoponline sap-password set`). Web và database không giữ và không đọc được nó; web chỉ thấy robot báo "đã có / chưa có". Biến `SHOPONLINE_SAP_PASSWORD` chỉ còn là đường dự phòng và nên bỏ đi. Không đặt mật khẩu trong `.env` dùng chung với web.
+  - Các cấu hình còn lại (hệ thống, client, mục SAP Logon, user, ngôn ngữ) nằm trong database và chỉ `admin` sửa được trên web; mỗi lần đổi ghi vào nhật ký sự kiện (ai, trường nào, giá trị cũ và mới).
   - Tài khoản `saprobot` không dùng cho việc khác và không có quyền quản trị Windows.
   - Không ai đăng nhập SAP bằng tay với `AL17016`.
   - Remote Desktop vào máy robot chỉ cho người quản trị.
   - Máy đặt nơi có kiểm soát người ra vào.
 - Định kỳ (gợi ý: hằng tháng) xem nhật ký đăng nhập của `AL17016` bằng `RSUSR200` hoặc `SM20`, tìm đăng nhập không đến từ máy robot.
-- Đổi mật khẩu khi có người rời vai trò vận hành hoặc nghi lộ mật khẩu. SAP nhớ 5 mật khẩu gần nhất nên không dùng lại được.
+- Đổi mật khẩu khi có người rời vai trò vận hành hoặc nghi lộ mật khẩu. SAP nhớ 5 mật khẩu gần nhất nên không dùng lại được. Sau khi đổi trong SAP, chạy lại `shoponline sap-password set` trên máy robot.
 
 ## Bí mật
 
@@ -65,7 +66,7 @@ Chạy tay: `uv run shoponline retention` để xem, `uv run shoponline retentio
 |---|---|
 | Mật khẩu database, khóa phiên web | `.env` của máy chạy thật; kho bí mật của chủ dự án |
 | Mật khẩu mã hóa sao lưu | `.env` của máy chạy thật; kho bí mật. Không đặt cạnh bản sao lưu |
-| Mật khẩu `AL17016` | Biến môi trường của tài khoản `saprobot` trên máy robot; kho bí mật |
+| Mật khẩu `AL17016` | Windows Credential Manager của tài khoản chạy robot; kho bí mật |
 
 Repo không chứa bí mật nào. `.gitignore` loại `.env` và `docs/sap-recordings/` (bản ghi recorder có dữ liệu khách thật). Trước khi bàn giao, quét lịch sử git một lần, ví dụ bằng `gitleaks detect`.
 

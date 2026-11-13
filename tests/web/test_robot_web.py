@@ -15,14 +15,14 @@ from shoponline.sapjobs.queue import SapTarget
 from shoponline.web.app import create_app
 from shoponline.web.auth import set_user
 from tests.fixtures.build_fixtures import shopee_orders_file, shopee_row
+from tests.sap_setup import NO_ENV, configure_sap
 
 QA = SapTarget("QAS", "300")
 
 
 def _app(db, tmp_path, target):
-    settings = Settings(
-        database_url="unused", secret_key="s" * 40, data_dir=tmp_path / "data", sap_target=target
-    )
+    settings = Settings(database_url="unused", secret_key="s" * 40, data_dir=tmp_path / "data")
+    configure_sap(db, target)
     set_user(db, "admin", "admin-password", "admin")
     set_user(db, "viewer", "viewer-password", "viewer")
     return create_app(
@@ -30,6 +30,7 @@ def _app(db, tmp_path, target):
         session_factory=lambda: Session(
             bind=db.bind, join_transaction_mode="create_savepoint", expire_on_commit=False
         ),
+        env=NO_ENV,
     )
 
 

@@ -56,24 +56,10 @@ def _cmd_web(_args: argparse.Namespace) -> int:
     return 0
 
 
-def _robot_login(env: dict[str, str]):
-    from shoponline.saprobot.session import LoginConfig
-
-    names = ("SHOPONLINE_SAP_CONNECTION", "SHOPONLINE_SAP_USER", "SHOPONLINE_SAP_PASSWORD")
-    missing = [n for n in names if not env.get(n)]
-    if missing:
-        raise ConfigError("Máy robot thiếu biến: " + ", ".join(missing))
-    return LoginConfig(
-        connection=env["SHOPONLINE_SAP_CONNECTION"],
-        user=env["SHOPONLINE_SAP_USER"],
-        password=env["SHOPONLINE_SAP_PASSWORD"],
-        language=env.get("SHOPONLINE_SAP_LANGUAGE", ""),
-    )
-
-
 def _cmd_robot(_args: argparse.Namespace) -> int:
-    import shoponline.saprobot.transactions  # noqa: F401 - registers the recorded report reads
+    import shoponline.saprobot.transactions  # noqa: F401 - registers the SAP steps
     from shoponline.db.session import get_engine, session_factory
+    from shoponline.sapjobs import sap_settings
     from shoponline.saprobot.errors import SessionUnavailable
     from shoponline.saprobot.popups import load_rules
     from shoponline.saprobot.screen import Screens
@@ -81,7 +67,7 @@ def _cmd_robot(_args: argparse.Namespace) -> int:
     from shoponline.saprobot.worker import RobotAlreadyRunning, Worker, run_forever
 
     settings = load_settings()
-    login = _robot_login(dict(os.environ))
+    env = dict(os.environ)
     log_dir = settings.data_dir / "logs"
     log_dir.mkdir(parents=True, exist_ok=True)
     logging.basicConfig(
@@ -94,24 +80,28 @@ def _cmd_robot(_args: argparse.Namespace) -> int:
             ),
         ],
     )
+    factory = session_factory(settings.database_url)
     worker = Worker(
         settings,
-        session_factory(settings.database_url),
+        factory,
         scripting_engine,
-        login,
         Screens.load(REPO_ROOT / "config" / "sap_screens.yaml"),
         load_rules(REPO_ROOT / "config" / "sap_popups.yaml"),
+        env=env,
     )
 
     def log_off_leftovers() -> None:
         """A robot stopped mid-job may have left its SAP logon open; close it, start clean."""
-        if settings.sap_target is None:
+        with factory() as db:
+            config = sap_settings.load(db, env)
+            db.commit()
+        if config.target is None or not config.sap_user:
             return
         try:
             engine = scripting_engine(start=False)
         except SessionUnavailable:
             return  # SAP Logon is not running, so nothing is logged on
-        closed = logoff_sessions_of(engine, settings.sap_target, login.user)
+        closed = logoff_sessions_of(engine, config.target, config.sap_user)
         if closed:
             logging.getLogger(__name__).info("Đã đăng xuất %d phiên SAP còn sót của robot", closed)
 
@@ -122,6 +112,37 @@ def _cmd_robot(_args: argparse.Namespace) -> int:
         return 3
     except KeyboardInterrupt:
         print("Robot dừng.")
+    return 0
+
+
+def _cmd_sap_secret(args: argparse.Namespace) -> int:
+    """Store, or report on, the robot user's SAP secret kept on this machine."""
+    from shoponline.db.session import session_scope
+    from shoponline.sapjobs import sap_settings
+    from shoponline.saprobot import credentials
+
+    settings = load_settings()
+    env = dict(os.environ)
+    user = (args.user or "").strip()
+    if not user:
+        with session_scope(settings.database_url) as session:
+            user = sap_settings.load(session, env).sap_user
+    if not user:
+        print("Chưa có user SAP: điền ở trang Kết nối SAP hoặc dùng --user.", file=sys.stderr)
+        return 1
+    if args.action == "status":
+        present = credentials.read_password(user, env) is not None
+        print(f"User {user.upper()}: {'đã có' if present else 'chưa có'} mật khẩu trên máy này.")
+        return 0
+    secret = getpass.getpass(f"Mật khẩu SAP của {user.upper()}: ")
+    if not secret:
+        print("Mật khẩu trống, không lưu.", file=sys.stderr)
+        return 1
+    if secret != getpass.getpass("Nhập lại mật khẩu: "):
+        print("Hai lần nhập không khớp.", file=sys.stderr)
+        return 1
+    credentials.store_password(user, secret)
+    print(f"Đã lưu mật khẩu của {user.upper()} vào Windows Credential Manager của tài khoản này.")
     return 0
 
 
@@ -191,6 +212,12 @@ def main(argv: list[str] | None = None) -> int:
     pause.add_argument("--reason", default="")
     pause.set_defaults(func=_cmd_robot_switch)
     sub.add_parser("robot-resume", help="Bật lại robot SAP").set_defaults(func=_cmd_robot_switch)
+    sap_secret = sub.add_parser(
+        "sap-password", help="Đặt hoặc xem mật khẩu SAP của robot (chạy dưới tài khoản chạy robot)"
+    )
+    sap_secret.add_argument("action", choices=("set", "status"))
+    sap_secret.add_argument("--user", default="", help="Mặc định: user SAP trong cấu hình")
+    sap_secret.set_defaults(func=_cmd_sap_secret)
     keep = sub.add_parser(
         "retention", help="Liệt kê (hoặc xóa với --apply) dữ liệu khách quá thời hạn lưu"
     )

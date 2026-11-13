@@ -104,8 +104,8 @@ def _filled(raw: FakeSession, screen: str) -> dict[str, str]:
     }
 
 
-def test_both_reads_are_registered_as_read_only():
-    assert set(TRANSACTIONS) == {queue.READ_ZRSD001, queue.READ_ZRSD004}
+def test_every_registered_step_is_read_only():
+    assert set(TRANSACTIONS) == {queue.READ_ZRSD001, queue.READ_ZRSD004, queue.CHECK_CONNECTION}
     assert not any(t.writes for t in TRANSACTIONS.values())
 
 

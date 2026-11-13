@@ -39,3 +39,41 @@ class GuardViolation(RobotError):
     def __init__(self, message: str, session=None):
         super().__init__(message)
         self.session = session
+
+
+class SapLogonNotRunning(SessionUnavailable):
+    """SAP Logon is not running and could not be started."""
+
+    reason = "saplogon_not_running"
+
+
+class ScriptingUnavailable(SessionUnavailable):
+    """SAP Logon runs but its scripting engine cannot be reached (scripting switched off)."""
+
+    reason = "scripting_disabled"
+
+
+class ConnectionNotFound(SessionUnavailable):
+    """The SAP Logon entry could not be opened."""
+
+    reason = "connection_not_found"
+
+
+class LogonFailed(SessionUnavailable):
+    """SAP refused the logon; the message carries SAP's own wording."""
+
+    reason = "logon_failed"
+
+
+class ForeignSession(WrongSystem):
+    """Sessions are open, but none belongs to the robot user on the expected system."""
+
+    reason = "foreign_session"
+
+
+class LoginUnavailable(RobotError):
+    """The robot cannot build its logon from the settings and the password store."""
+
+    def __init__(self, message: str, reason: str):
+        super().__init__(message)
+        self.reason = reason

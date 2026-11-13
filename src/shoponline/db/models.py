@@ -6,6 +6,7 @@ from datetime import date, datetime
 
 from sqlalchemy import (
     BigInteger,
+    Boolean,
     Date,
     DateTime,
     ForeignKey,
@@ -251,3 +252,34 @@ class RobotControl(Base):
     changed_by: Mapped[str | None] = mapped_column(String(50))
     changed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     consecutive_failures: Mapped[int] = mapped_column(Integer, default=0)
+    # Written by the robot on every loop so the web can tell whether it is alive.
+    last_seen_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    robot_host: Mapped[str | None] = mapped_column(String(100))
+    # JSON list of the SAP Logon entry names on the robot machine.
+    saplogon_entries: Mapped[str | None] = mapped_column(Text)
+    # NULL = the robot has not reported yet. The password itself never reaches the database.
+    password_present: Mapped[bool | None] = mapped_column(Boolean)
+
+
+class SapSetting(Base):
+    """Single row (id=1): which SAP system the robot works on and how it logs on.
+
+    A NULL column falls back to the environment variable; the password is not stored here.
+    """
+
+    __tablename__ = "sap_settings"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    system: Mapped[str | None] = mapped_column(String(10))
+    client: Mapped[str | None] = mapped_column(String(3))
+    connection: Mapped[str | None] = mapped_column(String(100))
+    sap_user: Mapped[str | None] = mapped_column(String(50))
+    language: Mapped[str | None] = mapped_column(String(5))
+    max_failures: Mapped[int | None] = mapped_column(Integer)
+    evidence_keep_days: Mapped[int | None] = mapped_column(Integer)
+    # The system and client of the last successful connection check.
+    verified_system: Mapped[str | None] = mapped_column(String(10))
+    verified_client: Mapped[str | None] = mapped_column(String(3))
+    verified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    changed_by: Mapped[str | None] = mapped_column(String(50))
+    changed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))

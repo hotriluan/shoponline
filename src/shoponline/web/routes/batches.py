@@ -21,10 +21,15 @@ from shoponline.web.app import (
     redirect,
     render,
     require_admin,
+    sap_config,
 )
 from shoponline.web.uploads import save_generated
 
 router = APIRouter()
+
+UNVERIFIED_MESSAGE = (
+    "Đã đổi hệ thống SAP, cần kiểm tra kết nối thành công trước (trang Kết nối SAP)"
+)
 
 
 def _batch(db: Session, batch_id: int) -> OrderBatch:
@@ -155,12 +160,14 @@ def confirm_batch(
             platform=batch.platform,
             detail={"batch_id": batch.id},
         )
-        target = request.app.state.settings.sap_target
-        if target is None:
+        config = sap_config(request, db)
+        if config.target is None:
             message = "Đã ghi nhận sales admin đã tạo SO và DO. Tải zrsd001 lên để đối chiếu."
+        elif not config.target_verified:
+            message = f"Đã xác nhận lô. {UNVERIFIED_MESSAGE}."
         else:
             try:
-                job = request_zrsd001(db, target, batch, user.username)
+                job = request_zrsd001(db, config.target, batch, user.username)
                 message = f"Đã xác nhận lô; robot sẽ đọc zrsd001 (việc #{job.id})."
             except DuplicateJob as exc:
                 message = f"Đã xác nhận lô. {exc}"
@@ -178,12 +185,15 @@ def request_accounting_file(
 ):
     """Ask the robot to read zrsd004 for the batch's goods issue date."""
     batch = _batch(db, batch_id)
-    target = request.app.state.settings.sap_target
-    if target is None:
+    config = sap_config(request, db)
+    if config.target is None:
         flash(request, "Robot chưa được bật; tải zrsd004 lên ở trang Báo cáo SAP.", "error")
         return redirect(f"/batches/{batch_id}")
+    if not config.target_verified:
+        flash(request, UNVERIFIED_MESSAGE, "error")
+        return redirect(f"/batches/{batch_id}")
     try:
-        job = request_zrsd004(db, target, batch, user.username)
+        job = request_zrsd004(db, config.target, batch, user.username)
     except DuplicateJob as exc:
         flash(request, str(exc), "error")
         return redirect(f"/batches/{batch_id}")

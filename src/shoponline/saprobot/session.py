@@ -16,7 +16,15 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from shoponline.sapjobs.queue import SapTarget
-from shoponline.saprobot.errors import SessionUnavailable, WrongSystem
+from shoponline.saprobot.errors import (
+    ConnectionNotFound,
+    ForeignSession,
+    LogonFailed,
+    SapLogonNotRunning,
+    ScriptingUnavailable,
+    SessionUnavailable,
+    WrongSystem,
+)
 from shoponline.saprobot.guard import VKEY_ENTER, GuardedSession
 from shoponline.saprobot.popups import PopupRule, handle_popups
 from shoponline.saprobot.screen import Screens
@@ -94,17 +102,21 @@ def login(engine, config: LoginConfig, screens: Screens, popups: list[PopupRule]
         connection = engine.OpenConnection(config.connection, True)
         gui_session = connection.Children(0)
     except Exception as exc:
-        raise SessionUnavailable(f"Không mở được kết nối '{config.connection}': {exc}") from exc
-    guarded = GuardedSession(gui_session)
-    screens.set_text(guarded, "login", "user", config.user)
-    screens.set_text(guarded, "login", "password", config.password)
-    if config.language:
-        screens.set_text(guarded, "login", "language", config.language)
-    guarded.send_vkey(VKEY_ENTER)
-    handle_popups(guarded, popups)
-    status = read_status(guarded)
-    if status.is_error:
-        raise SessionUnavailable(f"Đăng nhập SAP không thành công: {status}")
+        raise ConnectionNotFound(f"Không mở được kết nối '{config.connection}': {exc}") from exc
+    try:
+        guarded = GuardedSession(gui_session)
+        screens.set_text(guarded, "login", "user", config.user)
+        screens.set_text(guarded, "login", "password", config.password)
+        if config.language:
+            screens.set_text(guarded, "login", "language", config.language)
+        guarded.send_vkey(VKEY_ENTER)
+        handle_popups(guarded, popups)
+        status = read_status(guarded)
+        if status.is_error:
+            raise LogonFailed(f"Đăng nhập SAP không thành công: {status}")
+    except Exception:
+        logoff(gui_session)  # do not leave a half-finished logon window open
+        raise
     return gui_session
 
 
@@ -125,10 +137,16 @@ def ensure_session(
             continue
     if sessions:
         found = ", ".join(str(identity(s)) for s in sessions)
-        raise WrongSystem(f"Không có phiên nào của {target} user {config.user}; đang mở: {found}")
+        raise ForeignSession(
+            f"Không có phiên nào của {target} user {config.user}; đang mở: {found}"
+        )
     log.info("Không có phiên SAP nào, đăng nhập lại qua '%s'", config.connection)
     gui_session = login(engine, config, screens, popups)
-    return gui_session, check_identity(gui_session, target, config.user)
+    try:
+        return gui_session, check_identity(gui_session, target, config.user)
+    except WrongSystem:
+        logoff(gui_session)  # the robot opened this logon itself, so it closes it
+        raise
 
 
 def logoff(gui_session) -> None:
@@ -164,11 +182,11 @@ def _running_engine():
     try:
         import win32com.client
     except ImportError as exc:
-        raise SessionUnavailable("Thiếu pywin32: chạy 'uv sync --extra robot'") from exc
+        raise ScriptingUnavailable("Thiếu pywin32: chạy 'uv sync --extra robot'") from exc
     try:
         return win32com.client.GetObject("SAPGUI").GetScriptingEngine
     except Exception as exc:
-        raise SessionUnavailable(f"SAP Logon chưa chạy hoặc chưa bật scripting: {exc}") from exc
+        raise ScriptingUnavailable(f"SAP Logon chưa chạy hoặc chưa bật scripting: {exc}") from exc
 
 
 def scripting_engine(
@@ -189,7 +207,7 @@ def scripting_engine(
             raise
     path = Path(os.environ.get("SHOPONLINE_SAPLOGON_PATH") or SAPLOGON_DEFAULT)
     if not path.is_file():
-        raise SessionUnavailable(f"SAP Logon chưa chạy và không thấy {path}")
+        raise SapLogonNotRunning(f"SAP Logon chưa chạy và không thấy {path}")
     log.info("SAP Logon chưa chạy, mở %s", path)
     launch([str(path)])
     deadline = time.monotonic() + wait_seconds

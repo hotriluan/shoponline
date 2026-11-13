@@ -4,6 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{% block title %}Shop online{% endblock %}</title>
+{% block head %}{% endblock %}
 <style>
   :root { --ink:#1f2933; --muted:#616e7c; --line:#d9e2ec; --bg:#f5f7fa; --accent:#1f6feb; --bad:#b42318; --warn:#b54708; --ok:#067647; }
   * { box-sizing: border-box; }
@@ -48,6 +49,7 @@
     <a href="/customers">Khách hàng</a>
     <a href="/sap-reports">Báo cáo SAP</a>
     <a href="/robot">Robot SAP</a>
+    <a href="/robot/sap-connection">Kết nối SAP</a>
   </nav>
   <span class="who">{{ user.username }} ({{ user.role }})
     <form class="inline" method="post" action="/logout"><button class="secondary">Đăng xuất</button></form>

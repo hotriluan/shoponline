@@ -61,7 +61,8 @@ def database_lookup(session: Session) -> Lookup:
                 CustomerInfo.platform == platform, CustomerInfo.platform_order_id == order_id
             )
         )
-        return CustomerLine(order_id, info.customer_name if info else None, info.address if info else None)
+        name = info.customer_name if info else None
+        return CustomerLine(order_id, name, info.address if info else None)
 
     return lookup
 

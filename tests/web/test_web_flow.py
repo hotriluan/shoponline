@@ -35,7 +35,7 @@ def app(db, tmp_path):
             bind=db.bind, join_transaction_mode="create_savepoint", expire_on_commit=False
         )
 
-    return create_app(settings, session_factory=factory)
+    return create_app(settings, session_factory=factory, env={})
 
 
 def _client(app, username=None, password=None):

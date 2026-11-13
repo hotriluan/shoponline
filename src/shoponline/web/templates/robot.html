@@ -5,8 +5,9 @@
 <div class="box row">
   {% if target %}
   <span>Hệ thống đích của việc mới: <strong>{{ target }}</strong></span>
+  <a href="/robot/sap-connection">Kết nối SAP</a>
   {% else %}
-  <span class="muted">Robot chưa được bật (chưa đặt SHOPONLINE_SAP_SYSTEM và SHOPONLINE_SAP_CLIENT); báo cáo SAP tải lên bằng tay.</span>
+  <span class="muted">Robot chưa được bật (chưa đặt hệ thống và client SAP ở <a href="/robot/sap-connection">Kết nối SAP</a>); báo cáo SAP tải lên bằng tay.</span>
   {% endif %}
   {% if control.paused %}
   <span class="bad">Đang dừng: {{ control.paused_reason }} ({{ control.changed_by }}, {{ control.changed_at|localtime }})</span>

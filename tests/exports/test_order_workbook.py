@@ -8,7 +8,9 @@ from shoponline.domain import states
 from shoponline.exports.order_workbook import build_order_workbook, order_file_name
 
 SETTING = PlatformSetting(platform="TIKTOK", display_name="TIKTOK", sap_customer="1200001146")
-BATCH = OrderBatch(platform="TIKTOK", processing_date=date(2026, 11, 11), gi_date=date(2026, 11, 12))
+BATCH = OrderBatch(
+    platform="TIKTOK", processing_date=date(2026, 11, 11), gi_date=date(2026, 11, 12)
+)
 
 
 def _order(order_id, hour, status=states.READY, subsidy=0, quantity=1, lines=1):

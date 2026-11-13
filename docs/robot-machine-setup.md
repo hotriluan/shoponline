@@ -34,24 +34,41 @@ Robot điều khiển SAP GUI nên cần màn hình đăng nhập thật, không
 
 ## 3. Cấu hình
 
-Robot đọc cùng `.env` với `web`. Thêm:
+Cấu hình SAP nằm trong database và sửa trên web: **Robot SAP → Kết nối SAP** (chỉ `admin` sửa được). Không cần sửa `.env` hay khởi động lại web hay robot; việc kế tiếp của robot dùng giá trị mới.
 
-| Biến | Đặt ở | Ý nghĩa |
-|---|---|---|
-| `SHOPONLINE_SAP_SYSTEM`, `SHOPONLINE_SAP_CLIENT` | `.env` của `web` | Hệ thống và client của việc mới, ở dự án này là `AEP` và `300`. Để trống thì web không xếp việc cho robot. |
-| `SHOPONLINE_SAP_CONNECTION` | máy robot | Tên mục SAP Logon robot dùng để đăng nhập cho mỗi việc. Trên máy hiện tại: `SAP PRODUCTION GROUP ALKANA` (mục trỏ `AEP`) |
-| `SHOPONLINE_SAP_USER` | máy robot | User SAP của robot: `AL17016` |
-| `SHOPONLINE_SAP_PASSWORD` | máy robot, từ kho bí mật | Mật khẩu user robot; không ghi vào database hay nhật ký |
-| `SHOPONLINE_SAP_LANGUAGE` | máy robot | Ngôn ngữ đăng nhập, ví dụ `EN` (không bắt buộc) |
-| `SHOPONLINE_SAPLOGON_PATH` | máy robot | Đường dẫn `saplogon.exe` để robot tự mở SAP Logon (không bắt buộc; mặc định `C:\Program Files (x86)\SAP\FrontEnd\SAPgui\saplogon.exe`) |
-| `SHOPONLINE_ROBOT_MAX_FAILURES` | cả hai | Số việc lỗi liên tiếp thì robot tự dừng (mặc định 3) |
-| `SHOPONLINE_ROBOT_EVIDENCE_KEEP_DAYS` | cả hai | Số ngày giữ ảnh chụp màn hình lỗi (mặc định 30) |
+| Mục trên trang | Ý nghĩa |
+|---|---|
+| Hệ thống, Client | Hệ thống và client của việc mới, ở dự án này là `AEP` và `300`. Để trống thì web không xếp việc cho robot. |
+| Mục trong SAP Logon | Tên mục robot dùng để đăng nhập cho mỗi việc. Chọn từ danh sách robot báo về (đọc từ `%APPDATA%\SAP\Common\SAPUILandscape.xml` của tài khoản chạy robot). Trên máy hiện tại: `SAP PRODUCTION GROUP ALKANA` (mục trỏ `AEP`) |
+| User SAP | User SAP của robot: `AL17016` |
+| Ngôn ngữ | Ngôn ngữ đăng nhập, ví dụ `EN` (không bắt buộc) |
+| Số lỗi liên tiếp thì dừng | Mặc định 3 |
+| Giữ ảnh lỗi (ngày) | Mặc định 30 |
 
-Thao tác đọc `zrsd001` và `zrsd004` đã được viết từ bản ghi recorder. Đặt `SHOPONLINE_SAP_SYSTEM` khi máy robot đã sẵn sàng và mục Kiểm tra bên dưới đã qua.
+**Mật khẩu không nhập trên web.** Đặt trên máy robot, dưới đúng tài khoản Windows chạy robot (`luanh` trên máy hiện tại, `saprobot` trên máy riêng):
+
+```powershell
+uv run --extra robot shoponline sap-password set      # hỏi hai lần, không in ra
+uv run --extra robot shoponline sap-password status   # chỉ nói đã có hay chưa
+```
+
+Mật khẩu nằm trong Windows Credential Manager của tài khoản đó; web chỉ thấy "đã có / chưa có" do robot báo về. Đổi mật khẩu SAP thì chạy lại `sap-password set`.
+
+Các biến môi trường cũ vẫn hoạt động, nhưng chỉ làm giá trị ban đầu hoặc dự phòng:
+
+| Biến | Vai trò |
+|---|---|
+| `SHOPONLINE_SAP_SYSTEM`, `SHOPONLINE_SAP_CLIENT`, `SHOPONLINE_SAP_CONNECTION`, `SHOPONLINE_SAP_USER`, `SHOPONLINE_SAP_LANGUAGE`, `SHOPONLINE_ROBOT_MAX_FAILURES`, `SHOPONLINE_ROBOT_EVIDENCE_KEEP_DAYS` | Lần đầu hệ thống chạy sau khi nâng cấp, các giá trị này được chép vào database và coi là đã kiểm tra, để máy đang chạy không bị khóa. Sau đó giá trị trên web được ưu tiên; ô nào còn trống ở database thì lấy từ biến. |
+| `SHOPONLINE_SAP_PASSWORD` | Dự phòng khi Credential Manager chưa có mật khẩu. Nên bỏ biến này sau khi `sap-password set` và nút Kiểm tra đã thành công. |
+| `SHOPONLINE_SAPLOGON_PATH` | Đường dẫn `saplogon.exe` để robot tự mở SAP Logon (không bắt buộc; mặc định `C:\Program Files (x86)\SAP\FrontEnd\SAPgui\saplogon.exe`) |
+
+Thao tác đọc `zrsd001` và `zrsd004` đã được viết từ bản ghi recorder.
+
+**Đổi hệ thống hoặc client thì phải kiểm tra trước.** Sau khi đổi, trang hiện "chưa xác nhận": web không xếp việc đọc báo cáo và robot không nhận việc nào ngoài kiểm tra kết nối, cho đến khi một lần **Kiểm tra** thành công với đúng hệ thống và client mới.
 
 Robot so hệ thống, client và user của phiên đang mở với việc trước khi làm (`AEP`, `300`, `AL17016`). Không khớp thì robot từ chối việc và tự tạm dừng.
 
-Danh sách T-code và phím robot được dùng nằm cứng trong mã ([guard.py](../src/shoponline/saprobot/guard.py)), không nằm trong `.env` hay `config/`. Sửa cấu hình không nới được danh sách này.
+Danh sách T-code và phím robot được dùng nằm cứng trong mã ([guard.py](../src/shoponline/saprobot/guard.py)), không nằm trong `.env`, database hay `config/`. Sửa cấu hình không nới được danh sách này.
 
 ## 4. Cài và đăng ký
 
@@ -64,7 +81,7 @@ pwsh -ExecutionPolicy Bypass -File scripts\windows\register-tasks.ps1 -RobotUser
 
 Tác vụ `shoponline-robot` chạy `uv run --no-dev --extra robot shoponline robot` khi `saprobot` đăng nhập.
 
-Máy dùng chung hiện tại (tài khoản `luanh`, xem plan) không cần bước này: mỗi lần deploy qua GitHub, `update-production.ps1` tự đăng ký `shoponline-robot` cho tài khoản chạy runner nếu chưa có, và bật robot khi cấu hình SAP đã đủ. Task Scheduler không chạy bản thứ hai. Robot cũng giữ một khóa trong PostgreSQL, nên robot thứ hai (kể cả trên máy khác) thoát ngay với mã 3.
+Máy dùng chung hiện tại (tài khoản `luanh`, xem plan) không cần bước này: mỗi lần deploy qua GitHub, `update-production.ps1` tự đăng ký `shoponline-robot` cho tài khoản chạy runner nếu chưa có, và luôn bật robot (robot khởi động được cả khi cấu hình SAP chưa đủ, và báo thiếu gì trên trang Kết nối SAP). Task Scheduler không chạy bản thứ hai. Robot cũng giữ một khóa trong PostgreSQL, nên robot thứ hai (kể cả trên máy khác) thoát ngay với mã 3.
 
 ## 5. Kiểm tra
 
@@ -75,8 +92,9 @@ Trước lần chạy đầu tiên trên Production:
 
 Sau đó:
 
-1. Đăng nhập `saprobot`, mở SAP Logon, đăng nhập `AEP` client `300` bằng `AL17016`.
-2. Mở trang **Robot SAP** trên web: thấy hệ thống đích và trạng thái "Đang bật".
-3. Nhật ký robot nằm ở `<SHOPONLINE_DATA_DIR>\logs\robot.log`.
+1. Trên máy robot, dưới tài khoản chạy robot: `uv run --extra robot shoponline sap-password set`.
+2. Mở trang **Robot SAP → Kết nối SAP**: thấy robot "đang chạy", mật khẩu "đã có", và danh sách mục SAP Logon có mục trỏ `AEP`.
+3. Chọn mục, nhập hệ thống `AEP`, client `300`, user `AL17016`, bấm **Lưu và kiểm tra**. Trong khoảng 30 giây trang hiện hệ thống, client và user của phiên robot vừa đăng nhập, rồi robot đăng xuất.
+4. Nhật ký robot nằm ở `<SHOPONLINE_DATA_DIR>\logs\robot.log`.
 
 Cách vận hành hằng ngày và xử lý sự cố: [robot-runbook.md](robot-runbook.md).

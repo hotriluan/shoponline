@@ -81,7 +81,7 @@ pwsh -ExecutionPolicy Bypass -File scripts\windows\register-tasks.ps1 -User $env
 
 ## 5b. Tự động triển khai khi push `main`
 
-[`.github/workflows/deploy.yml`](../.github/workflows/deploy.yml) chạy test trên GitHub (PostgreSQL 16), sau đó giao bước deploy cho self-hosted runner có nhãn `shoponline-prod` trên máy chạy thật. Runner gọi [`update-production.ps1`](../scripts/windows/update-production.ps1) trong `C:\shoponline`. Script dừng robot và web, sao lưu database, fast-forward tới commit vừa push, chạy `uv sync --frozen --no-dev --extra robot` và `migrate`. Sau đó nó đăng ký các tác vụ còn thiếu cho tài khoản chạy runner (`register-tasks.ps1 -AtLogOn -OnlyMissing`: web, sao lưu, retention, robot), khởi động lại web, chờ trang `/login` trả lời và bật robot. Tác vụ đã có được giữ nguyên, kể cả tùy chọn như `-RetentionApply`. Robot chỉ được bật khi cấu hình có đủ `SHOPONLINE_SAP_CONNECTION`, `SHOPONLINE_SAP_USER`, `SHOPONLINE_SAP_PASSWORD`; thiếu biến nào thì log deploy nêu tên biến đó. Nếu robot thoát ngay sau khi bật, job deploy báo lỗi. Nếu lỗi giữa chừng, script in commit cũ để lùi lại và vẫn cố khởi động web và robot.
+[`.github/workflows/deploy.yml`](../.github/workflows/deploy.yml) chạy test trên GitHub (PostgreSQL 16), sau đó giao bước deploy cho self-hosted runner có nhãn `shoponline-prod` trên máy chạy thật. Runner gọi [`update-production.ps1`](../scripts/windows/update-production.ps1) trong `C:\shoponline`. Script dừng robot và web, sao lưu database, fast-forward tới commit vừa push, chạy `uv sync --frozen --no-dev --extra robot` và `migrate`. Sau đó nó đăng ký các tác vụ còn thiếu cho tài khoản chạy runner (`register-tasks.ps1 -AtLogOn -OnlyMissing`: web, sao lưu, retention, robot), khởi động lại web, chờ trang `/login` trả lời và bật robot. Tác vụ đã có được giữ nguyên, kể cả tùy chọn như `-RetentionApply`. Robot luôn được bật khi deploy: nó khởi động được cả khi cấu hình SAP chưa đủ, và trang **Kết nối SAP** báo thiếu gì (cấu hình SAP nằm trong database, mật khẩu trong Windows Credential Manager của tài khoản chạy robot; xem [robot-machine-setup.md](robot-machine-setup.md)). Nếu robot thoát ngay sau khi bật, job deploy báo lỗi. Nếu lỗi giữa chừng, script in commit cũ để lùi lại và vẫn cố khởi động web và robot.
 
 Cài runner một lần, bằng tài khoản sở hữu `C:\shoponline` (cần `gh` đăng nhập với quyền admin repo):
 
@@ -96,7 +96,7 @@ Ràng buộc an toàn:
 - `C:\shoponline` chỉ được cập nhật qua GitHub. Sửa tay trong thư mục này làm deploy dừng lại.
 - Workflow không có trigger `pull_request`. Repo bật chế độ bắt buộc duyệt workflow của mọi người đóng góp bên ngoài (`fork-pr-contributor-approval = all_external_contributors`), nên code từ fork không tự chạy trên máy chạy thật.
 - Thay đổi trong `update-production.ps1` chỉ có hiệu lực từ lần deploy kế tiếp, vì runner chạy bản đang có trên đĩa.
-- Chạy lại deploy bằng tay: tab Actions, workflow `deploy`, **Run workflow** (hoặc `gh workflow run deploy`). Khi máy đã ở đúng commit, lần chạy này chỉ đăng ký tác vụ còn thiếu và bật web, robot nếu đang tắt. Dùng nó sau khi điền cấu hình SAP cho robot.
+- Chạy lại deploy bằng tay: tab Actions, workflow `deploy`, **Run workflow** (hoặc `gh workflow run deploy`). Khi máy đã ở đúng commit, lần chạy này chỉ đăng ký tác vụ còn thiếu và bật web, robot nếu đang tắt. Dùng nó khi robot cần được bật lại hoặc tác vụ còn thiếu.
 
 ## 6. Kiểm tra sau khi triển khai
 

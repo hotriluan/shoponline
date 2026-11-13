@@ -27,6 +27,7 @@ from tests.fixtures.build_fixtures import (
     zrsd004_file,
     zrsd004_row,
 )
+from tests.sap_setup import NO_ENV, configure_sap
 from tests.saprobot.fake_sap import FakeEngine, FakeSession, Info, engine_with
 
 QA = SapTarget("QAS", "300")
@@ -39,9 +40,12 @@ def settings(tmp_path):
         database_url="unused",
         secret_key="s" * 40,
         data_dir=tmp_path / "data",
-        sap_target=QA,
-        robot_max_failures=3,
     )
+
+
+@pytest.fixture(autouse=True)
+def sap_ready(db):
+    configure_sap(db, QA)
 
 
 @pytest.fixture
@@ -62,10 +66,11 @@ def _worker(db, settings, gui, transactions):
         settings,
         _factory(db),
         lambda: engine_with(gui),
-        LOGIN,
         Screens({}),
         [],
         transactions=transactions,
+        env=NO_ENV,
+        login_provider=lambda _db: LOGIN,
     )
 
 
@@ -243,12 +248,13 @@ def test_logs_in_for_the_job_and_logs_off_right_after(db, settings, batch, tmp_p
         settings,
         _factory(db),
         lambda: engine,
-        LOGIN,
         screens,
         [],
         transactions={
             queue.READ_ZRSD001: Transaction(lambda ctx: TransactionResult(report), False)
         },
+        env=NO_ENV,
+        login_provider=lambda _db: LOGIN,
     )
     job = request_zrsd001(db, QA, batch, "admin")
     worker.run_once()

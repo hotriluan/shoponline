@@ -27,7 +27,11 @@ ACTIVE_STATUSES = frozenset({PENDING, RUNNING, UNKNOWN, NEED_REVIEW})
 READ_ZRSD001 = "read_zrsd001"
 READ_ZRSD004 = "read_zrsd004"
 # Jobs that only read SAP; they can be retried without risk of creating a second document.
-READ_KINDS = frozenset({READ_ZRSD001, READ_ZRSD004})
+# Logs on, reads who is logged on, logs off. It sends no T-code, so it also runs while the robot is
+# paused or the configured system has not been verified yet.
+CHECK_CONNECTION = "check_connection"
+READ_KINDS = frozenset({READ_ZRSD001, READ_ZRSD004, CHECK_CONNECTION})
+CHECK_KEY = "check_connection"
 
 LABELS = {
     PENDING: "Chờ",
@@ -106,15 +110,12 @@ def enqueue(
     return job
 
 
-def claim(session: Session) -> SapJob | None:
-    """Take the oldest PENDING job; concurrent claimers skip rows locked by each other."""
-    job = session.scalar(
-        select(SapJob)
-        .where(SapJob.status == PENDING)
-        .order_by(SapJob.id)
-        .limit(1)
-        .with_for_update(skip_locked=True)
-    )
+def claim(session: Session, kinds: frozenset[str] | None = None) -> SapJob | None:
+    """Take the oldest PENDING job (of the given kinds); concurrent claimers skip locked rows."""
+    stmt = select(SapJob).where(SapJob.status == PENDING)
+    if kinds is not None:
+        stmt = stmt.where(SapJob.kind.in_(kinds))
+    job = session.scalar(stmt.order_by(SapJob.id).limit(1).with_for_update(skip_locked=True))
     if job is None:
         return None
     job.status = RUNNING
@@ -143,9 +144,17 @@ def complete(session: Session, job: SapJob, result: dict, actor: str = "robot") 
 
 
 def fail(
-    session: Session, job: SapJob, error: str, evidence: str | None = None, actor: str = "robot"
+    session: Session,
+    job: SapJob,
+    error: str,
+    evidence: str | None = None,
+    actor: str = "robot",
+    result: dict | None = None,
 ) -> None:
-    _finish(session, job, FAILED, actor, error=error, evidence_path=evidence)
+    fields = {"error": error, "evidence_path": evidence}
+    if result is not None:
+        fields["result"] = json.dumps(result, ensure_ascii=False)
+    _finish(session, job, FAILED, actor, **fields)
 
 
 def mark_unknown(
@@ -180,6 +189,24 @@ def retry(session: Session, job: SapJob, actor: str) -> None:
     job.finished_at = None
     session.flush()
     states.log_event(session, actor, "sap_job_retry", detail=_brief(job))
+
+
+def supersede_checks(session: Session, actor: str) -> int:
+    """Close the connection checks still waiting, so a new click is not blocked by an old one.
+
+    With the robot off a check can wait for a long time; the person who clicks again wants a
+    fresh check, not the dedupe refusal.
+    """
+    waiting = session.scalars(
+        select(SapJob).where(SapJob.kind == CHECK_CONNECTION, SapJob.status == PENDING)
+    ).all()
+    for job in waiting:
+        job.status = FAILED
+        job.error = "Thay bằng lần kiểm tra mới"
+        job.finished_at = _now()
+        states.log_event(session, actor, "sap_job_failed", detail=_brief(job))
+    session.flush()
+    return len(waiting)
 
 
 def requeue_interrupted(session: Session, actor: str = "robot") -> list[SapJob]:
