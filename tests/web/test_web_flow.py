@@ -7,8 +7,15 @@ from openpyxl import load_workbook
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from shoponline.accounting import ledger
 from shoponline.config import Settings
-from shoponline.db.models import OrderBatch, SalesOrder, SkuMapping
+from shoponline.db.models import (
+    AccountingSentDelivery,
+    ImportBatch,
+    OrderBatch,
+    SalesOrder,
+    SkuMapping,
+)
 from shoponline.domain import states
 from shoponline.web.app import create_app
 from shoponline.web.auth import set_user
@@ -63,7 +70,7 @@ def test_pages_require_login(app):
     assert "Sai tên đăng nhập" in resp.text
 
 
-def test_manual_mode_end_to_end(app, db, tmp_path):
+def test_manual_mode_end_to_end(app, db, tmp_path, frozen_today):
     client = _client(app, "admin", "admin-password")
     shopee = shopee_orders_file(
         tmp_path / "Order.toship.xlsx",
@@ -133,7 +140,7 @@ def test_manual_mode_end_to_end(app, db, tmp_path):
     db.refresh(wrong)
     assert wrong.status == states.SO_LINKED
 
-    # 6. zrsd004 -> preview with warning for the order without name -> accounting file
+    # 6. zrsd004 uploaded by hand -> preview with a warning for the order without a name
     z4 = zrsd004_file(
         tmp_path / "zrsd004.xlsx",
         [
@@ -142,25 +149,55 @@ def test_manual_mode_end_to_end(app, db, tmp_path):
         ],
     )
     resp = _upload(client, "/sap-reports/zrsd004", z4)
-    assert "SHOP ONLINE 121126.xlsx" in resp.text
     assert "SO 210000002" in resp.text and "tên khách" in resp.text
-    record_id = resp.text.split("/sap-reports/zrsd004/")[1].split("/")[0]
-    resp = client.get(f"/sap-reports/zrsd004/{record_id}/accounting-file")
-    ws = load_workbook(BytesIO(resp.content)).active
+    assert "/accounting" in resp.text and "accounting-file" not in resp.text
+    db.expire_all()
+    assert {o.status for o in db.scalars(select(SalesOrder))} == {states.DELIVERED}
+    record = db.scalar(select(ImportBatch).where(ImportBatch.kind == "zrsd004"))
+
+    # 7. accounting run: the earlier upload is offered, then draft, finalize and download
+    ledger.set_cutoff(db, date(2000, 1, 1), "test")  # the migration set it to the day it ran
+    resp = client.post("/accounting/runs", follow_redirects=False)
+    run_url = resp.headers["location"]
+    assert run_url.startswith("/accounting/runs/")
+    assert "zrsd004.xlsx" in client.get(run_url).text
+    client.post(f"{run_url}/attach", data={"import_batch_id": record.id})
+    page = client.get(run_url).text
+    assert "Xong, có DO" in page and "Chưa có việc" in page  # 12/11 covered, 13/11 not read
+    fingerprint = page.split('name="fingerprint" value="')[1].split('"')[0]
+
+    draft = client.get(f"{run_url}/draft")
+    assert "NH%C3%81P%20SHOP%20ONLINE%20121126.xlsx" in draft.headers["content-disposition"]
+    ws = load_workbook(BytesIO(draft.content)).active
     assert [ws.cell(2, c).value for c in (5, 6, 7)] == [
         "2611110AAAAAAA",
         "Người Thử",
         "Phường Một, Tỉnh Thử, Việt Nam",
     ]
     assert ws.cell(3, 5).value == "2611110BBBBBBB"  # manual link wins over mistyped PO No
-    db.expire_all()
-    assert {o.status for o in db.scalars(select(SalesOrder))} == {states.DELIVERED}
+    assert not db.scalars(select(AccountingSentDelivery)).all()  # a draft records nothing
 
-    # 7. once retention deleted the stored zrsd004, the download says so instead of failing
-    for stored in app.state.settings.upload_dir.glob("*.xlsx"):
+    refused = client.post(f"{run_url}/finalize", data={"fingerprint": fingerprint}).text
+    assert "Còn chưa có dữ liệu" in refused and "SHOPEE 13/11/2026" in refused
+    assert not db.scalars(select(AccountingSentDelivery)).all()
+
+    client.post(f"{run_url}/finalize", data={"fingerprint": fingerprint, "allow_partial": "1"})
+    db.expire_all()
+    assert {d.delivery for d in db.scalars(select(AccountingSentDelivery))} == {
+        "1900000001",
+        "1900000002",
+    }
+    final = client.get(f"{run_url}/file")
+    assert final.status_code == 200
+    ws = load_workbook(BytesIO(final.content)).active
+    assert ws.cell(3, 5).value == "2611110BBBBBBB"
+    assert client.get(f"{run_url}/file").content == final.content
+
+    # 8. a stored file that is gone gives a clear 404, not a server error
+    for stored in app.state.settings.export_dir.glob("*.xlsx"):
         stored.unlink()
-    resp = client.get(f"/sap-reports/zrsd004/{record_id}/accounting-file")
-    assert resp.status_code == 404 and "thời hạn lưu" in resp.text
+    resp = client.get(f"{run_url}/file")
+    assert resp.status_code == 404 and "không còn trên máy chủ" in resp.text
 
 
 def test_viewer_cannot_change_data(app, db, tmp_path):

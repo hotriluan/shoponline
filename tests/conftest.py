@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
@@ -55,3 +56,20 @@ def db(db_engine):
         session.close()
         outer.rollback()
         connection.close()
+
+
+@pytest.fixture
+def frozen_today(monkeypatch):
+    """The application's "today" (Vietnam) is 2026-11-13 for the length of the test."""
+    import shoponline.clock as clock
+
+    real = clock.datetime
+
+    class Frozen(real):
+        @classmethod
+        def now(cls, tz=None):
+            moment = real(2026, 11, 13, 5, 0, tzinfo=UTC)
+            return moment.astimezone(tz) if tz else moment
+
+    monkeypatch.setattr(clock, "datetime", Frozen)
+    assert datetime  # the test module's own datetime is untouched

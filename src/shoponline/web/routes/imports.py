@@ -4,6 +4,7 @@ from pathlib import Path
 from fastapi import APIRouter, Depends, File, Form, Request, UploadFile
 from sqlalchemy.orm import Session
 
+from shoponline.clock import today_vn
 from shoponline.db.models import AppUser
 from shoponline.importers.excel_table import FileRejected
 from shoponline.importers.order_import import READERS, import_orders
@@ -19,7 +20,7 @@ def _form(request, user, **extra):
         "import_form.html",
         user,
         platforms=sorted(READERS),
-        today=date.today().isoformat(),
+        today=today_vn().isoformat(),
         **extra,
     )
 

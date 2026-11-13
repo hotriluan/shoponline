@@ -166,6 +166,7 @@ def create_app(
     env: Mapping[str, str] | None = None,
 ) -> FastAPI:
     from shoponline.web.routes import (
+        accounting,
         batches,
         customers,
         imports,
@@ -206,6 +207,16 @@ def create_app(
     def home():
         return redirect("/batches")
 
-    for module in (login, imports, batches, orders, sku_mapping, customers, sap_reports, robot):
+    for module in (
+        login,
+        imports,
+        batches,
+        orders,
+        sku_mapping,
+        customers,
+        sap_reports,
+        accounting,
+        robot,
+    ):
         app.include_router(module.router)
     return app

@@ -7,6 +7,7 @@ from fastapi.responses import FileResponse
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from shoponline.clock import today_vn
 from shoponline.db.models import AppUser, OrderBatch, PlatformSetting, SapJob
 from shoponline.sapjobs import queue, sap_settings
 from shoponline.sapjobs.report_requests import request_zrsd001, request_zrsd004
@@ -60,7 +61,7 @@ def robot_page(
         command_refusal=robot_refusal(config),
         batches=batches,
         platforms=platforms,
-        today=date.today(),
+        today=today_vn(),
         payload_of=queue.payload_of,
         result_of=queue.result_of,
     )
@@ -121,7 +122,7 @@ def command_robot(
                 day = date.fromisoformat(gi_date)
             except ValueError:
                 raise ValueError("Chọn ngày goods issue để đọc zrsd004.") from None
-            if day > date.today():
+            if day > today_vn():
                 raise ValueError("Ngày goods issue chưa tới nên SAP chưa có dữ liệu.")
             job = request_zrsd004(db, config.target, platform, day, user.username)
             done = f"Robot sẽ đọc zrsd004 của {platform} ngày {day:%d/%m/%Y}"

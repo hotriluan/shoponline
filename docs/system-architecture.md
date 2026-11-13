@@ -26,10 +26,13 @@ flowchart LR
   SA --> R1[zrsd001]
   SA --> R4[zrsd004]
   R1 -->|tải lên hoặc robot| L[reconcile: nối SO, báo lệch]
-  R4 -->|tải lên hoặc robot| A[exports/accounting_workbook]
+  R4 -->|tải lên hoặc robot| RUN[accounting/runs: đợt xuất]
+  RUN --> A[exports/accounting_workbook: gộp nhiều nguồn]
   L --> O
-  O --> A
+  O -->|đối chiếu đơn chờ| RUN
   A --> K[SHOP ONLINE ddmmyy.xlsx gửi kế toán]
+  K -->|chốt| G[(accounting_sent_delivery: sổ DO đã gửi)]
+  G -->|loại DO đã gửi| A
 ```
 
 Tải file lên và robot đi qua cùng một hàm, [report_ingest.py](../src/shoponline/reconcile/report_ingest.py), nên kết quả giống hệt nhau. File robot xuất ra được lưu như một file tải lên (`import_batch`).
@@ -42,7 +45,9 @@ Tải file lên và robot đi qua cùng một hàm, [report_ingest.py](../src/sh
 | `db/` | Model SQLAlchemy, phiên; schema đổi qua Alembic trong `migrations/versions/` |
 | `domain/` | Trạng thái đơn và chuyển trạng thái, ánh xạ SKU, ngày goods issue, giá trị SO dự kiến |
 | `importers/` | Đọc file Shopee, TikTok, Lazada, `zrsd001`, `zrsd004`, bảng ánh xạ; nhận cột theo tên, thiếu cột bắt buộc thì từ chối cả file |
-| `exports/` | File `ĐƠN HÀNG ONLINE` và file gửi kế toán (giữ nguyên `zrsd004`, chèn ba cột) |
+| `exports/` | File `ĐƠN HÀNG ONLINE` và file gửi kế toán (một file `zrsd004`: giữ nguyên, chèn ba cột; nhiều file: gộp, lọc, tính lại dòng tổng) |
+| `accounting/` | Sổ DO đã gửi kế toán và mốc ngày (`ledger.py`); đợt xuất: cặp sàn × ngày cần đọc, đối chiếu, bản nháp, chốt, hủy (`runs.py`) |
+| `clock.py` | "Hôm nay" theo múi giờ `Asia/Saigon`, dùng chung cho cả ứng dụng |
 | `reconcile/` | Nối SO với đơn theo `PO No`, báo lệch, đánh dấu đã có DO |
 | `sapjobs/` | Hàng đợi `sap_job` (nhận việc bằng `FOR UPDATE SKIP LOCKED`), công tắc dừng robot, xếp việc đọc báo cáo |
 | `saprobot/` | Robot: lớp chặn T-code (`guard.py`), phiên, thanh trạng thái, popup, ảnh lỗi, cửa sổ Windows (`desktop.py`), vòng lặp (`worker.py`), thao tác đọc báo cáo (`transactions/`) |
@@ -53,6 +58,10 @@ Tải file lên và robot đi qua cùng một hàm, [report_ingest.py](../src/sh
 ## Trạng thái đơn
 
 `NEW` → `READY` (đủ ánh xạ) → `SO_LINKED` (có trong `zrsd001`) → `DELIVERED` (có trong `zrsd004`). Nhánh phụ: `MAPPING_ERROR`, `NEED_REVIEW`, `CANCELLED`. Mọi thay đổi đi qua `domain/states.transition` và được ghi vào `event_log`. Bảng chuyển trạng thái: [states.py](../src/shoponline/domain/states.py).
+
+## Đợt gửi kế toán
+
+Bảng `accounting_run` (một đợt: `OPEN`, `FINALIZED`, `CANCELLED`, `REVOKED`; tối đa một đợt `OPEN`), `accounting_run_read` (cặp sàn × ngày goods issue và việc robot tương ứng), `accounting_run_source` (file `zrsd004` tải tay gắn vào đợt), `accounting_sent_delivery` (sổ theo số Delivery) và `accounting_baseline` (mốc ngày). Chốt là một giao dịch: lưu file, ghi DO vào sổ, đóng đợt, ghi sự kiện. Chốt chỉ nhận đúng bản đã xem (dấu vân tay của nguồn, DO và danh sách thiếu). Các bước vận hành: [daily-operations.md](daily-operations.md).
 
 ## Robot
 

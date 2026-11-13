@@ -19,18 +19,18 @@
   {% elif batch.confirmed_at %}
   <span class="muted">Đã xác nhận bởi {{ batch.confirmed_by }} lúc {{ batch.confirmed_at|localtime('%d/%m/%Y %H:%M') }}</span>
   <a class="button secondary" href="/sap-reports?batch_id={{ batch.id }}">Tải zrsd001</a>
-  {% if robot_enabled and user.role == 'admin' %}
-  {% if robot_verified %}
+  {% if user.role == 'admin' %}
+  {% if robot_enabled and robot_verified %}
   <form method="post" action="/batches/{{ batch.id }}/read-zrsd001" class="inline"
         onsubmit="return confirm('Robot sẽ đọc lại zrsd001 của lô này?')">
     <button class="secondary">Đọc lại zrsd001</button>
   </form>
-  <form method="post" action="/batches/{{ batch.id }}/accounting-file" class="inline">
-    <button class="secondary">Xuất file gửi kế toán (robot đọc zrsd004 ngày {{ batch.gi_date.strftime('%d/%m/%Y') }})</button>
-  </form>
-  {% else %}
-  <span class="muted">Robot đọc zrsd004 đang khóa: đã đổi hệ thống SAP, cần <a href="/robot/sap-connection">kiểm tra kết nối</a> thành công trước.</span>
+  {% elif robot_enabled %}
+  <span class="muted">Robot đang khóa: đã đổi hệ thống SAP, cần <a href="/robot/sap-connection">kiểm tra kết nối</a> thành công trước.</span>
   {% endif %}
+  <form method="post" action="/batches/{{ batch.id }}/accounting-file" class="inline">
+    <button class="secondary">Xuất file gửi kế toán</button>
+  </form>
   {% endif %}
   {% endif %}
 </div>

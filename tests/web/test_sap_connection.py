@@ -7,7 +7,8 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from shoponline.config import Settings
-from shoponline.db.models import EventLog, SapJob
+from shoponline.db.models import EventLog, SalesOrder, SapJob
+from shoponline.domain import states
 from shoponline.domain.sku_mapping import upsert_mapping
 from shoponline.importers.order_import import import_orders
 from shoponline.importers.shopee_orders import read_shopee_orders
@@ -191,23 +192,28 @@ def test_finished_check_shows_the_session_or_the_fix_and_stops_refreshing(db, ap
     assert "Name or password is incorrect" in page and "logon_failed" in page
 
 
-def test_changed_system_blocks_report_reads_until_a_check_succeeds(db, app, tmp_path):
+def test_changed_system_blocks_report_reads_until_a_check_succeeds(
+    db, app, tmp_path, frozen_today
+):
     upsert_mapping(db, "SHOPEE", "Sơn thử A", "Màu 01,1 lít", "100000001", "SAP A", "t")
     file = shopee_orders_file(tmp_path / "s.xlsx", [shopee_row("A1")])
     batch = import_orders(db, read_shopee_orders(file), "SHOPEE", date(2026, 11, 11), "t").batch
+    order = db.scalar(select(SalesOrder))
+    order.so_number, order.status = "210000001", states.SO_LINKED
+    db.flush()
 
     admin = _login(app, "admin")
     admin.post(URL, data={**FORM, "client": "400", "action": "save"})
     assert "kiểm tra kết nối" in admin.post(f"/batches/{batch.id}/confirm").text
-    assert "Robot đọc zrsd004 đang khóa" in admin.get(f"/batches/{batch.id}").text
+    assert "Robot đang khóa" in admin.get(f"/batches/{batch.id}").text
     admin.post(f"/batches/{batch.id}/accounting-file")
-    assert _reads(db) == []
+    assert _reads(db) == []  # the run opens, but no job is queued for the unverified system
     assert "chưa được xác nhận" in admin.get("/batches").text  # banner on every page
 
     sap_settings.mark_verified(db, NO_ENV, "AEP", "400")
-    admin.post(f"/batches/{batch.id}/accounting-file")
-    (read,) = _reads(db)
-    assert read.kind == queue.READ_ZRSD004 and read.target_client == "400"
+    admin.post(f"/batches/{batch.id}/accounting-file")  # the same run now gets its jobs
+    reads = _reads(db)
+    assert [(j.kind, j.target_client) for j in reads] == [(queue.READ_ZRSD004, "400")] * 2
 
 
 def _reads(db):

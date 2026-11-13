@@ -209,6 +209,17 @@ def supersede_checks(session: Session, actor: str) -> int:
     return len(waiting)
 
 
+def close_waiting(session: Session, job: SapJob, error: str, actor: str) -> None:
+    """Close a job that is not running, so a new job with the same key can be queued."""
+    if job.status not in (PENDING, UNKNOWN, NEED_REVIEW):
+        raise JobStateError(f"Việc #{job.id} đang ở {job.status}, không đóng được")
+    job.status = FAILED
+    job.error = error
+    job.finished_at = _now()
+    session.flush()
+    states.log_event(session, actor, "sap_job_failed", detail=_brief(job))
+
+
 def requeue_interrupted(session: Session, actor: str = "robot") -> list[SapJob]:
     """At robot start no job can still be running; one left RUNNING was cut off mid-way.
 

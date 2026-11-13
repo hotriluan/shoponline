@@ -13,7 +13,7 @@
   <label>File zrsd001 xuất từ SAP<input type="file" name="file" accept=".xlsx,.XLSX" required></label>
   <button>Tải lên</button>
 </form>
-<h2>zrsd004 – file gửi kế toán</h2>
+<h2>zrsd004 – DO đã giao</h2>
 <form class="box row" method="post" action="/sap-reports/zrsd004" enctype="multipart/form-data">
   <label>File zrsd004 xuất từ SAP<input type="file" name="file" accept=".xlsx,.XLSX" required></label>
   <button>Tải lên và xem trước</button>
@@ -25,7 +25,7 @@
   {% for r in recent %}
   <tr><td>{{ r.imported_at|localtime('%d/%m/%Y %H:%M') }}</td><td>{{ r.kind }}</td><td>{{ r.file_name }}</td><td>{{ r.imported_by }}</td>
       <td>{{ r.new_count }} / {{ r.updated_count }} / {{ r.unchanged_count }}</td>
-      <td>{% if r.kind == 'zrsd004' %}<a href="/sap-reports/zrsd004/{{ r.id }}/accounting-file">Tải file kế toán</a>{% endif %}</td></tr>
+      <td>{% if r.kind == 'zrsd004' %}<a href="/accounting">Gửi kế toán</a>{% endif %}</td></tr>
   {% endfor %}
 </table>
 {% endblock %}

@@ -32,6 +32,7 @@ from shoponline.saprobot.errors import (
     GuardViolation,
     LoginUnavailable,
     LogonFailed,
+    NoReportData,
     RobotError,
     SapLogonNotRunning,
     ScriptingUnavailable,
@@ -118,7 +119,11 @@ def _after_zrsd001(db: Session, job: SapJob, out: TransactionResult, settings: S
     }
 
 
-def _after_zrsd004(db: Session, job: SapJob, out: TransactionResult, settings: Settings) -> dict:
+def _after_zrsd004(
+    db: Session, job: SapJob, out: TransactionResult | None, settings: Settings
+) -> dict:
+    if out is None:  # SAP listed no delivery for the filter: a valid answer, nothing to import
+        return {"rows": 0, "delivered": 0, "warnings": [], "no_data": True}
     record = _stored_report(settings, out, "zrsd004")
     imported = ingest_zrsd004(db, record, ROBOT)
     job.import_batch_id = record.id
@@ -335,6 +340,12 @@ class Worker:
             )
         except UnknownPopup as exc:
             outcome = Outcome(queue.NEED_REVIEW, str(exc), self._capture(gui, job_id))
+        except NoReportData as exc:
+            if kind == queue.READ_ZRSD004:
+                # No delivery yet for this customer and day: a result, not a failure.
+                outcome = Outcome(queue.DONE)
+            else:
+                outcome = Outcome(queue.FAILED, f"NoReportData: {exc}", self._capture(gui, job_id))
         except Exception as exc:
             status = queue.UNKNOWN if txn is not None and txn.writes else queue.FAILED
             outcome = Outcome(status, f"{type(exc).__name__}: {exc}", self._capture(gui, job_id))
@@ -402,11 +413,15 @@ class Worker:
     def _finish(self, job_id: int, outcome: Outcome, out: TransactionResult | None) -> None:
         with self.session_factory() as db:
             job = db.get(SapJob, job_id)
+            neutral = False
             if outcome.status == queue.DONE:
                 try:
                     after = AFTER.get(job.kind)
                     result = after(db, job, out, self.settings) if after else dict(out.data)
                     queue.complete(db, job, result)
+                    # "No data" says nothing about the robot's health: it neither counts as a
+                    # failure nor clears the failures so far.
+                    neutral = bool(result.get("no_data"))
                 except Exception as exc:  # a bad result must not leave the job RUNNING
                     log.exception("Việc #%s: không nhập được kết quả", job_id)
                     db.rollback()
@@ -422,8 +437,9 @@ class Worker:
             if outcome.pause_reason:
                 queue.pause(db, ROBOT, outcome.pause_reason)
                 states.log_event(db, ROBOT, outcome.pause_event, detail={"job_id": job_id})
-            max_failures = sap_settings.load(db, self.env).max_failures
-            queue.record_outcome(db, outcome.status == queue.DONE, max_failures)
+            if not neutral:
+                max_failures = sap_settings.load(db, self.env).max_failures
+                queue.record_outcome(db, outcome.status == queue.DONE, max_failures)
             db.commit()
         log.info("Việc #%s: %s %s", job_id, outcome.status, outcome.error or "")
 

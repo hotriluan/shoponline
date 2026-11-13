@@ -6,7 +6,7 @@ Hệ thống nội bộ xử lý đơn sàn TMĐT (Shopee, TikTok, Lazada) cho b
 2. Hệ thống ánh xạ sản phẩm sang mã SAP và sinh file `ĐƠN HÀNG ONLINE <SÀN> ddmmyy.xlsx` cho sales admin.
 3. Sales admin tạo SO và DO trong SAP (chế độ thủ công), rồi admin xác nhận lô.
 4. Admin tải `zrsd001` lên: hệ thống lưu cặp mã đơn ↔ số SO và báo các điểm lệch.
-5. Admin tải `zrsd004` lên: hệ thống chèn mã đơn, tên khách, địa chỉ và xuất `SHOP ONLINE ddmmyy.xlsx` gửi kế toán.
+5. Admin mở trang **Gửi kế toán**: robot (hoặc file `zrsd004` tải tay) đọc DO của từng sàn và từng ngày goods issue; hệ thống gộp thành một file `SHOP ONLINE ddmmyy.xlsx` có thêm mã đơn, tên khách, địa chỉ, đối chiếu với đơn trên web rồi admin chốt. DO đã chốt không gửi lại.
 
 Bước 4 và 5 có thể do robot SAP làm thay (chỉ đọc báo cáo trên Production, không tạo chứng từ): xem [docs/robot-runbook.md](docs/robot-runbook.md). Ở chế độ thủ công hệ thống không ghi gì vào SAP. Kế hoạch đầy đủ: [plans/261111-0755-shopee-excel-to-sap-order-flow/plan.md](plans/261111-0755-shopee-excel-to-sap-order-flow/plan.md).
 
@@ -76,7 +76,8 @@ src/shoponline/
   db/          engine, session, models
   domain/      đơn chung, trạng thái, ánh xạ, ngày goods issue, giá trị SO
   importers/   file Shopee, TikTok, Lazada, zrsd001, zrsd004, bảng ánh xạ
-  exports/     file ĐƠN HÀNG ONLINE, file gửi kế toán
+  exports/     file ĐƠN HÀNG ONLINE, file gửi kế toán (một hoặc nhiều nguồn zrsd004)
+  accounting/  sổ DO đã gửi kế toán, đợt xuất, đối chiếu và chốt
   reconcile/   nối số SO, báo cáo lệch, nhập file báo cáo SAP (dùng chung cho tải lên và robot)
   sapjobs/     hàng đợi việc SAP trong PostgreSQL, công tắc dừng robot
   saprobot/    robot SAP GUI Scripting: lớp chặn T-code, phiên, thanh trạng thái, popup, ảnh lỗi, vòng lặp

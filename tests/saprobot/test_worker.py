@@ -15,7 +15,7 @@ from shoponline.importers.shopee_orders import read_shopee_orders
 from shoponline.sapjobs import queue
 from shoponline.sapjobs.queue import SapTarget
 from shoponline.sapjobs.report_requests import request_zrsd001, request_zrsd004
-from shoponline.saprobot.errors import SapMessageError
+from shoponline.saprobot.errors import NoReportData, SapMessageError
 from shoponline.saprobot.screen import Screens
 from shoponline.saprobot.session import LoginConfig
 from shoponline.saprobot.worker import JobContext, Transaction, TransactionResult, Worker
@@ -301,3 +301,57 @@ def test_someone_elses_session_is_never_logged_off(db, settings, batch):
     txn = Transaction(lambda ctx: TransactionResult(), False)
     _worker(db, settings, person, {queue.READ_ZRSD001: txn}).run_once()
     assert not person.Parent.closed
+
+
+# ---------------------------------------------------------------- "No data to display"
+
+
+def _no_data(ctx: JobContext) -> TransactionResult:
+    raise NoReportData("ZRSD004: SAP không có dữ liệu với bộ lọc này")
+
+
+def _failures(db) -> int:
+    db.expire_all()
+    return queue.control(db).consecutive_failures
+
+
+def test_zrsd004_without_data_is_done_and_neutral(db, settings, batch):
+    job = request_zrsd004(db, QA, batch.platform, batch.gi_date, "admin")
+    worker = _worker(
+        db, settings, _qa_session(), {queue.READ_ZRSD004: Transaction(_no_data, False)}
+    )
+
+    assert worker.run_once() is True
+
+    job = _job(db, job.id)
+    assert job.status == queue.DONE and job.import_batch_id is None and job.error is None
+    result = queue.result_of(job)
+    assert result["no_data"] is True and result["rows"] == 0 and result["delivered"] == 0
+    assert _failures(db) == 0
+
+
+def test_no_data_neither_counts_nor_clears_failures(db, settings, batch):
+    queue.control(db).consecutive_failures = 1
+    db.flush()
+    worker = _worker(
+        db, settings, _qa_session(), {queue.READ_ZRSD004: Transaction(_no_data, False)}
+    )
+    for day in range(11, 14):
+        request_zrsd004(db, QA, batch.platform, date(2026, 11, day), "admin")
+        assert worker.run_once() is True
+
+    assert _failures(db) == 1
+    assert not queue.control(db).paused
+
+
+def test_zrsd001_without_data_is_still_a_failure(db, settings, batch):
+    job = request_zrsd001(db, QA, batch, "admin")
+    worker = _worker(
+        db, settings, _qa_session(), {queue.READ_ZRSD001: Transaction(_no_data, False)}
+    )
+
+    worker.run_once()
+
+    job = _job(db, job.id)
+    assert job.status == queue.FAILED and "không có dữ liệu" in job.error
+    assert _failures(db) == 1

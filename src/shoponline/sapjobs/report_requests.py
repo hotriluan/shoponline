@@ -32,6 +32,10 @@ def request_zrsd001(session: Session, target: SapTarget, batch: OrderBatch, acto
     )
 
 
+def zrsd004_key(platform: str, gi_date: date) -> str:
+    return f"{queue.READ_ZRSD004}:{platform}:{gi_date.isoformat()}"
+
+
 def request_zrsd004(
     session: Session, target: SapTarget, platform: str, gi_date: date, actor: str
 ) -> SapJob:
@@ -48,7 +52,7 @@ def request_zrsd004(
         session,
         queue.READ_ZRSD004,
         target,
-        f"{queue.READ_ZRSD004}:{platform}:{day}",
+        zrsd004_key(platform, gi_date),
         {"platform": platform, "sold_to": setting.sap_customer, "gi_date": day},
         actor,
     )

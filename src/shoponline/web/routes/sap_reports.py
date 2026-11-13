@@ -1,19 +1,14 @@
-from pathlib import Path
-
-from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
-from fastapi.responses import FileResponse
+from fastapi import APIRouter, Depends, File, Form, Request, UploadFile
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from shoponline.db.models import AppUser, ImportBatch, OrderBatch
-from shoponline.exports.accounting_workbook import build_accounting_workbook, database_lookup
 from shoponline.importers.excel_table import FileRejected
 from shoponline.reconcile.report_ingest import ingest_zrsd001, ingest_zrsd004
 from shoponline.web.app import current_user, flash, get_db, redirect, render, require_admin
-from shoponline.web.uploads import UploadRejected, save_generated, save_upload
+from shoponline.web.uploads import UploadRejected, save_upload
 
 router = APIRouter()
-XLSX = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 
 
 def _page(request, db, user, **extra):
@@ -94,28 +89,3 @@ async def upload_zrsd004(
         delivered=imported.delivered,
         row_count=len(imported.rows),
     )
-
-
-@router.get("/sap-reports/zrsd004/{record_id}/accounting-file")
-def download_accounting_file(
-    request: Request,
-    record_id: int,
-    db: Session = Depends(get_db),
-    user: AppUser = Depends(current_user),
-):
-    record = db.get(ImportBatch, record_id)
-    if record is None or record.kind != "zrsd004":
-        raise HTTPException(404, "Không có file zrsd004 này")
-    if not Path(record.stored_path).is_file():
-        raise HTTPException(404, "File zrsd004 này đã quá thời hạn lưu và bị xóa")
-    result = build_accounting_workbook(Path(record.stored_path), database_lookup(db))
-    path = save_generated(
-        db,
-        request.app.state.settings,
-        result.workbook,
-        result.file_name,
-        "accounting_file",
-        user.username,
-    )
-    db.commit()
-    return FileResponse(path, filename=result.file_name, media_type=XLSX)

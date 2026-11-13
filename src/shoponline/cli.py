@@ -181,7 +181,7 @@ def _cmd_retention(args: argparse.Namespace) -> int:
         f"{verb}: tên và địa chỉ của {len(plan.customer_orders)} đơn, {len(plan.files)} file",
         *(f"  đơn {platform} {order_id}" for platform, order_id in plan.customer_orders),
         *(f"  file {path}" for path in plan.files),
-        f"Giữ lại vì đơn chưa có file gửi kế toán: {len(plan.held_orders)} đơn",
+        f"Giữ lại vì chưa có DO trong sổ gửi kế toán: {len(plan.held_orders)} đơn",
         *(f"  đơn {platform} {order_id}" for platform, order_id in plan.held_orders),
     ]
     text = "\n".join(lines)
@@ -190,6 +190,59 @@ def _cmd_retention(args: argparse.Namespace) -> int:
     log_dir.mkdir(parents=True, exist_ok=True)
     with (log_dir / "retention.log").open("a", encoding="utf-8") as log:
         log.write(text + "\n\n")
+    return 0
+
+
+def _cmd_accounting_ledger(args: argparse.Namespace) -> int:
+    from datetime import date
+
+    from shoponline.accounting import ledger
+    from shoponline.db.session import session_scope
+
+    settings = load_settings()
+    actor = getpass.getuser()
+    with session_scope(settings.database_url) as session:
+        if args.action == "list":
+            cutoff = ledger.get_cutoff(session)
+            entries = ledger.list_baseline(session)
+            print(f"Mốc ngày: {cutoff.isoformat() if cutoff else 'chưa đặt'}")
+            print(f"{len(entries)} DO trong sổ nền:")
+            for entry in entries:
+                owner = f"{entry.platform} {entry.platform_order_id}" if entry.platform else "-"
+                print(f"  {entry.delivery}  {owner}")
+        elif args.action == "add":
+            added = ledger.add_baseline(session, args.deliveries, actor)
+            print(f"Đã thêm {len(added)} DO vào sổ nền.")
+        elif args.action == "remove":
+            removed = ledger.remove_baseline(session, args.deliveries, actor)
+            print(f"Đã gỡ {len(removed)} DO khỏi sổ nền.")
+        elif args.set:
+            try:
+                day = date.fromisoformat(args.set)
+            except ValueError as exc:
+                raise ValueError(f"Ngày sai dạng (cần YYYY-MM-DD): {args.set}") from exc
+            ledger.set_cutoff(session, day, actor)
+            print(f"Đã đặt mốc ngày {day.isoformat()}.")
+        else:
+            cutoff = ledger.get_cutoff(session)
+            print(f"Mốc ngày: {cutoff.isoformat() if cutoff else 'chưa đặt'}")
+    return 0
+
+
+def _cmd_accounting_run(args: argparse.Namespace) -> int:
+    from shoponline.accounting import ledger
+    from shoponline.db.session import session_scope
+
+    settings = load_settings()
+    with session_scope(settings.database_url) as session:
+        count = ledger.revoke_run(session, args.run_id, getpass.getuser(), apply=args.yes)
+    if args.yes:
+        print(f"Đã gỡ đợt #{args.run_id}: {count} DO ra khỏi sổ. Báo kế toán không dùng file đó.")
+    else:
+        print(
+            f"Đợt #{args.run_id} có {count} DO sẽ được gỡ khỏi sổ "
+            "(chế độ xem, thêm --yes để gỡ thật)."
+        )
     return 0
 
 
@@ -223,6 +276,21 @@ def main(argv: list[str] | None = None) -> int:
     )
     keep.add_argument("--apply", action="store_true", help="Xóa thật thay vì chỉ liệt kê")
     keep.set_defaults(func=_cmd_retention)
+    book = sub.add_parser("accounting-ledger", help="Sổ DO đã gửi kế toán (sổ nền và mốc ngày)")
+    book_actions = book.add_subparsers(dest="action", required=True)
+    book_actions.add_parser("list", help="In các DO nền và mốc ngày")
+    for name, text in (("add", "Thêm DO vào sổ nền"), ("remove", "Gỡ DO khỏi sổ nền")):
+        action = book_actions.add_parser(name, help=text)
+        action.add_argument("deliveries", nargs="+")
+    cutoff = book_actions.add_parser("cutoff", help="Xem hoặc đổi mốc ngày")
+    cutoff.add_argument("--set", default="", help="Mốc mới, dạng YYYY-MM-DD")
+    book.set_defaults(func=_cmd_accounting_ledger)
+    run = sub.add_parser("accounting-run", help="Quản lý đợt gửi kế toán")
+    run_actions = run.add_subparsers(dest="action", required=True)
+    revoke = run_actions.add_parser("revoke", help="Gỡ cả một đợt đã chốt khỏi sổ")
+    revoke.add_argument("run_id", type=int)
+    revoke.add_argument("--yes", action="store_true", help="Gỡ thật thay vì chỉ xem")
+    run.set_defaults(func=_cmd_accounting_run)
 
     args = parser.parse_args(argv)
     try:

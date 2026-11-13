@@ -503,11 +503,21 @@ def zrsd004_row(
     sold_to: str = "1200001145",
     line_item: int = 10,
     delivery_date: date = date(2026, 11, 11),
-    gi_date: date = date(2026, 11, 12),
+    gi_date: date | None = date(2026, 11, 12),
+    *,
+    sales_unit: str = "PC",
+    tonase: object = None,
+    tonase_unit: str = "",
+    net_weight: object = None,
+    weight_unit: str = "",
+    volume: object = None,
+    volume_unit: str = "",
+    goods_status: str = "C",
 ) -> dict[str, object]:
+    """One delivery line. Quantities may be Decimal-like strings; None leaves the cell empty."""
     return {
         "Delivery Date": datetime.combine(delivery_date, datetime.min.time()),
-        "Actual GI Date": datetime.combine(gi_date, datetime.min.time()),
+        "Actual GI Date": datetime.combine(gi_date, datetime.min.time()) if gi_date else None,
         "Delivery": delivery,
         "SO Reference": so_number,
         "Req. Type": "KSV",
@@ -517,22 +527,74 @@ def zrsd004_row(
         "Material": material,
         "Description": f"MAT {material}",
         "Delivery Qty": quantity,
+        "Tonase": tonase,
+        "Tonase Unit": tonase_unit,
         "Actual Delivery Qty": quantity,
-        "Sales Unit": "PC",
+        "Sales Unit": sales_unit,
+        "Net Weight": net_weight,
+        "Weight Unit": weight_unit,
+        "Volume": volume,
+        "Volume Unit": volume_unit,
         "Line Item": line_item,
-        "Total Movement Goods Stat": "C",
+        "Total Movement Goods Stat": goods_status,
     }
 
 
+# Order of the total rows when a column has several units (SAP shows SET above PC).
+_UNIT_ORDER = ("SET", "PC")
+# Quantity column -> the unit column it is summed by.
+_TOTALS = (
+    ("Delivery Qty", "Sales Unit"),
+    ("Tonase", "Tonase Unit"),
+    ("Actual Delivery Qty", "Sales Unit"),
+    ("Net Weight", "Weight Unit"),
+    ("Volume", "Volume Unit"),
+)
+
+
+def zrsd004_total_rows(rows: list[dict]) -> list[list]:
+    """The total rows SAP appends: each quantity column summed per its own unit.
+
+    As many rows as the column with the most units; every column fills its totals from the
+    first row down. The sums are exact decimals.
+    """
+    from decimal import Decimal
+
+    def unit_rank(unit: str) -> tuple[int, str]:
+        return (_UNIT_ORDER.index(unit) if unit in _UNIT_ORDER else len(_UNIT_ORDER), unit)
+
+    sums: dict[str, list[tuple[str, Decimal]]] = {}
+    for qty, unit_col in _TOTALS:
+        by_unit: dict[str, Decimal] = {}
+        for row in rows:
+            value = row.get(qty)
+            if value in (None, ""):
+                continue
+            unit = row.get(unit_col, "")
+            by_unit[unit] = by_unit.get(unit, Decimal(0)) + Decimal(str(value))
+        sums[qty] = sorted(by_unit.items(), key=lambda item: unit_rank(item[0]))
+    height = max((len(v) for v in sums.values()), default=0)
+    totals = []
+    for i in range(height):
+        values: dict[str, object] = {}
+        for qty, unit_col in _TOTALS:
+            if i < len(sums[qty]):
+                unit, amount = sums[qty][i]
+                values[unit_col] = unit
+                values[qty] = int(amount) if amount == amount.to_integral_value() else float(amount)
+        totals.append(_by_header(ZRSD004_HEADERS, values, default=None))
+    for total in totals:
+        for position, header in enumerate(ZRSD004_HEADERS):
+            if header.endswith("Unit") and total[position] is None:
+                total[position] = ""
+    return totals
+
+
 def zrsd004_file(path: Path, rows: list[dict], *, total_rows: bool = True) -> Path:
-    data = [_by_header(ZRSD004_HEADERS, r) for r in rows]
+    data = [_by_header(ZRSD004_HEADERS, r, default=None) for r in rows]
     if total_rows:
-        qty = sum(r.get("Delivery Qty", 0) for r in rows)
-        total = _by_header(ZRSD004_HEADERS, {"Delivery Qty": qty, "Actual Delivery Qty": qty})
-        total[0] = total[1] = None
-        data += [total, list(total)]
-    wb_path = _write(path, "Sheet1", ZRSD004_HEADERS, data)
-    return wb_path
+        data += zrsd004_total_rows(rows)
+    return _write(path, "Sheet1", ZRSD004_HEADERS, data)
 
 
 def write_sample_set(folder: Path) -> list[Path]:

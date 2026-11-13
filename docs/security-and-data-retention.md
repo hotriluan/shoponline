@@ -19,9 +19,9 @@ Chốt ngày 2026-11-13: **90 ngày**, đổi bằng `SHOPONLINE_RETENTION_DAYS`
 
 Lệnh `shoponline retention` ([retention.py](../src/shoponline/maintenance/retention.py)):
 
-- Xóa dòng `customer_info` không đổi trong 90 ngày, **trừ** khi đơn tương ứng chưa xong (chưa có trong `zrsd004`, tức chưa có file gửi kế toán, và chưa hủy). Dòng nhập tay theo mã đơn không có trong hệ thống thì xóa theo tuổi.
-- Xóa file trong `uploads`, `exports`, `robot-work` có thời điểm sửa cũ hơn 90 ngày. Tải lại đúng một file cũ thì thời hạn của file đó tính lại từ đầu.
-- Giữ đơn, dòng hàng, số SO, số DO: không phải dữ liệu cá nhân, và cần để nhập lại file cũ không tạo đơn trùng.
+- Xóa dòng `customer_info` không đổi trong 90 ngày, **trừ** khi DO của đơn chưa vào sổ gửi kế toán (`accounting_sent_delivery`) và đơn chưa hủy. Dòng nhập tay theo mã đơn không có trong hệ thống thì xóa theo tuổi.
+- Xóa file trong `uploads`, `exports`, `robot-work` có thời điểm sửa cũ hơn 90 ngày, **trừ** file kế toán đã chốt (`accounting_run.generated_file_id`) và các file `zrsd004` của đợt đang mở. Tải lại đúng một file cũ thì thời hạn của file đó tính lại từ đầu.
+- Giữ đơn, dòng hàng, số SO, số DO và sổ DO đã gửi (chỉ chứa số Delivery): không phải dữ liệu cá nhân, và cần để nhập lại file cũ không tạo đơn trùng, không gửi kế toán hai lần.
 - Ghi một dòng `retention_purge` vào `event_log` (chỉ số lượng).
 
 Ảnh màn hình robot có thời hạn riêng, mặc định 30 ngày (đặt ở trang Kết nối SAP); robot tự xóa.

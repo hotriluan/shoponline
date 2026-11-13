@@ -6,7 +6,8 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from shoponline.config import Settings
-from shoponline.db.models import SapJob
+from shoponline.db.models import AccountingRun, SalesOrder, SapJob
+from shoponline.domain import states
 from shoponline.domain.sku_mapping import upsert_mapping
 from shoponline.importers.order_import import import_orders
 from shoponline.importers.shopee_orders import read_shopee_orders
@@ -47,6 +48,17 @@ def batch(db, tmp_path):
     return import_orders(db, read_shopee_orders(path), "SHOPEE", date(2026, 11, 11), "t").batch
 
 
+pytestmark = pytest.mark.usefixtures("frozen_today")
+
+
+def _link_order(db):
+    """The batch's order has its SO, so it waits for the accounting file."""
+    order = db.scalar(select(SalesOrder))
+    order.so_number = "210000001"
+    order.status = states.SO_LINKED
+    db.flush()
+
+
 def _jobs(db):
     db.expire_all()
     return db.scalars(select(SapJob).order_by(SapJob.id)).all()
@@ -57,27 +69,31 @@ def test_without_robot_confirm_queues_nothing(db, tmp_path, batch):
     client.post(f"/batches/{batch.id}/confirm")
     assert _jobs(db) == []
     page = client.get(f"/batches/{batch.id}").text
-    assert "robot đọc zrsd004" not in page
     assert "Robot chưa được bật" in client.get("/robot").text
+    assert "Xuất file gửi kế toán" in page  # a run can still be opened for files uploaded by hand
 
 
-def test_confirm_queues_zrsd001_and_button_queues_zrsd004(db, tmp_path, batch):
+def test_confirm_queues_zrsd001_and_button_opens_the_accounting_run(db, tmp_path, batch):
+    _link_order(db)
     client = _login(_app(db, tmp_path, QA), "admin")
     page = client.post(f"/batches/{batch.id}/confirm").text
-    assert "robot sẽ đọc zrsd001" in page and "robot đọc zrsd004 ngày 12/11/2026" in page
+    assert "robot sẽ đọc zrsd001" in page and "Xuất file gửi kế toán" in page
 
     client.post(f"/batches/{batch.id}/accounting-file")
-    client.post(f"/batches/{batch.id}/accounting-file")  # second click is refused
+    client.post(f"/batches/{batch.id}/accounting-file")  # the second click joins the same run
     jobs = _jobs(db)
     assert [(j.kind, j.target_system, j.target_client) for j in jobs] == [
         (queue.READ_ZRSD001, "QAS", "300"),
         (queue.READ_ZRSD004, "QAS", "300"),
+        (queue.READ_ZRSD004, "QAS", "300"),
     ]
+    assert [queue.payload_of(j).get("gi_date") for j in jobs[1:]] == ["2026-11-12", "2026-11-13"]
     assert queue.payload_of(jobs[1]) == {
         "platform": "SHOPEE",
         "sold_to": "1200001145",
         "gi_date": "2026-11-12",
     }
+    assert db.scalars(select(AccountingRun)).all().__len__() == 1
     page = client.get("/robot").text
     assert "read_zrsd001" in page and "QAS/300" in page
 
@@ -139,17 +155,18 @@ def test_reread_is_refused_for_unconfirmed_batch(db, tmp_path, batch):
     assert "Lô chưa xác nhận" in page and _jobs(db) == []
 
 
-def test_robot_form_queues_the_same_zrsd004_as_the_batch_button(db, tmp_path, batch):
+def test_robot_form_queues_the_same_zrsd004_as_the_accounting_run(db, tmp_path, batch):
+    _link_order(db)
     client = _login(_app(db, tmp_path, QA), "admin")
     client.post(f"/batches/{batch.id}/accounting-file")
-    from_button = queue.payload_of(_jobs(db)[0])
+    from_run = queue.payload_of(_jobs(db)[0])
     _finish(db, _jobs(db)[0])
 
     form = {"report": "zrsd004", "platform": "SHOPEE", "gi_date": "2026-11-12"}
     assert "Robot sẽ đọc zrsd004" in client.post("/robot/jobs/new", data=form).text
-    assert queue.payload_of(_jobs(db)[1]) == from_button
+    assert queue.payload_of(_jobs(db)[2]) == from_run
     assert "Đã có việc" in client.post("/robot/jobs/new", data=form).text
-    assert len(_jobs(db)) == 2
+    assert len(_jobs(db)) == 3
 
 
 def test_robot_form_reads_a_day_without_batches_but_not_the_future(db, tmp_path):

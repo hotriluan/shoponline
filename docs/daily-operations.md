@@ -23,9 +23,19 @@ Dành cho admin shop online. Ở chế độ thủ công hệ thống không ghi
 
 ## Ngày goods issue
 
-10. Chạy `zrsd004` trong SAP, xuất Excel. Trang **Báo cáo SAP**, mục zrsd004: tải file lên.
-11. Màn hình xem trước liệt kê các dòng còn thiếu mã đơn, tên khách hoặc địa chỉ. Bổ sung ở trang **Khách hàng** rồi tải lại file zrsd004, hoặc vẫn bấm tải nếu chấp nhận.
-12. Tải `SHOP ONLINE ddmmyy.xlsx` và gửi kế toán. File giữ nguyên mọi cột, mọi dòng của `zrsd004` (kể cả hai dòng tổng) và chèn ba cột `mã đơn hàng`, `tên khách hàng`, `địa chỉ` ngay sau `SO Reference`. Đơn đã hủy DO không còn trong `zrsd004` nên không có trong file.
+10. Vào trang **Gửi kế toán**, bấm **Xuất file gửi kế toán** (nút này cũng có trên trang lô). Hệ thống mở một đợt và xếp việc cho robot đọc `zrsd004` cho từng sàn và từng ngày goods issue còn đơn chờ, từ ngày cũ nhất của đơn chờ đến hôm nay. Robot không chạy thì xuất `zrsd004` tay từ SAP và tải lên ngay trên trang đợt.
+11. Theo dõi bảng tiến độ (tự làm mới 10 giây một lần khi còn lượt đang đọc). Lượt báo **Lỗi** hoặc **SAP chưa có DO** có nút **Đọc lại**. "SAP chưa có DO" là kết quả hợp lệ (ngày đó chưa có giao hàng), không phải lỗi.
+12. Khi không còn lượt nào đang đọc, phần **Đối chiếu** hiện:
+    - dòng tóm tắt, ví dụ "Web đáng ra có 15 đơn, file có 14 DO, thiếu 1";
+    - khung **Chưa thấy DO**: đơn đã có SO mà chưa thấy DO trong file;
+    - khung **DO không thuộc đơn nào trên web** (ví dụ SO sales admin tạo tay);
+    - số dòng không vào file theo từng lý do, và các dòng còn thiếu mã đơn, tên khách hoặc địa chỉ (bổ sung ở trang **Khách hàng** rồi tải lại trang).
+
+    Nút **Tải bản nháp** cho file có tiền tố `NHÁP`, không ghi sổ.
+13. Bấm **Chốt và ghi sổ**. Nếu còn lượt chưa có dữ liệu thì phải tích "Chốt thiếu"; nếu còn đơn chưa thấy DO thì phải tích "Tôi đã xem danh sách đơn chưa có DO". Nếu dữ liệu đổi sau khi xem bản nháp (robot đọc xong thêm, có file mới gắn vào) thì web từ chối và bảo xem lại. Chốt xong, trang đợt có link tải đúng file đã chốt.
+14. Gửi `SHOP ONLINE ddmmyy.xlsx` cho kế toán. File gộp DO của mọi sàn và mọi ngày goods issue chưa gửi, giữ nguyên mọi cột của `zrsd004`, tính lại hai dòng tổng theo quy tắc của SAP và chèn ba cột `mã đơn hàng`, `tên khách hàng`, `địa chỉ` ngay sau `SO Reference`. DO đã chốt không bao giờ vào file sau. Đơn đã hủy DO không còn trong `zrsd004` nên không có trong file.
+
+Đợt không muốn chốt nữa thì bấm **Hủy đợt** (sổ không đổi). Chốt nhầm thì xem [operations-runbook.md](operations-runbook.md#chốt-nhầm-một-đợt-gửi-kế-toán).
 
 ## Khi có sự cố
 

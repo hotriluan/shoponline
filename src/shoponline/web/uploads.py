@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import secrets
 from datetime import datetime
 from pathlib import Path
 
@@ -57,14 +58,19 @@ def store_file(
 
 def save_generated(
     session: Session, settings: Settings, workbook, file_name: str, kind: str, actor: str
-) -> Path:
+) -> GeneratedFile:
+    """Write the workbook under export_dir and add its record (flushed, so it has an id).
+
+    The stored name carries a random suffix, so two calls in the same second never share a file.
+    """
     settings.export_dir.mkdir(parents=True, exist_ok=True)
-    path = settings.export_dir / f"{datetime.now():%Y%m%d-%H%M%S}-{kind}.xlsx"
+    stamp = f"{datetime.now():%Y%m%d-%H%M%S}"
+    path = settings.export_dir / f"{stamp}-{kind}-{secrets.token_hex(4)}.xlsx"
     workbook.save(path)
     digest = hashlib.sha256(path.read_bytes()).hexdigest()
-    session.add(
-        GeneratedFile(
-            kind=kind, file_name=file_name, stored_path=str(path), sha256=digest, created_by=actor
-        )
+    record = GeneratedFile(
+        kind=kind, file_name=file_name, stored_path=str(path), sha256=digest, created_by=actor
     )
-    return path
+    session.add(record)
+    session.flush()
+    return record

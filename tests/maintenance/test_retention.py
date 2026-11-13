@@ -4,7 +4,17 @@ from datetime import UTC, date, datetime, timedelta
 from sqlalchemy import select
 
 from shoponline.config import Settings
-from shoponline.db.models import CustomerInfo, EventLog, OrderBatch, SalesOrder
+from shoponline.db.models import (
+    AccountingRun,
+    AccountingRunSource,
+    AccountingSentDelivery,
+    CustomerInfo,
+    EventLog,
+    GeneratedFile,
+    ImportBatch,
+    OrderBatch,
+    SalesOrder,
+)
 from shoponline.domain import states
 from shoponline.maintenance import retention
 
@@ -17,7 +27,7 @@ def _settings(tmp_path):
     return Settings(database_url="unused", secret_key="s" * 40, data_dir=tmp_path / "data")
 
 
-def _customer(db, platform, order_id, updated_at, status=None, batch=None):
+def _customer(db, platform, order_id, updated_at, status=None, batch=None, do_number=None):
     if status is not None:
         db.add(
             SalesOrder(
@@ -26,6 +36,7 @@ def _customer(db, platform, order_id, updated_at, status=None, batch=None):
                 order_batch_id=batch.id,
                 ordered_at=datetime(2026, 8, 1),
                 status=status,
+                do_number=do_number,
             )
         )
     info = CustomerInfo(
@@ -57,12 +68,16 @@ def _file(path, mtime):
     return path
 
 
-def test_erases_old_customer_data_only_for_finished_orders(db, tmp_path):
+def test_erases_old_customer_data_only_for_orders_sent_to_accounting(db, tmp_path):
     batch = _batch(db)
-    _customer(db, "SHOPEE", "R-DELIVERED", OLD, states.DELIVERED, batch)
+    db.add_all(
+        AccountingSentDelivery(delivery=d) for d in ("1900000001", "1900000002")
+    )
+    _customer(db, "SHOPEE", "R-DELIVERED", OLD, states.DELIVERED, batch, "1900000001")
     _customer(db, "SHOPEE", "R-CANCELLED", OLD, states.CANCELLED, batch)
-    _customer(db, "SHOPEE", "R-LINKED", OLD, states.SO_LINKED, batch)  # no accounting file yet
-    _customer(db, "SHOPEE", "R-RECENT", RECENT, states.DELIVERED, batch)
+    _customer(db, "SHOPEE", "R-LINKED", OLD, states.SO_LINKED, batch)  # no DO yet
+    _customer(db, "SHOPEE", "R-NOT-SENT", OLD, states.DELIVERED, batch, "1900000077")
+    _customer(db, "SHOPEE", "R-RECENT", RECENT, states.DELIVERED, batch, "1900000002")
     _customer(db, "SHOPEE", "R-NO-ORDER", OLD)  # Lazada-style row without sales_order
 
     plan = retention.find_expired(db, _settings(tmp_path), now=NOW)
@@ -72,12 +87,12 @@ def test_erases_old_customer_data_only_for_finished_orders(db, tmp_path):
         "R-DELIVERED",
         "R-NO-ORDER",
     ]
-    assert plan.held_orders == [("SHOPEE", "R-LINKED")]
+    assert sorted(plan.held_orders) == [("SHOPEE", "R-LINKED"), ("SHOPEE", "R-NOT-SENT")]
 
     retention.apply(db, plan, "test")
     db.flush()
     left = set(db.scalars(select(CustomerInfo.platform_order_id)).all())
-    assert {"R-LINKED", "R-RECENT"} <= left
+    assert {"R-LINKED", "R-NOT-SENT", "R-RECENT"} <= left
     assert not left & {"R-DELIVERED", "R-CANCELLED", "R-NO-ORDER"}
     # Orders stay; only personal data goes.
     assert db.scalar(select(SalesOrder).where(SalesOrder.platform_order_id == "R-DELIVERED"))
@@ -118,3 +133,47 @@ def test_deletes_old_files_and_empty_robot_folders(db, tmp_path):
     assert new_upload.exists()
     assert evidence.exists()
     assert settings.robot_work_dir.is_dir()
+
+
+def test_keeps_finalized_accounting_file_and_sources_of_an_open_run(db, tmp_path):
+    settings = _settings(tmp_path)
+    final = _file(settings.export_dir / "final.xlsx", OLD)
+    draft = _file(settings.export_dir / "other.xlsx", OLD)
+    attached = _file(settings.upload_dir / "attached.xlsx", OLD)
+    closed_source = _file(settings.upload_dir / "closed.xlsx", OLD)
+    record = GeneratedFile(
+        kind="accounting_file",
+        file_name="x.xlsx",
+        stored_path=str(final),
+        sha256="0" * 64,
+        created_by="t",
+    )
+    db.add(record)
+    db.flush()
+    db.add(AccountingRun(status="FINALIZED", created_by="t", generated_file_id=record.id))
+    open_run = AccountingRun(status="OPEN", created_by="t")
+    closed_run = AccountingRun(status="CANCELLED", created_by="t")
+    db.add_all([open_run, closed_run])
+    in_open = ImportBatch(
+        kind="zrsd004", file_name="a", sha256="1" * 64, stored_path=str(attached), imported_by="t"
+    )
+    in_closed = ImportBatch(
+        kind="zrsd004",
+        file_name="b",
+        sha256="2" * 64,
+        stored_path=str(closed_source),
+        imported_by="t",
+    )
+    db.add_all([in_open, in_closed])
+    db.flush()
+    db.add_all(
+        [
+            AccountingRunSource(run_id=open_run.id, import_batch_id=in_open.id),
+            AccountingRunSource(run_id=closed_run.id, import_batch_id=in_closed.id),
+        ]
+    )
+    db.flush()
+
+    plan = retention.find_expired(db, settings, now=NOW)
+
+    assert sorted(plan.files) == sorted([draft, closed_source])

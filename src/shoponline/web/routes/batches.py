@@ -11,7 +11,7 @@ from shoponline.domain import states
 from shoponline.exports.order_workbook import build_order_workbook
 from shoponline.reconcile.so_link import LinkError, batch_report, link_manually
 from shoponline.sapjobs.queue import DuplicateJob
-from shoponline.sapjobs.report_requests import request_zrsd001, request_zrsd004
+from shoponline.sapjobs.report_requests import request_zrsd001
 from shoponline.web.app import (
     UNVERIFIED_MESSAGE,
     autosave_reply,
@@ -25,6 +25,7 @@ from shoponline.web.app import (
     robot_refusal,
     sap_config,
 )
+from shoponline.web.routes.accounting import begin_run
 from shoponline.web.uploads import save_generated
 
 router = APIRouter()
@@ -124,7 +125,7 @@ def download_order_file(
     batch = _batch(db, batch_id)
     setting = db.get(PlatformSetting, batch.platform)
     order_file = build_order_workbook(setting, batch, batch.orders)
-    path = save_generated(
+    record = save_generated(
         db,
         request.app.state.settings,
         order_file.workbook,
@@ -134,7 +135,7 @@ def download_order_file(
     )
     db.commit()
     return FileResponse(
-        path,
+        record.stored_path,
         filename=order_file.file_name,
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     )
@@ -181,25 +182,9 @@ def request_accounting_file(
     db: Session = Depends(get_db),
     user: AppUser = Depends(require_admin),
 ):
-    """Ask the robot to read zrsd004 for the batch's goods issue date."""
-    batch = _batch(db, batch_id)
-    config = sap_config(request, db)
-    refusal = robot_refusal(config)
-    if refusal:
-        flash(request, refusal, "error")
-        return redirect(f"/batches/{batch_id}")
-    try:
-        job = request_zrsd004(db, config.target, batch.platform, batch.gi_date, user.username)
-    except DuplicateJob as exc:
-        flash(request, str(exc), "error")
-        return redirect(f"/batches/{batch_id}")
-    db.commit()
-    flash(
-        request,
-        f"Robot sẽ đọc zrsd004 ngày {batch.gi_date:%d/%m/%Y} (việc #{job.id}); "
-        "file gửi kế toán có ở trang Báo cáo SAP khi việc xong.",
-    )
-    return redirect(f"/batches/{batch_id}")
+    """Open the accounting run (every platform and day still waiting), not only this batch."""
+    _batch(db, batch_id)
+    return begin_run(request, db, user)
 
 
 @router.post("/batches/{batch_id}/read-zrsd001")

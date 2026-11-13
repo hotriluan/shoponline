@@ -3,10 +3,11 @@
 Orders themselves stay (platform order id, SKU lines, SO and DO numbers): they hold no
 personal data and keep re-imports idempotent. What goes:
 
-- customer_info rows (name, address) untouched for retention_days, unless the order is
-  still in progress, i.e. its accounting file has not been built yet (status not DELIVERED
-  or CANCELLED). Rows typed in by hand for an order id with no sales_order go by age alone.
-- files under uploads/, exports/ and robot-work/ older than retention_days.
+- customer_info rows (name, address) untouched for retention_days, unless the order's DO has
+  not yet been recorded as sent to accounting (accounting_sent_delivery). Cancelled orders and
+  rows typed in by hand for an order id with no sales_order go by age alone.
+- files under uploads/, exports/ and robot-work/ older than retention_days, except a file that
+  a finalized accounting run points to and the zrsd004 files of a run that is still open.
 
 Robot screenshots have their own, shorter period (saprobot.evidence.prune).
 """
@@ -21,11 +22,18 @@ from sqlalchemy import and_, delete, select
 from sqlalchemy.orm import Session
 
 from shoponline.config import Settings
-from shoponline.db.models import CustomerInfo, SalesOrder
+from shoponline.db.models import (
+    AccountingRun,
+    AccountingRunRead,
+    AccountingRunSource,
+    AccountingSentDelivery,
+    CustomerInfo,
+    GeneratedFile,
+    ImportBatch,
+    SalesOrder,
+    SapJob,
+)
 from shoponline.domain import states
-
-# The accounting file is built from zrsd004, which moves orders to DELIVERED.
-FINISHED_STATUSES = (states.DELIVERED, states.CANCELLED)
 
 
 @dataclass
@@ -54,6 +62,7 @@ def find_expired(
             CustomerInfo.platform,
             CustomerInfo.platform_order_id,
             SalesOrder.status,
+            AccountingSentDelivery.delivery,
         )
         .outerjoin(
             SalesOrder,
@@ -62,23 +71,55 @@ def find_expired(
                 SalesOrder.platform_order_id == CustomerInfo.platform_order_id,
             ),
         )
+        .outerjoin(AccountingSentDelivery, AccountingSentDelivery.delivery == SalesOrder.do_number)
         .where(CustomerInfo.updated_at < cutoff)
         .order_by(CustomerInfo.platform, CustomerInfo.platform_order_id)
     ).all()
-    for info_id, platform, order_id, status in rows:
-        if status is None or status in FINISHED_STATUSES:
+    for info_id, platform, order_id, status, sent in rows:
+        if status is None or status == states.CANCELLED or sent is not None:
             plan.customer_ids.append(info_id)
             plan.customer_orders.append((platform, order_id))
         else:
             plan.held_orders.append((platform, order_id))
 
     limit = cutoff.timestamp()
+    kept = _kept_files(session)
     for root in stored_dirs(settings):
         if root.is_dir():
             plan.files.extend(
-                sorted(p for p in root.rglob("*") if p.is_file() and p.stat().st_mtime < limit)
+                sorted(
+                    p
+                    for p in root.rglob("*")
+                    if p.is_file() and p.stat().st_mtime < limit and p.resolve() not in kept
+                )
             )
     return plan
+
+
+def _kept_files(session: Session) -> set[Path]:
+    """Files that outlive the retention period: finalized accounting files, and the zrsd004
+    sources of a run that is still open (attached by hand, or read by the robot)."""
+    open_run = select(AccountingRun.id).where(AccountingRun.status == "OPEN")
+    finalized = select(GeneratedFile.stored_path).join(
+        AccountingRun, AccountingRun.generated_file_id == GeneratedFile.id
+    )
+    attached = select(ImportBatch.stored_path).join(
+        AccountingRunSource,
+        and_(
+            AccountingRunSource.import_batch_id == ImportBatch.id,
+            AccountingRunSource.run_id.in_(open_run),
+        ),
+    )
+    read = (
+        select(ImportBatch.stored_path)
+        .join(SapJob, SapJob.import_batch_id == ImportBatch.id)
+        .join(
+            AccountingRunRead,
+            and_(AccountingRunRead.sap_job_id == SapJob.id, AccountingRunRead.run_id.in_(open_run)),
+        )
+    )
+    paths = [*session.scalars(finalized), *session.scalars(attached), *session.scalars(read)]
+    return {Path(p).resolve() for p in paths}
 
 
 def apply(session: Session, plan: RetentionPlan, actor: str) -> None:

@@ -1,0 +1,148 @@
+{% extends "base.html" %}
+{% block title %}Đợt gửi kế toán #{{ run.id }}{% endblock %}
+{% block head %}{% if reading %}<meta http-equiv="refresh" content="10">{% endif %}{% endblock %}
+{% block content %}
+{% set labels = {'OPEN': 'Đang mở', 'FINALIZED': 'Đã chốt', 'CANCELLED': 'Đã hủy', 'REVOKED': 'Đã gỡ chốt'} %}
+<p><a href="/accounting">← Gửi kế toán</a></p>
+<h1>Đợt #{{ run.id }} <span class="tag">{{ labels[run.status] }}</span></h1>
+<p class="muted">Tạo bởi {{ run.created_by }} lúc {{ run.created_at|localtime }}{% if run.finalized_at %}; chốt bởi {{ run.finalized_by }} lúc {{ run.finalized_at|localtime }}{% endif %}</p>
+
+{% if run.status != 'OPEN' %}
+<div class="box">
+  {% if run.status == 'FINALIZED' %}<p>Đã ghi {{ delivery_count }} DO vào sổ.</p>
+  {% elif run.status == 'REVOKED' %}<p class="bad">Đợt đã bị gỡ khỏi sổ. Báo kế toán không dùng file này. Các lượt đọc của đợt sẽ được đọc lại ở đợt sau.</p>
+  {% else %}<p class="muted">Đợt đã hủy, sổ không đổi.</p>{% endif %}
+  {% if file %}
+    {% if file_on_disk %}<a class="button" href="/accounting/runs/{{ run.id }}/file">Tải {{ file.file_name }}</a>
+    {% else %}<p class="bad">File {{ file.file_name }} không còn trên máy chủ.</p>{% endif %}
+  {% endif %}
+  {% if note %}
+  <h2>Đã xác nhận khi chốt</h2>
+  {% if note.pairs %}<p><strong>Chốt thiếu:</strong> {{ note.pairs|join('; ') }}</p>{% endif %}
+  {% if note.orders %}<p><strong>Đơn chưa thấy DO:</strong> {{ note.orders|join(', ') }}</p>{% endif %}
+  {% endif %}
+</div>
+<h2>Các lượt đọc</h2>
+<table>
+  <tr><th>Sàn</th><th>Ngày goods issue</th></tr>
+  {% for r in reads %}<tr><td>{{ r.platform }}</td><td>{{ r.gi_date.strftime('%d/%m/%Y') }}</td></tr>{% endfor %}
+</table>
+{% else %}
+
+<h2>Tiến độ đọc zrsd004</h2>
+{% if reading %}<p class="muted">Trang tự làm mới 10 giây một lần khi còn lượt đang đọc.</p>{% endif %}
+<table>
+  <tr><th>Sàn</th><th>Ngày goods issue</th><th>Trạng thái</th><th>Việc</th><th>Ghi chú</th><th></th></tr>
+  {% for s in statuses %}
+  <tr>
+    <td>{{ s.read.platform }}</td>
+    <td>{{ s.read.gi_date.strftime('%d/%m/%Y') }}</td>
+    <td><span class="tag {{ 'j-DONE' if s.state in ('has_data', 'no_data') else ('j-FAILED' if s.state in ('error', 'missing_file') else ('j-PENDING' if s.state == 'reading' else '')) }}">{{ s.label }}</span></td>
+    <td>{% if s.job_id %}<a href="/robot">#{{ s.job_id }}</a>{% endif %}</td>
+    <td>{{ s.detail }}</td>
+    <td>{% if user.role == 'admin' and can_retry and s.state in retryable %}
+      <form method="post" action="/accounting/runs/{{ run.id }}/reads/{{ s.read.id }}/retry" class="inline"><button class="secondary">Đọc lại</button></form>
+      {% endif %}</td>
+  </tr>
+  {% else %}
+  <tr><td colspan="6" class="muted">Đợt chưa có lượt đọc nào.</td></tr>
+  {% endfor %}
+</table>
+
+{% if user.role == 'admin' %}
+<h2>Tải zrsd004 lên đợt</h2>
+<div class="box">
+  <form class="row" method="post" action="/accounting/runs/{{ run.id }}/upload" enctype="multipart/form-data">
+    <label>File zrsd004 xuất từ SAP<input type="file" name="file" accept=".xlsx,.XLSX" required></label>
+    <button class="secondary">Tải lên và thêm vào đợt</button>
+  </form>
+  {% if uploads %}
+  <p class="muted">Hoặc thêm file zrsd004 đã tải lên trước đó:</p>
+  <table>
+    {% for b in uploads %}
+    <tr><td>{{ b.file_name }}</td><td>{{ b.imported_by }} {{ b.imported_at|localtime }}</td>
+      <td><form method="post" action="/accounting/runs/{{ run.id }}/attach" class="inline">
+        <input type="hidden" name="import_batch_id" value="{{ b.id }}"><button class="secondary">Thêm vào đợt</button></form></td></tr>
+    {% endfor %}
+  </table>
+  {% endif %}
+</div>
+{% endif %}
+
+{% if reading %}
+<p class="muted">Phần đối chiếu và chốt hiện khi không còn lượt nào đang đọc.</p>
+{% elif rec_error %}
+<div class="flash error">{{ rec_error }}</div>
+{% elif rec %}
+<h2>Đối chiếu</h2>
+<div class="box">
+  <p><strong>{{ rec.summary }}</strong>{% if rec.merged %} – file {{ rec.merged.file_name }}, {{ rec.merged.row_count }} dòng.{% endif %}</p>
+  {% for w in rec.old_warnings %}<div class="flash error">{{ w }}</div>{% endfor %}
+  {% if not rec.merged %}<p class="bad">Không có DO mới để gửi.</p>{% endif %}
+
+  {% if rec.missing %}
+  <h2>Chưa thấy DO ({{ rec.missing|length }})</h2>
+  <table>
+    <tr><th>Sàn</th><th>Mã đơn</th><th>SO</th><th>Ngày goods issue dự kiến</th><th></th></tr>
+    {% for m in rec.missing %}
+    <tr><td>{{ m.platform }}</td><td>{{ m.order_id }}</td><td>{{ m.so_number }}</td><td>{{ m.gi_date.strftime('%d/%m/%Y') }}</td><td class="muted">{{ m.note }}</td></tr>
+    {% endfor %}
+  </table>
+  {% endif %}
+
+  {% if rec.unknown %}
+  <h2>DO không thuộc đơn nào trên web ({{ rec.unknown|length }})</h2>
+  <p>{% for delivery, so in rec.unknown %}{{ delivery }} (SO {{ so }}){% if not loop.last %}, {% endif %}{% endfor %}</p>
+  {% endif %}
+
+  {% if rec.dropped %}
+  <h2>Dòng không vào file</h2>
+  <ul>{% for reason, n in rec.dropped.items() %}<li>{{ n }} dòng: {{ reason }}</li>{% endfor %}</ul>
+  {% endif %}
+
+  {% if rec.warnings %}
+  <h2>Thiếu thông tin ({{ rec.warnings|length }} dòng)</h2>
+  <p class="muted">Bổ sung ở trang <a href="/customers">Khách hàng</a> rồi tải lại trang này.</p>
+  <ul>{% for w in rec.warnings %}<li>{{ w }}</li>{% endfor %}</ul>
+  {% endif %}
+</div>
+
+{% if user.role == 'admin' %}
+<div class="box">
+  <a class="button secondary" href="/accounting/runs/{{ run.id }}/draft">Tải bản nháp</a>
+  {% if rec.merged %}
+  <form id="finalize-form" method="post" action="/accounting/runs/{{ run.id }}/finalize" style="margin-top:12px">
+    <input type="hidden" name="fingerprint" value="{{ rec.fingerprint }}">
+    {% if rec.incomplete %}
+    <label style="display:block"><input type="checkbox" name="allow_partial" value="1" data-required>
+      Chốt thiếu: {{ rec.incomplete|map(attribute='name')|join('; ') }} chưa có dữ liệu</label>
+    {% endif %}
+    {% if rec.missing %}
+    <label style="display:block"><input type="checkbox" name="ack_missing" value="1" data-required>
+      Tôi đã xem danh sách đơn chưa có DO</label>
+    {% endif %}
+    <button id="finalize-button" {{ 'disabled' if rec.incomplete or rec.missing }}>Chốt và ghi sổ</button>
+  </form>
+  <script>
+  (function () {
+    var form = document.getElementById('finalize-form');
+    var button = document.getElementById('finalize-button');
+    var boxes = form.querySelectorAll('input[data-required]');
+    function sync() { button.disabled = Array.prototype.some.call(boxes, function (b) { return !b.checked; }); }
+    boxes.forEach(function (b) { b.addEventListener('change', sync); });
+    sync();
+  })();
+  </script>
+  {% endif %}
+  <form method="post" action="/accounting/runs/{{ run.id }}/cancel" class="inline" style="margin-left:12px"
+        onsubmit="return confirm('Hủy đợt này? Sổ không đổi.')"><button class="secondary danger">Hủy đợt</button></form>
+</div>
+{% endif %}
+{% endif %}
+
+{% if reading and user.role == 'admin' %}
+<div class="box"><form method="post" action="/accounting/runs/{{ run.id }}/cancel" class="inline"
+     onsubmit="return confirm('Hủy đợt này? Sổ không đổi.')"><button class="secondary">Hủy đợt</button></form></div>
+{% endif %}
+{% endif %}
+{% endblock %}

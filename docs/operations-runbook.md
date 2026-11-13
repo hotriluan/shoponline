@@ -41,7 +41,7 @@ Mỗi mục có ba phần: **dấu hiệu**, **việc cần làm**, và **gọi 
 
 ### Tải báo cáo SAP bằng tay khi robot dừng
 
-Làm như bước 8 và 10 của [daily-operations.md](daily-operations.md): chạy `zrsd001` (Complete) hoặc `zrsd004` trong SAP bằng user của mình, xuất Excel, tải lên trang **Báo cáo SAP**. Kết quả giống hệt khi robot đọc.
+Làm như bước 8 của [daily-operations.md](daily-operations.md) cho `zrsd001`: chạy `zrsd001` (Complete) trong SAP bằng user của mình, xuất Excel, tải lên trang **Báo cáo SAP**. Với `zrsd004`, tải file lên ngay trang đợt ở **Gửi kế toán**. Kết quả giống hệt khi robot đọc.
 
 ## Đơn và file
 
@@ -73,10 +73,47 @@ Làm như bước 8 và 10 của [daily-operations.md](daily-operations.md): ch�
 - **Việc cần làm:** không sửa tay file sàn. Làm file `ĐƠN HÀNG ONLINE` bằng tay cho ngày đó.
 - **Gọi lập trình viên khi:** luôn gọi. Gửi kèm file bị từ chối (qua kênh nội bộ, không qua email ngoài vì file có tên khách).
 
-### File gửi kế toán báo "đã quá thời hạn lưu"
+### Gửi kế toán: một sàn đọc lỗi
 
-- **Dấu hiệu:** tải lại file kế toán của một ngày cũ thì web báo file `zrsd004` đã bị xóa theo thời hạn lưu.
-- **Việc cần làm:** chạy lại `zrsd004` cho ngày đó trong SAP và tải lên. Tên và địa chỉ khách của đơn cũ đã bị xóa, nên ba cột thêm sẽ trống. Hỏi kế toán dùng bản đã gửi trước đó.
+- **Dấu hiệu:** trang đợt (**Gửi kế toán**) có lượt báo **Lỗi**, **Thiếu file nguồn** hoặc **Chưa có việc**.
+- **Việc cần làm:** bấm **Đọc lại** (việc lỗi vào hàng chờ lại; việc đã xong được thay bằng việc mới). Robot không chạy được thì xuất `zrsd004` tay từ SAP và dùng ô **Tải zrsd004 lên đợt**. Không có cách nào thì tích "Chốt thiếu" khi chốt: DO của lượt đó **không** vào file và **không** vào sổ, nên đợt sau đọc lại và gửi nốt.
+- **Gọi lập trình viên khi:** lượt lỗi lặp lại sau khi đã đọc lại hai lần.
+
+### Gửi kế toán: đơn nằm ở khung "Chưa thấy DO"
+
+- **Dấu hiệu:** phần Đối chiếu liệt kê đơn đã có SO mà chưa thấy DO trong file.
+- **Việc cần làm:** kiểm tra trong SAP xem sales admin đã tạo DO và goods issue chưa (DO phải có `Actual GI Date` và trạng thái `C`). Chưa xong thì chốt không có đơn đó: tích "Tôi đã xem danh sách đơn chưa có DO"; đơn sẽ vào đợt sau. Danh sách được ghi vào nhật ký sự kiện lúc chốt.
+
+### Gửi kế toán: đợt mở bị bỏ quên
+
+- **Dấu hiệu:** bấm "Xuất file gửi kế toán" thì mở lại một đợt cũ. Chỉ có một đợt mở tại một thời điểm.
+- **Việc cần làm:** mở đợt đó rồi chốt, hoặc bấm **Hủy đợt** (sổ không đổi) và bắt đầu lại. Việc robot đã xếp cho đợt bị hủy vẫn chạy và nhập dữ liệu bình thường.
+
+### Chốt nhầm một đợt gửi kế toán
+
+- **Dấu hiệu:** đã chốt đợt nhưng file không đúng (thiếu sàn, chốt sớm).
+- **Việc cần làm:** báo kế toán **không dùng** file đó. Trên máy chạy web, xem trước rồi gỡ:
+
+  ```powershell
+  uv run shoponline accounting-run revoke <số đợt>          # chỉ in số DO sẽ gỡ
+  uv run shoponline accounting-run revoke <số đợt> --yes   # gỡ thật, ghi sự kiện accounting_run_revoked
+  ```
+
+  Chỉ đợt `FINALIZED` gỡ được. Các DO của đợt ra khỏi sổ và các lượt đọc của đợt quay lại danh sách cần đọc; file đã lưu giữ nguyên. Không sửa bằng SQL.
+
+### Sổ DO đã gửi và mốc ngày
+
+- Mốc ngày: DO có ngày goods issue thực không sau mốc coi như đã gửi. Mặc định là ngày chạy migration. Xem hoặc đổi: `uv run shoponline accounting-ledger cutoff [--set YYYY-MM-DD]`.
+- Sổ nền (DO của các đơn đã "Đã có DO" lúc triển khai): `accounting-ledger list` để xem; `accounting-ledger add <DO>...` thêm DO đã gửi mà chưa có trong sổ; `accounting-ledger remove <DO>...` gỡ DO chưa thật sự gửi. DO thuộc một đợt đã chốt không gỡ riêng được, dùng `accounting-run revoke`.
+
+### DO bị hủy sau khi đã chốt
+
+- Hệ thống không phát hiện DO bị hủy sau khi đã chốt. Báo kế toán bằng tay.
+
+### File đã chốt không còn trên máy chủ
+
+- **Dấu hiệu:** tải file đã chốt báo "không còn trên máy chủ".
+- **Việc cần làm:** retention không xóa file đã chốt, nên đây là file bị xóa hoặc mất ngoài hệ thống. Khôi phục từ bản sao lưu (thư mục `exports`). Không có bản sao thì hỏi kế toán dùng bản đã gửi; không chốt lại.
 
 ## Máy và dữ liệu
 
@@ -93,7 +130,7 @@ Làm như bước 8 và 10 của [daily-operations.md](daily-operations.md): ch�
 
 ### Xem danh sách xóa theo thời hạn
 
-Tác vụ `shoponline-retention` chạy hằng đêm và ghi vào `<SHOPONLINE_DATA_DIR>\logs\retention.log`. Trong tuần đầu nó chỉ liệt kê. Người quản trị đọc danh sách: chỉ được có đơn đã gửi kế toán (hoặc đã hủy) và file quá 90 ngày. Sau một tuần không thấy sai, đăng ký lại tác vụ với `-RetentionApply` (xem [security-and-data-retention.md](security-and-data-retention.md#thời-hạn-lưu)).
+Tác vụ `shoponline-retention` chạy hằng đêm và ghi vào `<SHOPONLINE_DATA_DIR>\logs\retention.log`. Trong tuần đầu nó chỉ liệt kê. Người quản trị đọc danh sách: chỉ được có đơn đã vào sổ gửi kế toán (hoặc đã hủy) và file quá 90 ngày. Sau một tuần không thấy sai, đăng ký lại tác vụ với `-RetentionApply` (xem [security-and-data-retention.md](security-and-data-retention.md#thời-hạn-lưu)).
 
 ## Kế hoạch khi máy hỏng
 

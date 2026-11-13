@@ -7,6 +7,7 @@ from datetime import date, datetime
 from sqlalchemy import (
     BigInteger,
     Boolean,
+    CheckConstraint,
     Date,
     DateTime,
     ForeignKey,
@@ -283,3 +284,71 @@ class SapSetting(Base):
     verified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     changed_by: Mapped[str | None] = mapped_column(String(50))
     changed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class AccountingRun(Base):
+    """One export for the accountants: every undelivered-to-accounting DO of all platforms."""
+
+    __tablename__ = "accounting_run"
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('OPEN', 'FINALIZED', 'CANCELLED', 'REVOKED')",
+            name="ck_accounting_run_status",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    status: Mapped[str] = mapped_column(String(12))
+    created_by: Mapped[str] = mapped_column(String(50))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    finalized_by: Mapped[str | None] = mapped_column(String(50))
+    finalized_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # What the person confirmed at finalization: missing platform/day pairs and orders without DO.
+    missing_note: Mapped[str | None] = mapped_column(Text)
+    generated_file_id: Mapped[int | None] = mapped_column(ForeignKey("generated_file.id"))
+
+
+class AccountingRunRead(Base):
+    """One platform and goods issue day that the run reads from SAP."""
+
+    __tablename__ = "accounting_run_read"
+    __table_args__ = (UniqueConstraint("run_id", "platform", "gi_date"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    run_id: Mapped[int] = mapped_column(ForeignKey("accounting_run.id", ondelete="CASCADE"))
+    platform: Mapped[str] = mapped_column(ForeignKey("platform_setting.platform"))
+    gi_date: Mapped[date] = mapped_column(Date)
+    sap_job_id: Mapped[int | None] = mapped_column(ForeignKey("sap_job.id"))
+
+
+class AccountingRunSource(Base):
+    """A zrsd004 file uploaded by hand and attached to a run."""
+
+    __tablename__ = "accounting_run_source"
+
+    run_id: Mapped[int] = mapped_column(
+        ForeignKey("accounting_run.id", ondelete="CASCADE"), primary_key=True
+    )
+    import_batch_id: Mapped[int] = mapped_column(ForeignKey("import_batch.id"), primary_key=True)
+    # JSON list of "sold-to|YYYY-MM-DD" for the customers and goods issue days the file covers.
+    coverage: Mapped[str] = mapped_column(Text, default="[]")
+
+
+class AccountingSentDelivery(Base):
+    """A delivery already sent to accounting. run_id is NULL for the opening ledger."""
+
+    __tablename__ = "accounting_sent_delivery"
+
+    delivery: Mapped[str] = mapped_column(String(20), primary_key=True)
+    run_id: Mapped[int | None] = mapped_column(ForeignKey("accounting_run.id"))
+    sent_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class AccountingBaseline(Base):
+    """Single row (id=1): a delivery whose goods issue date is on or before it counts as sent."""
+
+    __tablename__ = "accounting_baseline"
+    __table_args__ = (CheckConstraint("id = 1", name="ck_accounting_baseline_single_row"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    cutoff_date: Mapped[date] = mapped_column(Date)

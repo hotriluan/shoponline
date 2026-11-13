@@ -1,0 +1,45 @@
+{% extends "base.html" %}
+{% block title %}Gửi kế toán{% endblock %}
+{% block content %}
+<h1>Gửi kế toán</h1>
+<p class="muted">Mỗi lần chốt là một file <strong>SHOP ONLINE ddmmyy.xlsx</strong> chứa DO của mọi sàn và mọi ngày goods issue chưa gửi. DO đã chốt không bao giờ gửi lại.</p>
+
+{% if open_run %}
+<div class="box">
+  <strong>Đang có đợt mở #{{ open_run.id }}</strong>
+  <span class="muted">tạo bởi {{ open_run.created_by }} lúc {{ open_run.created_at|localtime }}</span>
+  <a class="button" href="/accounting/runs/{{ open_run.id }}">Mở đợt</a>
+</div>
+{% else %}
+<div class="box">
+  {% if due and due.pairs %}
+  <p>{{ due.pending }} đơn đang chờ gửi kế toán; đợt mới sẽ đọc {{ due.pairs|length }} lượt (sàn × ngày goods issue).</p>
+  {% else %}
+  <p class="muted">Không có đơn nào đang chờ gửi kế toán.</p>
+  {% endif %}
+  {% if user.role == 'admin' %}
+  <form method="post" action="/accounting/runs" class="inline">
+    <button {{ 'disabled' if not (due and due.pairs) }}>Xuất file gửi kế toán</button>
+  </form>
+  {% endif %}
+  {% if due %}{% for w in due.warnings %}<div class="flash error">{{ w }}</div>{% endfor %}{% endif %}
+</div>
+{% endif %}
+
+<h2>Các đợt gần đây</h2>
+<table>
+  <tr><th>Đợt</th><th>Trạng thái</th><th>Tạo</th><th>Chốt</th><th>Số DO</th><th></th></tr>
+  {% for r in recent %}
+  <tr>
+    <td><a href="/accounting/runs/{{ r.id }}">#{{ r.id }}</a></td>
+    <td><span class="tag">{{ {'OPEN': 'Đang mở', 'FINALIZED': 'Đã chốt', 'CANCELLED': 'Đã hủy', 'REVOKED': 'Đã gỡ chốt'}[r.status] }}</span></td>
+    <td>{{ r.created_by }} {{ r.created_at|localtime }}</td>
+    <td>{% if r.finalized_at %}{{ r.finalized_by }} {{ r.finalized_at|localtime }}{% endif %}</td>
+    <td class="num">{{ counts.get(r.id, '') }}</td>
+    <td>{% if r.status in ('FINALIZED', 'REVOKED') and r.generated_file_id %}<a href="/accounting/runs/{{ r.id }}/file">Tải file đã chốt</a>{% endif %}</td>
+  </tr>
+  {% else %}
+  <tr><td colspan="6" class="muted">Chưa có đợt nào.</td></tr>
+  {% endfor %}
+</table>
+{% endblock %}
