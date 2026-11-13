@@ -86,14 +86,14 @@ try {
     # Exit code 2: the backup reached some but not all folders; still a usable backup.
     if ($LASTEXITCODE -ne 0 -and $LASTEXITCODE -ne 2) { throw "Sao lưu lỗi (mã $LASTEXITCODE)" }
     git merge --ff-only --quiet $target; Invoke-Native "git merge"
-    uv sync --frozen --no-dev; Invoke-Native "uv sync"
+    uv sync --frozen --no-dev --extra robot; Invoke-Native "uv sync"
     uv run --no-dev shoponline migrate; Invoke-Native "migrate"
     Start-Web
     Write-Host "Đã triển khai $target"
 }
 catch {
     Write-Warning "Triển khai lỗi: $_"
-    Write-Warning "Bản trước: $previous. Lùi lại: git reset --hard $previous; uv sync --frozen --no-dev; khôi phục bản sao lưu nếu schema đã đổi."
+    Write-Warning "Bản trước: $previous. Lùi lại: git reset --hard $previous; uv sync --frozen --no-dev --extra robot; khôi phục bản sao lưu nếu schema đã đổi."
     if (-not (Test-WebUp)) {
         try { Start-Web } catch { Write-Warning "Không khởi động lại được web: $_" }
     }
