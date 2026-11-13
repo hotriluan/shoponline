@@ -83,11 +83,13 @@ def build_order_workbook(
     col = {name: index for index, name in enumerate(COLUMNS, start=1)}
     row = FIRST_DATA_ROW
     for seq, order in enumerate(ready, start=1):
-        for item in order.items:
+        for position, item in enumerate(order.items):
+            # Only the first line of a multi-item order carries the order number and id.
+            first_line = position == 0
             values = {
                 "Ngày": batch.processing_date,
-                "Đơn Hàng": str(seq),
-                "Mã Số Đơn Hàng": order.platform_order_id,
+                "Đơn Hàng": str(seq) if first_line else None,
+                "Mã Số Đơn Hàng": order.platform_order_id if first_line else None,
                 "Tên Sản Phẩm": item.sap_name,
                 "Mã SP": int(item.material_number),
                 "Số Lượng": item.quantity,
@@ -101,7 +103,8 @@ def build_order_workbook(
             ws.cell(row, col["Đơn Hàng"]).number_format = "@"
             order_cell = ws.cell(row, col["Mã Số Đơn Hàng"])
             order_cell.number_format = "@"  # keep 18-digit TikTok ids intact
-            order_cell.data_type = "s"
+            if first_line:
+                order_cell.data_type = "s"
             for name in ("Đơn Giá", "Thành Tiền", SUBSIDY_COLUMN):
                 ws.cell(row, col[name]).number_format = MONEY_FORMAT
             row += 1

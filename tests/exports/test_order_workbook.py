@@ -75,10 +75,14 @@ def test_layout_and_values():
     assert ws.cell(10, 1).value.date() == date(2026, 11, 11)
 
 
-def test_multi_line_order_shares_sequence_number():
+def test_multi_line_order_leaves_order_columns_empty_after_first_line():
     result = build_order_workbook(SETTING, BATCH, [_order("587000000000000006", 8, lines=2)])
     ws = _reload(result)["TIKTOK"]
-    assert ws.cell(10, 2).value == ws.cell(11, 2).value == "1"
+    assert ws.cell(10, 2).value == "1"
+    assert ws.cell(10, 3).value == "587000000000000006"
+    assert ws.cell(11, 2).value is None
+    assert ws.cell(11, 3).value is None
+    assert ws.cell(11, 4).value == ws.cell(10, 4).value
 
 
 def test_file_name_uses_platform_and_day():
