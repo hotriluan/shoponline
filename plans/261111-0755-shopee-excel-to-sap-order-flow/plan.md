@@ -42,24 +42,29 @@ Ngày goods issue là ngày làm việc kế tiếp (bỏ thứ Bảy, Chủ nh�
 | # | Phase | Chặng | Công | Phụ thuộc | Status |
 |---|-------|-------|------|-----------|--------|
 | 1 | [Nền tảng dự án](./phase-01-start.md) | 1 | 2d | — | Done (trừ việc chủ dự án chuyển `passwordapi.txt`) |
-| 2 | [Lõi dữ liệu và nhập file Shopee, TikTok](./phase-02-data-core-and-shopee-import.md) | 1 | 5d | 1 | Done (Lazada chờ file mẫu) |
+| 2 | [Lõi dữ liệu và nhập file Shopee, TikTok](./phase-02-data-core-and-shopee-import.md) | 1 | 5d | 1 | Done |
 | 3 | [Web UI và file đơn hàng cho sales admin](./phase-03-web-ui-and-sap-order-file.md) | 1 | 4d | 2 | Done (chờ sales admin dùng thử) |
-| 4 | [Xác nhận lô, báo cáo SAP và file gửi kế toán](./phase-04-sap-report-import-and-accounting-file.md) | 1 | 4d | 3 | In progress: mã xong; chờ triển khai máy thật và 10 ngày chạy song song |
-| 5 | [Khung robot và đọc báo cáo SAP trên Production](./phase-05-robot-framework-and-sap-report-reading.md) | 2 | 6d | 4 | In progress: khung robot, hàng đợi, màn hình xong; còn lớp chặn T-code, thao tác đọc báo cáo (chờ bản ghi recorder), user SAP robot, cổng G1 |
+| 4 | [Xác nhận lô, báo cáo SAP và file gửi kế toán](./phase-04-sap-report-import-and-accounting-file.md) | 1 | 4d | 3 | In progress: mã xong, đã chạy thật trên máy phát triển (`C:\shoponline`); cổng G1 bắt đầu đếm từ 2026-11-12 |
+| 5 | [Khung robot và đọc báo cáo SAP trên Production](./phase-05-robot-framework-and-sap-report-reading.md) | 2 | 6d | 4 | In progress: mã xong (khung robot, hàng đợi, màn hình, lớp chặn T-code, đọc `zrsd001`/`zrsd004` bằng xuất Excel; test với SAP GUI giả); còn chủ dự án xác nhận cổng bước 9, chạy thử 50 việc và 5 ngày song song trên Production |
 | 6 | [Robot tạo SO Shopee](./phase-06-robot-sales-order-shadow-to-live.md) | — | — | — | Bỏ (2026-11-12) |
 | 7 | [Robot tạo SO có giảm giá ZDI1](./phase-07-robot-discounted-sales-order-zdi1.md) | — | — | — | Bỏ (2026-11-12) |
 | 8 | [Robot tạo DO và post goods issue](./phase-08-robot-delivery-and-goods-issue.md) | — | — | — | Bỏ (2026-11-12) |
-| 9 | [Vận hành và bàn giao](./phase-09-operations-and-handover.md) | — | 3d | 1–5 | Pending |
+| 9 | [Vận hành và bàn giao](./phase-09-operations-and-handover.md) | — | 3d | 1–5 | In progress: xóa theo thời hạn (90 ngày, chế độ liệt kê), sổ tay vận hành, tài liệu kiến trúc và bảo mật xong; còn chuyển máy, diễn tập dựng lại và sự cố, rà soát quyền trên máy thật, đào tạo |
 
 Chặng 1 (phase 1–4) là chế độ thủ công hoàn chỉnh. Chặng 2 (phase 5) thay việc admin tải báo cáo lên bằng robot đọc.
 
 ## Việc của chủ dự án, bắt đầu ngay vì phụ thuộc người khác
 
-- File "chờ giao hàng" tải từ trang quản lý Lazada. Chưa có thì chưa viết được bộ đọc Lazada.
+- ~~File "chờ giao hàng" tải từ trang quản lý Lazada.~~ Đã có (`docs/lazadaexport.xlsx`), bộ đọc Lazada xong 2026-11-13.
 - Bảng ánh xạ đầy đủ sản phẩm Shopee và TikTok sang mã SAP.
 - User SAP riêng cho robot trên Production, vào được `zrsd001` và `zrsd004` (IT đã đồng ý, license đã có). Khuyến nghị nhờ IT giới hạn role chỉ gồm hai báo cáo này, nhưng đây không phải điều kiện.
-- Máy chạy thật (riêng, bật liên tục) và nơi sao lưu ngoài máy: ổ mạng công ty và Google Drive.
+- Máy chạy thật (riêng, bật liên tục) và nơi sao lưu ngoài máy: ổ mạng công ty và Google Drive. Tạm thời dùng chung máy phát triển (xem Quyết định ngày 2026-11-12).
 - Ghi recorder trên Production bằng user robot cho `zrsd001` và `zrsd004` (đã có ảnh màn hình lọc và màn hình kết quả của cả hai).
+
+## Quyết định ngày 2026-11-12
+
+- **Cổng G1 bắt đầu ngày 2026-11-12 (ngày 1).** Đếm 10 ngày làm việc liên tiếp; ngày nào có ô lệch thì đếm lại từ đầu.
+- **Tạm dùng chung máy phát triển làm máy chạy thật, cả web lẫn robot.** Bản chạy thật nằm ở `C:\shoponline`, tách khỏi thư mục dev `C:\dev\shoponline`. Khi hoàn thiện sẽ chuyển sang một máy riêng; việc chuyển máy nằm trong phase 9. Đánh đổi được chấp nhận trong thời gian này: web, sao lưu và robot chỉ chạy khi `luanh` đăng nhập; robot dùng chung SAP GUI với người dùng máy nên không chạy robot khi đang làm việc tay trên SAP; server dev phải đổi cổng khác 8750.
 
 ## Phân công
 
@@ -97,7 +102,7 @@ Cổng G2 (robot ghi SO) và G3 (robot ghi DO) đã bỏ cùng phase 6–8.
 1. Số tiền trợ giá ghi vào cột `Sale` của file `ĐƠN HÀNG ONLINE`, theo một đơn vị sản phẩm. File mẫu Shopee có thêm cột `giảm giá`; file TikTok và Lazada chỉ có `Sale`.
 2. Với TikTok, trợ giá là `SKU Seller Discount` cộng `SKU Platform Discount`, chia cho số lượng. File mẫu TikTok chỉ có một đơn và hai cột này đều bằng 0.
 3. Lô được xác nhận trong ngày D; file gửi kế toán xuất vào ngày goods issue.
-4. Dòng Lazada trong `zrsd004` được điền mã đơn từ `zrsd001`; tên và địa chỉ do admin nhập theo mã đơn trên web cho tới khi có bộ đọc Lazada.
+4. Dòng Lazada trong `zrsd004` được điền mã đơn từ `zrsd001`; từ 2026-11-13 tên (`billingName`) và địa chỉ (`billingAddr`) lấy từ file Lazada, admin chỉ sửa khi cần.
 5. Cột `Created Time` của TikTok có dạng ngày/tháng/năm.
 
 ## Câu hỏi còn mở

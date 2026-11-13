@@ -23,6 +23,8 @@ class ParsedOrder:
     items: tuple[ParsedItem, ...]
     default_address: str
     review_reasons: tuple[str, ...] = field(default=())
+    # Only platforms whose export shows the real buyer name (Lazada) fill this.
+    customer_name: str | None = None
 
     @property
     def has_subsidy(self) -> bool:

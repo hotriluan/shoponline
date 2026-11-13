@@ -15,7 +15,7 @@
 </form>
 
 {% if user.role == 'admin' %}
-<h2>Thêm khách theo mã đơn (sàn chưa có bộ đọc, ví dụ Lazada)</h2>
+<h2>Thêm khách theo mã đơn</h2>
 <form class="box row" method="post" action="/customers/save">
   <label>Sàn<select name="platform">{% for p in platforms %}<option {{ 'selected' if p == platform }}>{{ p }}</option>{% endfor %}</select></label>
   <label>Mã đơn<input type="text" name="platform_order_id" required size="20"></label>

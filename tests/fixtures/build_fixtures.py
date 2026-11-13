@@ -151,6 +151,87 @@ TIKTOK_DESCRIPTIONS = {
 }
 
 # zrsd001 as exported by SAP (no extra column added by hand)
+# Lazada order export: 77 columns on the first sheet, one row per unit sold.
+LAZADA_HEADERS = [
+    "orderItemId",
+    "orderType",
+    "Guarantee",
+    "deliveryType",
+    "lazadaId",
+    "sellerSku",
+    "lazadaSku",
+    "wareHouse",
+    "createTime",
+    "updateTime",
+    "rtsSla",
+    "ttsSla",
+    "orderNumber",
+    "invoiceRequired",
+    "invoiceNumber",
+    "deliveredDate",
+    "customerName",
+    "customerEmail",
+    "nationalRegistrationNumber",
+    "shippingName",
+    "shippingAddress",
+    "shippingAddress2",
+    "shippingAddress3",
+    "shippingAddress4",
+    "shippingAddress5",
+    "shippingPhone",
+    "shippingPhone2",
+    "shippingCity",
+    "shippingPostCode",
+    "shippingCountry",
+    "shippingRegion",
+    "billingName",
+    "billingAddr",
+    "billingAddr2",
+    "billingAddr3",
+    "billingAddr4",
+    "billingAddr5",
+    "billingPhone",
+    "billingPhone2",
+    "billingCity",
+    "billingPostCode",
+    "billingCountry",
+    "taxCode",
+    "branchNumber",
+    "taxInvoiceRequested",
+    "payMethod",
+    "paidPrice",
+    "unitPrice",
+    "sellerDiscountTotal",
+    "platformDiscountTotal",
+    "shippingFee",
+    "walletCredit",
+    "itemName",
+    "variation",
+    "cdShippingProvider",
+    "shippingProvider",
+    "shipmentTypeName",
+    "shippingProviderType",
+    "cdTrackingCode",
+    "trackingCode",
+    "trackingUrl",
+    "shippingProviderFM",
+    "trackingCodeFM",
+    "trackingUrlFM",
+    "promisedShippingTime",
+    "premium",
+    "status",
+    "buyerFailedDeliveryReturnInitiator",
+    "buyerFailedDeliveryReason",
+    "buyerFailedDeliveryDetail",
+    "buyerFailedDeliveryUserName",
+    "bundleId",
+    "semiManaged",
+    "flexibleDeliveryTime",
+    "bundleDiscount",
+    "refundAmount",
+    "sellerNote",
+]
+
 ZRSD001_HEADERS = [
     "SOffc",
     "DChl",
@@ -334,6 +415,53 @@ def tiktok_orders_file(path: Path, rows: list[dict]) -> Path:
     description = [TIKTOK_DESCRIPTIONS.get(h, "") for h in TIKTOK_HEADERS]
     data = [description] + [_by_header(TIKTOK_HEADERS, r) for r in rows]
     return _write(path, "OrderSKUList", TIKTOK_HEADERS, data)
+
+
+def lazada_row(
+    order_id: str,
+    item_id: str = "500000000000001",
+    product: str = "Sơn thử A - 0.8 lít",
+    variation: str = "Màu sắc:Màu 01, Đóng Gói:0.8 lít",
+    price: int = 120000,
+    seller_discount: int = 0,
+    platform_discount: int = 0,
+    created: str = "11 Nov 2026 09:30",
+    name: str = "Người Mua Thử",
+    street: str = "12 Đường Thử",
+    ward: str = "Phường Ba",
+    province: str = "Tỉnh Thử",
+) -> dict[str, object]:
+    """One unit. Discounts are written negative, as Lazada does."""
+    return {
+        "orderItemId": item_id,
+        "orderType": "NORMAL",
+        "lazadaId": item_id,
+        "sellerSku": "10-Màu 01-0.8 lít",
+        "createTime": created,
+        "orderNumber": order_id,
+        "customerName": "*******001",
+        "shippingName": "N*t",
+        "shippingAddress": "1*g",
+        "billingName": name,
+        "billingAddr": street,
+        "billingAddr3": province,
+        "billingAddr4": ward,
+        "billingAddr5": f"{province}, {ward}",
+        "billingCountry": "Vietnam",
+        "unitPrice": f"{price}.00",
+        "paidPrice": f"{price - seller_discount - platform_discount}.00",
+        "sellerDiscountTotal": f"-{seller_discount}.00" if seller_discount else "",
+        "platformDiscountTotal": f"-{platform_discount}.00" if platform_discount else "",
+        "itemName": product,
+        "variation": variation,
+        "status": "pending",
+    }
+
+
+def lazada_orders_file(path: Path, rows: list[dict], *, drop: tuple[str, ...] = ()) -> Path:
+    headers = [h for h in LAZADA_HEADERS if h not in drop]
+    data = [_by_header(headers, {k: v for k, v in r.items() if k not in drop}) for r in rows]
+    return _write(path, "sheet1", headers, data)
 
 
 def zrsd001_row(

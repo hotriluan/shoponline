@@ -103,11 +103,12 @@ Robot là tác vụ Task Scheduler chạy khi tài khoản robot đăng nhập; 
 ## Todo
 
 - [ ] User robot trên Production, máy robot
-- [ ] Bản ghi recorder `zrsd001`, `zrsd004` trên Production
+- [x] Bản ghi recorder `zrsd001` (Open, Complete), `zrsd004` trên Production: màn hình lọc và chạy báo cáo (`docs/sap-recordings/`, 2026-11-12)
+- [x] Bản ghi recorder bước xuất Excel của `zrsd001` và `zrsd004` (`docs/sap-recordings/exportexcel/`; chốt xuất Excel thay vì đọc lưới, vì file kế toán dựng từ file `zrsd004` phải khớp từng ô với file admin)
 - [x] Hàng đợi và test nhận việc đồng thời
 - [x] Phiên, thanh trạng thái, popup, chụp màn hình (logic test với SAP GUI giả; chưa chạy trên SAP thật)
 - [x] Lớp chặn T-code và test (`guard.py`, nối vào `worker.py` và đăng nhập; cổng bước 9 còn chờ chủ dự án xác nhận danh sách khớp bản ghi recorder)
-- [ ] Đọc `zrsd001` và `zrsd004` (chờ bản ghi recorder; kết quả đọc đã nối vào hàm nhập của phase 4)
+- [x] Đọc `zrsd001` và `zrsd004` (logic test với SAP GUI giả; chưa chạy trên SAP thật): mở báo cáo, điền bộ lọc, chạy, nhận "No data", xuất Excel qua menu `&XXL`; hộp Save As, SAP GUI Security và Excel do `desktop.py` (pywinauto) trả lời; `zrsd004` lọc theo khách SAP của sàn, một việc cho mỗi sàn và ngày; hai file xuất thật đọc được bằng bộ đọc phase 4
 - [x] Worker, công tắc dừng, kiểm tra hệ thống đích, một robot duy nhất (khóa advisory PostgreSQL)
 - [x] Màn hình hàng đợi; xếp việc khi xác nhận lô và khi bấm xuất file kế toán (chỉ khi đặt `SHOPONLINE_SAP_SYSTEM`)
 - [x] Tài liệu robot đổi ví dụ từ QA sang Production (`AEP`/300, `AL17016`); thêm mục lớp chặn T-code

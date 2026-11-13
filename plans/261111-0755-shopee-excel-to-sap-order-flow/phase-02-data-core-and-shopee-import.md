@@ -110,7 +110,7 @@ importers/order_import.py  upsert đơn, tạo customer_info với địa chỉ 
 - [x] Trạng thái đơn và giá trị SO mong đợi
 - [x] Nhập đơn cộng dồn, không lùi trạng thái
 - [x] Đối chiếu với file thật trong `docs/` (8/8 đơn Shopee khớp file tay; mã TikTok 18 chữ số giữ nguyên)
-- [ ] Bộ đọc Lazada — chờ chủ dự án cung cấp file mẫu
+- [x] Bộ đọc Lazada (2026-11-13): gom theo `orderNumber`, mỗi dòng là một đơn vị sản phẩm, lấy tên và địa chỉ khách từ cột billing
 
 ## Success Criteria
 

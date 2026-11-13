@@ -3,14 +3,24 @@ from datetime import date
 import pytest
 from sqlalchemy import func, select
 
-from shoponline.db.models import CustomerInfo, EventLog, SalesOrder, SalesOrderItem
+from shoponline.db.models import (
+    CustomerInfo,
+    EventLog,
+    PlatformSetting,
+    SalesOrder,
+    SalesOrderItem,
+)
 from shoponline.domain import states
 from shoponline.domain.sku_mapping import upsert_mapping
+from shoponline.exports.order_workbook import build_order_workbook
 from shoponline.importers.excel_table import FileRejected
+from shoponline.importers.lazada_orders import read_lazada_orders
 from shoponline.importers.order_import import import_orders, reevaluate_mapping_errors
 from shoponline.importers.shopee_orders import read_shopee_orders
 from shoponline.importers.tiktok_orders import read_tiktok_orders
 from tests.fixtures.build_fixtures import (
+    lazada_orders_file,
+    lazada_row,
     shopee_orders_file,
     shopee_row,
     tiktok_orders_file,
@@ -164,3 +174,58 @@ def test_events_do_not_contain_customer_data(db, tmp_path):
     import_orders(db, read_shopee_orders(path), "SHOPEE", D, "test")
     details = " ".join(e.detail or "" for e in db.scalars(select(EventLog)))
     assert "Phường Riêng" not in details
+
+
+def test_lazada_fills_customer_name_and_keeps_admin_edits(db, tmp_path):
+    path = lazada_orders_file(
+        tmp_path / "l.xlsx", [lazada_row("530000000000001", name="Người Mua Thử")]
+    )
+    import_orders(db, read_lazada_orders(path), "LAZADA", D, "test")
+    customer = db.scalar(
+        select(CustomerInfo).where(CustomerInfo.platform_order_id == "530000000000001")
+    )
+    assert customer.customer_name == "Người Mua Thử"
+    assert customer.address == "12 Đường Thử, Phường Ba, Tỉnh Thử, Việt Nam"
+    customer.customer_name = "Tên Sửa Tay"
+    import_orders(db, read_lazada_orders(path), "LAZADA", D, "test")
+    assert customer.customer_name == "Tên Sửa Tay"
+
+
+def test_lazada_name_fills_blank_name_typed_earlier(db, tmp_path):
+    db.add(CustomerInfo(platform="LAZADA", platform_order_id="530000000000002", address="Số 5"))
+    db.flush()
+    path = lazada_orders_file(tmp_path / "l.xlsx", [lazada_row("530000000000002")])
+    import_orders(db, read_lazada_orders(path), "LAZADA", D, "test")
+    customer = db.scalar(
+        select(CustomerInfo).where(CustomerInfo.platform_order_id == "530000000000002")
+    )
+    assert (customer.customer_name, customer.address) == ("Người Mua Thử", "Số 5")
+
+
+def test_multi_product_order_becomes_one_order_in_order_file(db, tmp_path):
+    other = "Màu sắc:Màu 02, Đóng Gói:0.8 lít"
+    _map(db, "LAZADA", "Sơn thử A - 0.8 lít", "Màu sắc:Màu 01, Đóng Gói:0.8 lít", "100000001")
+    _map(db, "LAZADA", "Sơn thử A - 0.8 lít", other, "100000002")
+    path = lazada_orders_file(
+        tmp_path / "l.xlsx",
+        [
+            lazada_row("530000000000003", item_id="1"),
+            lazada_row("530000000000003", item_id="2", variation=other),
+            lazada_row("530000000000004", item_id="3"),
+        ],
+    )
+    result = import_orders(db, read_lazada_orders(path), "LAZADA", D, "test")
+    assert result.new == 2
+    order = _order(db, "530000000000003", "LAZADA")
+    assert order.status == states.READY
+    assert [i.material_number for i in order.items] == ["100000001", "100000002"]
+    assert _count(db, CustomerInfo) == 2
+
+    setting = db.get(PlatformSetting, "LAZADA")
+    ws = build_order_workbook(setting, result.batch, result.batch.orders).workbook["LAZADA"]
+    rows = [(ws.cell(r, 2).value, ws.cell(r, 3).value) for r in range(10, 13)]
+    assert rows == [
+        ("1", "530000000000003"),
+        ("1", "530000000000003"),
+        ("2", "530000000000004"),
+    ]

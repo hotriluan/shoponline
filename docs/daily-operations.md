@@ -4,11 +4,11 @@ Dành cho admin shop online. Ở chế độ thủ công hệ thống không ghi
 
 ## Trong ngày D
 
-1. **Tải file sàn.** Trang **Tải file sàn**: chọn sàn (Shopee hoặc TikTok), ngày xử lý D, chọn file "chờ giao hàng" tải từ trang quản lý sàn. Tải nhiều file trong một ngày được; đơn đã có không bị nhân đôi.
+1. **Tải file sàn.** Trang **Tải file sàn**: chọn sàn (Shopee, TikTok hoặc Lazada), ngày xử lý D, chọn file "chờ giao hàng" tải từ trang quản lý sàn. Tải nhiều file trong một ngày được; đơn đã có không bị nhân đôi. Đơn có nhiều sản phẩm được gom thành một đơn: cùng một số ở cột `Đơn Hàng` trong file `ĐƠN HÀNG ONLINE`, nên sales admin tạo một SO và kế toán xuất một hóa đơn cho cả đơn. Lazada gom theo cột `orderNumber` (không phải `orderItemId`, là mã của từng sản phẩm).
 2. **Xử lý đơn lỗi.** Nếu kết quả báo đơn **Thiếu ánh xạ**, vào **Ánh xạ SAP**, điền mã SAP và tên SAP cho các sản phẩm còn thiếu. Dòng nào đủ hai ô thì tự lưu khi chuyển sang ô khác; nút **Lưu tất cả** lưu lại mọi dòng đã điền (dòng để trống được bỏ qua). Nhiều dòng thì bấm **tải danh sách này ra Excel**, điền cột Mã SAP và Tên SAP, rồi nhập lại ở mục **Nhập từ Excel**. Đơn tự chuyển sang **Sẵn sàng**. Đơn **Cần kiểm tra** (ví dụ trợ giá TikTok không chia đều cho số lượng): mở đơn, kiểm tra tay, bấm **Đã kiểm tra, cho đi tiếp**.
 3. **Kiểm tra ngày goods issue.** Màn hình lô đề xuất ngày làm việc kế tiếp (cuối tháng thì giữ ngày D). Gặp ngày lễ thì đổi ngày; ngày tự lưu và trang tải lại.
 4. **Tải file `ĐƠN HÀNG ONLINE`** trên màn hình lô và gửi sales admin. File chỉ gồm đơn **Sẵn sàng**; đơn không giảm giá đứng trước, đơn có giảm giá đứng sau, cột `Sale` ghi trợ giá cho một sản phẩm. Sales admin phải tạo SO không giảm giá trước.
-5. **Nhập tên khách.** Bấm **Nhập tên khách** trên màn hình lô, chép tên từ phiếu giao hàng. Địa chỉ đã điền sẵn từ file sàn; sửa nếu cần. Mỗi dòng tự lưu khi chuyển sang ô khác, kết quả hiện ở cột cuối; dòng lưu lỗi hiện chữ đỏ và trình duyệt hỏi lại trước khi rời trang. Đơn Lazada: nhập theo mã đơn ở trang **Khách hàng**, chọn sàn LAZADA.
+5. **Nhập tên khách.** Bấm **Nhập tên khách** trên màn hình lô, chép tên từ phiếu giao hàng. Địa chỉ đã điền sẵn từ file sàn; sửa nếu cần. Mỗi dòng tự lưu khi chuyển sang ô khác, kết quả hiện ở cột cuối; dòng lưu lỗi hiện chữ đỏ và trình duyệt hỏi lại trước khi rời trang. Đơn Lazada đã có sẵn tên (cột `billingName`) và địa chỉ đầy đủ (cột `billingAddr`) từ file; chỉ kiểm tra lại. Tên, địa chỉ đã sửa tay không bị nhập lại file ghi đè.
 6. **Hủy đơn.** Đơn khách hủy trước khi làm SO: mở đơn, bấm **Đánh dấu hủy**. Việc hủy SO hoặc DO trong SAP vẫn do người làm.
 
 ## Sau khi sales admin tạo SO và DO

@@ -1,6 +1,6 @@
 ---
 title: "Phase 9: Vận hành và bàn giao"
-status: todo
+status: in-progress
 priority: P1
 effort: 3d
 dependencies: [1, 2, 3, 4, 5]
@@ -40,13 +40,15 @@ Hoàn thiện những gì cần để hệ thống chạy lâu dài mà không p
 
 ## Todo
 
+- [ ] Chuyển web, sao lưu, runner deploy và robot từ máy phát triển (`C:\shoponline`) sang máy chạy thật riêng; dùng chính bước dựng lại máy làm lần chuyển
 - [ ] Diễn tập dựng lại máy từ cả hai nơi sao lưu
-- [ ] Kế hoạch khi máy hỏng
-- [ ] Xóa dữ liệu theo thời hạn
-- [ ] Rà soát quyền và bí mật
-- [ ] Sổ tay vận hành
+- [ ] Kế hoạch khi máy hỏng (khung trong `docs/operations-runbook.md`; chờ chủ dự án điền máy thay thế, người dựng, thời gian chấp nhận)
+- [x] Xóa dữ liệu theo thời hạn: `shoponline retention`, 90 ngày (chốt 2026-11-13), giữ đơn và chỉ xóa tên, địa chỉ, file; không xóa tên, địa chỉ của đơn chưa có trong `zrsd004` và chưa hủy; tác vụ `shoponline-retention` mặc định chỉ liệt kê
+- [ ] Tuần liệt kê của tác vụ xóa theo thời hạn, rồi đăng ký lại với `-RetentionApply`
+- [ ] Rà soát quyền và bí mật (danh sách kiểm trong `docs/security-and-data-retention.md`; chưa chạy trên máy thật, chưa quét lịch sử git)
+- [x] Sổ tay vận hành (`docs/operations-runbook.md`; sửa lại sau diễn tập)
 - [ ] Diễn tập ba sự cố
-- [ ] Tài liệu kiến trúc, bảo mật
+- [x] Tài liệu kiến trúc, bảo mật (`docs/system-architecture.md`, `docs/security-and-data-retention.md`, README)
 - [ ] Đào tạo và phân công
 
 ## Success Criteria
@@ -78,4 +80,4 @@ Phase này không đổi luồng nghiệp vụ. Việc xóa theo thời hạn kh
 
 ## Next Steps
 
-Việc kế tiếp có thể cân nhắc: bộ đọc Lazada khi có file mẫu. Robot ghi SO và DO (phase 6–8 đã bỏ) chỉ mở lại thành dự án riêng nếu sản lượng tăng tới mức sales admin không làm kịp.
+Bộ đọc Lazada đã xong ngày 2026-11-13. Robot ghi SO và DO (phase 6–8 đã bỏ) chỉ mở lại thành dự án riêng nếu sản lượng tăng tới mức sales admin không làm kịp.

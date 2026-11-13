@@ -107,7 +107,7 @@ def save_customer(
         )
     )
     db.commit()
-    note = "" if has_order or platform == "LAZADA" else " (chưa có đơn nào mang mã này)"
+    note = "" if has_order else " (chưa có đơn nào mang mã này)"
     if is_autosave(request):
         return autosave_reply(f"Đã lưu{note}")
     flash(request, f"Đã lưu khách hàng của đơn {order_id}{note}.")

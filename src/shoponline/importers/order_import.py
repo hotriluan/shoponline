@@ -17,12 +17,14 @@ from shoponline.domain.gi_date import suggest_gi_date
 from shoponline.domain.order import ParsedOrder
 from shoponline.domain.sku_mapping import find_mapping
 from shoponline.importers.excel_table import FileRejected
+from shoponline.importers.lazada_orders import read_lazada_orders
 from shoponline.importers.shopee_orders import read_shopee_orders
 from shoponline.importers.tiktok_orders import read_tiktok_orders
 
 READERS: dict[str, Callable[[str | Path | BinaryIO], list[ParsedOrder]]] = {
     "SHOPEE": read_shopee_orders,
     "TIKTOK": read_tiktok_orders,
+    "LAZADA": read_lazada_orders,
 }
 MAX_DAYS_FROM_PROCESSING_DATE = 31
 
@@ -222,7 +224,7 @@ def import_orders(
 
 
 def _ensure_customer(session: Session, platform: str, parsed: ParsedOrder) -> None:
-    """Create the customer row with the default address; never overwrite admin edits."""
+    """Create the customer row from the file; only fill blanks, never overwrite admin edits."""
     existing = session.scalar(
         select(CustomerInfo).where(
             CustomerInfo.platform == platform,
@@ -234,8 +236,12 @@ def _ensure_customer(session: Session, platform: str, parsed: ParsedOrder) -> No
             CustomerInfo(
                 platform=platform,
                 platform_order_id=parsed.platform_order_id,
+                customer_name=parsed.customer_name,
                 address=parsed.default_address,
             )
         )
-    elif not existing.address:
+        return
+    if not existing.address:
         existing.address = parsed.default_address
+    if not existing.customer_name and parsed.customer_name:
+        existing.customer_name = parsed.customer_name

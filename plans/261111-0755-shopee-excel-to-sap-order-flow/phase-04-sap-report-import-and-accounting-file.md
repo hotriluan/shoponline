@@ -83,9 +83,9 @@ Ghép khi xuất: mỗi dòng `zrsd004` lấy `SO Reference` → `sap_so_ref.po_
 - [x] Khớp từng ô với `SHOP ONLINE 111126.XLSX` (18 × 37, 0 ô khác)
 - [x] Nút xác nhận và các màn hình
 - [x] Sao lưu mã hóa ra hai nơi (script và diễn tập khôi phục trên máy phát triển; chưa cấu hình ổ mạng và Google Drive thật)
-- [ ] Tác vụ `web` và sao lưu trong Task Scheduler (script đã viết, chưa chạy trên máy thật)
-- [ ] Triển khai máy chạy thật
-- [ ] 10 ngày chạy song song (cổng G1)
+- [x] Tác vụ `web` và sao lưu trong Task Scheduler (chạy khi đăng nhập, `-AtLogOn`)
+- [x] Triển khai máy chạy thật (tạm trên máy phát triển, `C:\shoponline`, tự deploy khi push `main`; chuyển sang máy riêng ở phase 9)
+- [ ] 10 ngày chạy song song (cổng G1, ngày 1 là 2026-11-12)
 
 ## Success Criteria (cổng G1)
 

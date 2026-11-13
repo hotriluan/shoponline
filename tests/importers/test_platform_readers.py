@@ -1,9 +1,12 @@
 import pytest
 
 from shoponline.importers.excel_table import FileRejected
+from shoponline.importers.lazada_orders import read_lazada_orders
 from shoponline.importers.shopee_orders import read_shopee_orders
 from shoponline.importers.tiktok_orders import read_tiktok_orders
 from tests.fixtures.build_fixtures import (
+    lazada_orders_file,
+    lazada_row,
     shopee_orders_file,
     shopee_row,
     tiktok_orders_file,
@@ -117,3 +120,59 @@ def test_tiktok_indivisible_discount_needs_review(tmp_path):
     )
     order = read_tiktok_orders(path)[0]
     assert order.review_reasons and "không chia hết" in order.review_reasons[0]
+
+
+def test_lazada_groups_units_by_order_number(tmp_path):
+    # One order, three units: two of the same colour, one of another colour.
+    path = lazada_orders_file(
+        tmp_path / "l.xlsx",
+        [
+            lazada_row("530000000000001", item_id="1", platform_discount=12500),
+            lazada_row("530000000000001", item_id="2", platform_discount=12500),
+            lazada_row(
+                "530000000000001",
+                item_id="3",
+                variation="Màu sắc:Màu 02, Đóng Gói:0.8 lít",
+                seller_discount=5000,
+                platform_discount=2500,
+            ),
+            lazada_row("530000000000002", item_id="4", name="Người Khác"),
+        ],
+    )
+    orders = read_lazada_orders(path)
+    assert [o.platform_order_id for o in orders] == ["530000000000001", "530000000000002"]
+    first = orders[0]
+    assert [(i.variation_name, i.quantity, i.unit_price, i.unit_subsidy) for i in first.items] == [
+        ("Màu sắc:Màu 01, Đóng Gói:0.8 lít", 2, 120000, 12500),
+        ("Màu sắc:Màu 02, Đóng Gói:0.8 lít", 1, 120000, 7500),
+    ]
+    assert first.ordered_at.hour == 9 and first.ordered_at.month == 11
+    assert first.customer_name == "Người Mua Thử"
+    assert first.default_address == "12 Đường Thử, Phường Ba, Tỉnh Thử, Việt Nam"
+    assert orders[1].customer_name == "Người Khác"
+
+
+def test_lazada_drops_repeated_street_part(tmp_path):
+    path = lazada_orders_file(
+        tmp_path / "l.xlsx", [lazada_row("530000000000003", street="9 Đường A, 9 Đường A")]
+    )
+    assert read_lazada_orders(path)[0].default_address == "9 Đường A, Phường Ba, Tỉnh Thử, Việt Nam"
+
+
+def test_lazada_missing_column_rejects_with_name(tmp_path):
+    path = lazada_orders_file(
+        tmp_path / "l.xlsx", [lazada_row("530000000000004")], drop=("billingName",)
+    )
+    with pytest.raises(FileRejected) as err:
+        read_lazada_orders(path)
+    assert "billingName" in str(err.value)
+
+
+def test_lazada_bad_date_rejects_whole_file(tmp_path):
+    path = lazada_orders_file(
+        tmp_path / "l.xlsx",
+        [lazada_row("530000000000005"), lazada_row("530000000000006", created="hôm qua")],
+    )
+    with pytest.raises(FileRejected) as err:
+        read_lazada_orders(path)
+    assert "createTime" in str(err.value)
