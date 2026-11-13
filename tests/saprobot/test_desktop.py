@@ -10,6 +10,7 @@ import pytest
 
 from shoponline.saprobot import desktop as desktop_mod
 from shoponline.saprobot.desktop import (
+    CANCEL_BUTTON_ID,
     EXCEL_CLASS,
     FILE_NAME_COMBO_ID,
     OK_BUTTON_ID,
@@ -56,6 +57,9 @@ class Window:
     # specification side
     def child_window(self, **criteria):
         key = criteria.get("control_id") or criteria.get("title_re") or criteria.get("class_name")
+        if key == FILE_NAME_COMBO_ID and criteria.get("class_name") != "Edit":
+            # the real dialog has a ComboBoxEx32, a ComboBox and an Edit with this ID
+            raise RuntimeError("There are 3 elements that match the criteria")
         return self.controls[key]
 
     def descendants(self) -> list:
@@ -89,9 +93,10 @@ class FakeScreen:
     def show_save_as(self) -> None:
         dialog = Window(self, SAVE_AS_TITLE)
         edit = Control(dialog)
-        combo = Control(dialog)
-        combo.child_window = lambda **_: edit
-        dialog.controls[FILE_NAME_COMBO_ID] = combo
+        dialog.controls[FILE_NAME_COMBO_ID] = edit
+        dialog.controls[CANCEL_BUTTON_ID] = Control(
+            dialog, "Cancel", on_click=lambda: self.top.remove(dialog)
+        )
         dialog.controls[OK_BUTTON_ID] = Control(
             dialog, "&Save", on_click=lambda: self._saved(dialog, edit.edit_text)
         )
@@ -171,3 +176,14 @@ def test_cancel_stops_waiting(tmp_path):
     save.cancel()
     with pytest.raises(RobotError, match="hủy"):
         save.wait()
+
+
+def test_save_as_is_cancelled_when_the_dialog_cannot_be_answered(tmp_path):
+    screen = FakeScreen()
+    screen.show_save_as()
+    dialog = screen.top[0]
+    dialog.controls.pop(OK_BUTTON_ID)  # a Save As that differs from the recording
+    with pytest.raises(RobotError, match="Save As khác dự kiến"):
+        ExportSave(tmp_path / "x.xlsx", desktop_factory=lambda: screen).wait()
+    assert (SAVE_AS_TITLE, "Cancel") in screen.clicks  # SAP's blocked call is released
+    assert screen.top == []

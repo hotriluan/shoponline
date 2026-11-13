@@ -33,9 +33,12 @@ OVERWRITE_TITLE = "Confirm Save As"
 SECURITY_TITLE = "SAP GUI Security"
 EXCEL_CLASS = "XLMAIN"
 
-# Windows common dialog control IDs: file name combo (cmb13), OK/Save (IDOK), Yes (IDYES).
+# Windows common dialog control IDs: file name combo (cmb13), OK/Save (IDOK), Cancel, Yes (IDYES).
+# The ComboBoxEx32, its ComboBox and its Edit all carry the file name ID, so a lookup by ID alone
+# is ambiguous: the Edit is selected by class as well.
 FILE_NAME_COMBO_ID = 1148
 OK_BUTTON_ID = 1
+CANCEL_BUTTON_ID = 2
 YES_BUTTON_ID = 6
 
 SAVE_AS_TIMEOUT = 60.0  # SAP may take a while to build the spreadsheet
@@ -75,10 +78,25 @@ class ExportSave:
     # ------------------------------------------------------------ helper thread
 
     def _run(self) -> None:
+        desktop = None
         try:
-            self._answer(self._desktop_factory())
+            desktop = self._desktop_factory()
+            self._answer(desktop)
         except BaseException as exc:  # reported to the robot thread by wait()
             self._error = exc
+            # The SAP call that opened Save As blocks until it closes, and wait() only runs after
+            # that call returns: leave Save As open and the robot hangs without reporting why.
+            self._close_save_as(desktop)
+
+    def _close_save_as(self, desktop) -> None:
+        try:
+            for window in desktop.windows(visible_only=True, title=SAVE_AS_TITLE):
+                button = desktop.window(handle=window.handle).child_window(
+                    control_id=CANCEL_BUTTON_ID, class_name="Button"
+                )
+                button.click()
+        except Exception:
+            log.exception("Không đóng được hộp Save As sau lỗi")
 
     def _dialogs(self, desktop, title: str, answered: set[int]) -> list:
         """Specifications of the visible top-level windows with this title, not yet answered."""
@@ -121,8 +139,7 @@ class ExportSave:
 
     def _save_as(self, dialog) -> None:
         try:
-            combo = dialog.child_window(control_id=FILE_NAME_COMBO_ID)
-            edit = combo.child_window(class_name="Edit")
+            edit = dialog.child_window(control_id=FILE_NAME_COMBO_ID, class_name="Edit")
             edit.set_edit_text(str(self.target))
             dialog.child_window(control_id=OK_BUTTON_ID, class_name="Button").click()
         except Exception as exc:
