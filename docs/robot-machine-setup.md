@@ -61,7 +61,9 @@ uv run shoponline migrate
 pwsh -ExecutionPolicy Bypass -File scripts\windows\register-tasks.ps1 -RobotUser MAYCHU\saprobot
 ```
 
-Tác vụ `shoponline-robot` chạy `uv run shoponline robot` khi `saprobot` đăng nhập. Task Scheduler không chạy bản thứ hai. Robot cũng giữ một khóa trong PostgreSQL, nên robot thứ hai (kể cả trên máy khác) thoát ngay với mã 3.
+Tác vụ `shoponline-robot` chạy `uv run --no-dev --extra robot shoponline robot` khi `saprobot` đăng nhập.
+
+Máy dùng chung hiện tại (tài khoản `luanh`, xem plan) không cần bước này: mỗi lần deploy qua GitHub, `update-production.ps1` tự đăng ký `shoponline-robot` cho tài khoản chạy runner nếu chưa có, và bật robot khi cấu hình SAP đã đủ. Task Scheduler không chạy bản thứ hai. Robot cũng giữ một khóa trong PostgreSQL, nên robot thứ hai (kể cả trên máy khác) thoát ngay với mã 3.
 
 ## 5. Kiểm tra
 
