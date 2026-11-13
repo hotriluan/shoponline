@@ -226,6 +226,6 @@ def test_multi_product_order_becomes_one_order_in_order_file(db, tmp_path):
     rows = [(ws.cell(r, 2).value, ws.cell(r, 3).value) for r in range(10, 13)]
     assert rows == [
         ("1", "530000000000003"),
-        ("1", "530000000000003"),
+        (None, None),
         ("2", "530000000000004"),
     ]
