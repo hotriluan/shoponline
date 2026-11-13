@@ -74,9 +74,10 @@ def _robot_login(env: dict[str, str]):
 def _cmd_robot(_args: argparse.Namespace) -> int:
     import shoponline.saprobot.transactions  # noqa: F401 - registers the recorded report reads
     from shoponline.db.session import get_engine, session_factory
+    from shoponline.saprobot.errors import SessionUnavailable
     from shoponline.saprobot.popups import load_rules
     from shoponline.saprobot.screen import Screens
-    from shoponline.saprobot.session import scripting_engine
+    from shoponline.saprobot.session import logoff_sessions_of, scripting_engine
     from shoponline.saprobot.worker import RobotAlreadyRunning, Worker, run_forever
 
     settings = load_settings()
@@ -101,8 +102,21 @@ def _cmd_robot(_args: argparse.Namespace) -> int:
         Screens.load(REPO_ROOT / "config" / "sap_screens.yaml"),
         load_rules(REPO_ROOT / "config" / "sap_popups.yaml"),
     )
+
+    def log_off_leftovers() -> None:
+        """A robot stopped mid-job may have left its SAP logon open; close it, start clean."""
+        if settings.sap_target is None:
+            return
+        try:
+            engine = scripting_engine(start=False)
+        except SessionUnavailable:
+            return  # SAP Logon is not running, so nothing is logged on
+        closed = logoff_sessions_of(engine, settings.sap_target, login.user)
+        if closed:
+            logging.getLogger(__name__).info("Đã đăng xuất %d phiên SAP còn sót của robot", closed)
+
     try:
-        run_forever(worker, get_engine(settings.database_url))
+        run_forever(worker, get_engine(settings.database_url), on_start=log_off_leftovers)
     except RobotAlreadyRunning as exc:
         print(f"Lỗi: {exc}", file=sys.stderr)
         return 3

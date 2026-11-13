@@ -27,7 +27,7 @@ from tests.fixtures.build_fixtures import (
     zrsd004_file,
     zrsd004_row,
 )
-from tests.saprobot.fake_sap import FakeSession, Info, engine_with
+from tests.saprobot.fake_sap import FakeEngine, FakeSession, Info, engine_with
 
 QA = SapTarget("QAS", "300")
 LOGIN = LoginConfig(connection="QA robot", user="robot01", password="pw")
@@ -228,3 +228,52 @@ def test_session_left_on_a_foreign_tcode_stops_before_the_transaction(db, settin
     assert _job(db, job.id).status == queue.FAILED
     assert called == [] and gui.actions == []
     assert queue.control(db).paused
+
+
+# ---------------------------------------------------------------- logon only for a job
+
+
+def test_logs_in_for_the_job_and_logs_off_right_after(db, settings, batch, tmp_path):
+    report = zrsd001_file(
+        tmp_path / "export.xlsx", [zrsd001_row("210000001", "A1", "100000001", 2, 200000)]
+    )
+    engine = FakeEngine(login_as=Info("QAS", "300", "ROBOT01"))  # nobody logged on
+    screens = Screens({"login": {"user": "wnd[0]/usr/user", "password": "wnd[0]/usr/pw"}})
+    worker = Worker(
+        settings,
+        _factory(db),
+        lambda: engine,
+        LOGIN,
+        screens,
+        [],
+        transactions={
+            queue.READ_ZRSD001: Transaction(lambda ctx: TransactionResult(report), False)
+        },
+    )
+    job = request_zrsd001(db, QA, batch, "admin")
+    worker.run_once()
+    assert _job(db, job.id).status == queue.DONE
+    assert engine.opened == ["QA robot"]
+    assert engine.connections == [] and len(engine.closed) == 1
+
+
+def test_failed_job_still_logs_off_after_the_screenshot(db, settings, batch):
+    job = request_zrsd001(db, QA, batch, "admin")
+    gui = _qa_session()
+
+    def read(ctx):
+        gui.status.MessageType, gui.status.Text = "E", "No authorization for ZRSD001"
+        ctx.step()
+
+    _worker(db, settings, gui, {queue.READ_ZRSD001: Transaction(read, False)}).run_once()
+    job = _job(db, job.id)
+    assert job.status == queue.FAILED and job.evidence_path
+    assert gui.Parent.closed
+
+
+def test_someone_elses_session_is_never_logged_off(db, settings, batch):
+    request_zrsd001(db, QA, batch, "admin")
+    person = FakeSession(Info("QAS", "300", "ANNA"))
+    txn = Transaction(lambda ctx: TransactionResult(), False)
+    _worker(db, settings, person, {queue.READ_ZRSD001: txn}).run_once()
+    assert not person.Parent.closed

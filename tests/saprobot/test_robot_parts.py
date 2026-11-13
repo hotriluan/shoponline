@@ -16,7 +16,13 @@ from shoponline.saprobot.errors import (
 from shoponline.saprobot.guard import GuardedSession
 from shoponline.saprobot.popups import PopupRule, handle_popups, load_rules
 from shoponline.saprobot.screen import Screens
-from shoponline.saprobot.session import LoginConfig, ensure_session
+from shoponline.saprobot.session import (
+    LoginConfig,
+    ensure_session,
+    logoff,
+    logoff_sessions_of,
+    scripting_engine,
+)
 from shoponline.saprobot.statusbar import check_status, read_status
 from tests.saprobot.fake_sap import FakeEngine, FakeSession, Info, engine_with
 
@@ -176,3 +182,41 @@ def test_prune_removes_only_old_screenshots(tmp_path):
     os.utime(old, (month_ago, month_ago))
     assert evidence.prune(tmp_path, keep_days=30) == 1
     assert not old.exists() and new.exists()
+
+
+def test_logoff_sessions_of_closes_only_the_robot_user():
+    robot, person, other_system = _session(), _session(user="ANNA"), _session("PRD", "100")
+    engine = engine_with(robot, person, other_system)
+    assert logoff_sessions_of(engine, QA, "robot01") == 1
+    assert robot.Parent.closed  # one connection holds all three sessions in this fake
+    assert engine.closed == [robot.Parent]
+
+
+def test_logoff_never_raises():
+    logoff(object())  # no Parent: logged as a warning, robot goes on
+
+
+def test_scripting_engine_starts_sap_logon_when_it_is_not_running(tmp_path, monkeypatch):
+    exe = tmp_path / "saplogon.exe"
+    exe.write_bytes(b"")
+    monkeypatch.setenv("SHOPONLINE_SAPLOGON_PATH", str(exe))
+    launched, calls = [], []
+
+    def running():
+        calls.append(1)
+        if not launched:
+            raise SessionUnavailable("not running")
+        return "engine"
+
+    assert scripting_engine(running_engine=running, launch=launched.append) == "engine"
+    assert launched == [[str(exe)]]
+
+
+def test_scripting_engine_without_start_does_not_launch(monkeypatch):
+    def running():
+        raise SessionUnavailable("not running")
+
+    launched = []
+    with pytest.raises(SessionUnavailable):
+        scripting_engine(start=False, running_engine=running, launch=launched.append)
+    assert launched == []

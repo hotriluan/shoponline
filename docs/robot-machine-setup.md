@@ -39,10 +39,11 @@ Robot đọc cùng `.env` với `web`. Thêm:
 | Biến | Đặt ở | Ý nghĩa |
 |---|---|---|
 | `SHOPONLINE_SAP_SYSTEM`, `SHOPONLINE_SAP_CLIENT` | `.env` của `web` | Hệ thống và client của việc mới, ở dự án này là `AEP` và `300`. Để trống thì web không xếp việc cho robot. |
-| `SHOPONLINE_SAP_CONNECTION` | máy robot | Tên mục SAP Logon dùng khi phải đăng nhập lại |
+| `SHOPONLINE_SAP_CONNECTION` | máy robot | Tên mục SAP Logon robot dùng để đăng nhập cho mỗi việc. Trên máy hiện tại: `SAP PRODUCTION GROUP ALKANA` (mục trỏ `AEP`) |
 | `SHOPONLINE_SAP_USER` | máy robot | User SAP của robot: `AL17016` |
 | `SHOPONLINE_SAP_PASSWORD` | máy robot, từ kho bí mật | Mật khẩu user robot; không ghi vào database hay nhật ký |
 | `SHOPONLINE_SAP_LANGUAGE` | máy robot | Ngôn ngữ đăng nhập, ví dụ `EN` (không bắt buộc) |
+| `SHOPONLINE_SAPLOGON_PATH` | máy robot | Đường dẫn `saplogon.exe` để robot tự mở SAP Logon (không bắt buộc; mặc định `C:\Program Files (x86)\SAP\FrontEnd\SAPgui\saplogon.exe`) |
 | `SHOPONLINE_ROBOT_MAX_FAILURES` | cả hai | Số việc lỗi liên tiếp thì robot tự dừng (mặc định 3) |
 | `SHOPONLINE_ROBOT_EVIDENCE_KEEP_DAYS` | cả hai | Số ngày giữ ảnh chụp màn hình lỗi (mặc định 30) |
 

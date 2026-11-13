@@ -86,6 +86,7 @@ class FakeSession:
     elements: dict[str, Element] = field(default_factory=dict)
     actions: list = field(default_factory=list)
     broken: bool = False  # connection dropped: every access raises
+    Parent: FakeConnection | None = None  # noqa: N815 - set by the connection holding it
 
     def __post_init__(self):
         if not self.windows:
@@ -130,10 +131,20 @@ class FakeSession:
 class FakeConnection:
     def __init__(self, sessions: list[FakeSession]):
         self.sessions = sessions
+        self.engine: FakeEngine | None = None
+        self.closed = False
+        for session in sessions:
+            session.Parent = self
 
     @property
     def Children(self) -> Collection:  # noqa: N802
         return Collection(self.sessions)
+
+    def CloseConnection(self) -> None:  # noqa: N802 - logs the user off
+        self.closed = True
+        if self.engine is not None:
+            self.engine.connections.remove(self)
+            self.engine.closed.append(self)
 
 
 class FakeEngine:
@@ -145,6 +156,9 @@ class FakeEngine:
         self.connections = connections or []
         self.login_as = login_as
         self.opened: list[str] = []
+        self.closed: list[FakeConnection] = []
+        for connection in self.connections:
+            connection.engine = self
 
     @property
     def Children(self) -> Collection:  # noqa: N802
@@ -166,6 +180,7 @@ class FakeEngine:
 
         session.on_vkey = on_vkey
         connection = FakeConnection([session])
+        connection.engine = self
         self.connections.append(connection)
         return connection
 

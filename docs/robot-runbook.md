@@ -64,13 +64,13 @@ User `AL17016` mở được cả `VA02`, nên role phía SAP không ngăn robot
 Robot đọc `Info.Transaction` của phiên ngay khi nhận phiên, rồi trước và sau mỗi thao tác (gõ chữ, chọn, bấm nút, gửi phím, trả lời cửa sổ phụ). Khi gặp T-code ngoài danh sách, hoặc một phím hay thao tác bị cấm:
 
 1. Robot không bấm gì thêm trên phiên đó.
-2. Robot chụp màn hình; ảnh hiện ở cột ảnh của việc trên trang **Robot SAP**.
+2. Robot chụp màn hình rồi đăng xuất (đóng kết nối, mọi thứ chưa lưu bị bỏ); ảnh hiện ở cột ảnh của việc trên trang **Robot SAP**.
 3. Việc chuyển "Lỗi", nội dung lỗi bắt đầu bằng "Lớp chặn T-code".
 4. Robot tự tạm dừng với cùng lý do; nhật ký sự kiện ghi `robot_guard_violation`.
 
 Admin làm gì:
 
-1. Xem ảnh và lỗi để biết robot đang đứng ở màn hình nào. Nếu phiên SAP còn ở T-code lạ (ví dụ `VA02`), thoát bằng tay **không lưu** và về menu chính.
+1. Xem ảnh và lỗi để biết robot đã đứng ở màn hình nào. Robot đã tự đăng xuất, nên không còn phiên nào phải thoát tay.
 2. Tìm vì sao robot tới đó: nút trên lưới mở chứng từ, màn hình SAP đổi sau nâng cấp, hay lỗi trong thao tác của robot. Chưa rõ nguyên nhân thì không bật lại robot; trong lúc chờ, tải file báo cáo lên bằng tay.
 3. Bật lại robot rồi bấm "Chạy lại" cho việc.
 
@@ -78,9 +78,12 @@ Các danh sách này nằm cứng trong mã, không nằm trong YAML hay `.env`.
 
 Giới hạn: lớp chặn bảo vệ trước lỗi trong mã robot và trước màn hình SAP tự chuyển sang T-code khác. Nó không chặn người đăng nhập SAP bằng tay với `AL17016`, và không bảo vệ trước lỗi nằm trong chính `guard.py`. Vì vậy tài khoản Windows của robot không dùng cho việc khác, và nên đề nghị IT thu role của `AL17016` về hai báo cáo.
 
-## Khởi động lại và mất phiên
+## Đăng nhập theo việc, khởi động lại và mất phiên
 
-- Phiên SAP bị ngắt hoặc đăng xuất: ở việc kế tiếp robot đăng nhập lại qua mục SAP Logon đã cấu hình, rồi kiểm tra lại hệ thống, client và user.
+- Robot chỉ đăng nhập SAP khi có việc: nhận việc, đăng nhập `AL17016` qua mục SAP Logon đã cấu hình, kiểm tra hệ thống, client, user, làm việc, rồi đăng xuất ngay (kể cả khi việc lỗi, sau khi chụp ảnh). Giữa hai việc robot không giữ phiên SAP nào.
+- SAP Logon chưa mở thì robot tự mở `saplogon.exe` (đường dẫn mặc định của bộ cài, đổi bằng `SHOPONLINE_SAPLOGON_PATH`).
+- Đang có phiên SAP của người khác (ví dụ người dùng máy đang làm tay bằng user của mình) thì robot không đăng nhập bên cạnh: việc lỗi và robot tự tạm dừng (mục **Robot tự dừng**). Robot không bao giờ đăng xuất phiên của người khác.
+- Robot khởi động (sau mỗi lần deploy hoặc khi đăng nhập Windows) thì đăng xuất phiên `AL17016` còn sót từ lần chạy trước.
 - Robot bị tắt giữa lúc đang chạy một việc đọc: lần khởi động sau việc đó về "Chờ" và chạy lại.
 - Ảnh chụp màn hình lỗi nằm ở `<SHOPONLINE_DATA_DIR>\robot-evidence` và tự xóa sau `SHOPONLINE_ROBOT_EVIDENCE_KEEP_DAYS` ngày, vì có thể chứa dữ liệu khách.
 

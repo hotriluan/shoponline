@@ -1,4 +1,5 @@
-"""Pick the SAP GUI session that matches the job's system, client and robot user.
+"""Pick the SAP GUI session that matches the job's system, client and robot user, log in for a
+job and log off after it.
 
 Works on the SAP GUI Scripting object model (engine → connections → sessions); tests pass a
 fake engine with the same shape, so this module never imports win32com itself.
@@ -7,7 +8,12 @@ fake engine with the same shape, so this module never imports win32com itself.
 from __future__ import annotations
 
 import logging
+import os
+import subprocess
+import time
+from collections.abc import Callable
 from dataclasses import dataclass
+from pathlib import Path
 
 from shoponline.sapjobs.queue import SapTarget
 from shoponline.saprobot.errors import SessionUnavailable, WrongSystem
@@ -125,8 +131,36 @@ def ensure_session(
     return gui_session, check_identity(gui_session, target, config.user)
 
 
-def scripting_engine():
-    """The running SAP GUI's scripting engine (needs pywin32 and SAP Logon started)."""
+def logoff(gui_session) -> None:
+    """Close the session's connection, which logs the user off. Never raises.
+
+    GuiConnection.CloseConnection is a scripting call, not a T-code, so it needs no guard
+    exception; SAP ends the logon without asking.
+    """
+    try:
+        gui_session.Parent.CloseConnection()
+        log.info("Đã đăng xuất SAP")
+    except Exception as exc:
+        log.warning("Không đăng xuất được SAP: %s", exc)
+
+
+def logoff_sessions_of(engine, target: SapTarget, user: str) -> int:
+    """Log off every open session of the robot user on target (left over from a crash)."""
+    closed = 0
+    for gui_session in open_sessions(engine):
+        try:
+            check_identity(gui_session, target, user)
+        except WrongSystem:
+            continue  # someone else's session: never touched
+        logoff(gui_session)
+        closed += 1
+    return closed
+
+
+SAPLOGON_DEFAULT = r"C:\Program Files (x86)\SAP\FrontEnd\SAPgui\saplogon.exe"
+
+
+def _running_engine():
     try:
         import win32com.client
     except ImportError as exc:
@@ -135,3 +169,34 @@ def scripting_engine():
         return win32com.client.GetObject("SAPGUI").GetScriptingEngine
     except Exception as exc:
         raise SessionUnavailable(f"SAP Logon chưa chạy hoặc chưa bật scripting: {exc}") from exc
+
+
+def scripting_engine(
+    start: bool = True,
+    wait_seconds: float = 60,
+    running_engine: Callable[[], object] = _running_engine,
+    launch: Callable[[list[str]], object] = subprocess.Popen,
+):
+    """The SAP GUI scripting engine; starts SAP Logon first when it is not running.
+
+    The robot logs in only for a job, so SAP Logon may have been closed in between.
+    SHOPONLINE_SAPLOGON_PATH overrides the default install path.
+    """
+    try:
+        return running_engine()
+    except SessionUnavailable:
+        if not start:
+            raise
+    path = Path(os.environ.get("SHOPONLINE_SAPLOGON_PATH") or SAPLOGON_DEFAULT)
+    if not path.is_file():
+        raise SessionUnavailable(f"SAP Logon chưa chạy và không thấy {path}")
+    log.info("SAP Logon chưa chạy, mở %s", path)
+    launch([str(path)])
+    deadline = time.monotonic() + wait_seconds
+    while True:
+        try:
+            return running_engine()
+        except SessionUnavailable:
+            if time.monotonic() > deadline:
+                raise
+            time.sleep(2)

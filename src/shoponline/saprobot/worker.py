@@ -1,5 +1,5 @@
-"""Robot loop: stop switch → claim → check target system → wrap in the T-code guard → run →
-record outcome.
+"""Robot loop: stop switch → claim → log in / check target system → wrap in the T-code guard →
+run → log off → record outcome. Between jobs the robot holds no SAP logon.
 
 One robot per database: the worker holds a PostgreSQL advisory lock for its whole life.
 """
@@ -26,7 +26,7 @@ from shoponline.saprobot.errors import GuardViolation, RobotError, UnknownPopup,
 from shoponline.saprobot.guard import GuardedSession
 from shoponline.saprobot.popups import PopupRule, SeenPopup, handle_popups
 from shoponline.saprobot.screen import Screens
-from shoponline.saprobot.session import LoginConfig, ensure_session
+from shoponline.saprobot.session import LoginConfig, ensure_session, logoff
 from shoponline.saprobot.statusbar import StatusMessage, check_status
 from shoponline.web.uploads import store_file
 
@@ -165,7 +165,7 @@ class Worker:
 
         txn = self.transactions.get(kind)
         out: TransactionResult | None = None
-        gui = None
+        raw = gui = None
         try:
             if txn is None:
                 raise RobotError(f"Chưa có thao tác SAP cho loại việc {kind}")
@@ -201,6 +201,10 @@ class Worker:
         except Exception as exc:
             status = queue.UNKNOWN if txn is not None and txn.writes else queue.FAILED
             outcome = Outcome(status, f"{type(exc).__name__}: {exc}", self._capture(gui, job_id))
+        if raw is not None:
+            # Only a session of the robot user ever gets here (ensure_session checked it);
+            # the screenshot above is taken first. The next job logs in again.
+            logoff(raw)
         self._finish(job_id, outcome, out)
         return True
 
@@ -252,9 +256,17 @@ def acquire_single_robot_lock(engine: Engine) -> Connection:
     return connection
 
 
-def run_forever(worker: Worker, engine: Engine, poll_seconds: float = 10.0) -> None:
+def run_forever(
+    worker: Worker,
+    engine: Engine,
+    poll_seconds: float = 10.0,
+    on_start: Callable[[], None] | None = None,
+) -> None:
+    """on_start runs once after the single-robot lock is taken (a second robot never gets here)."""
     lock = acquire_single_robot_lock(engine)
     try:
+        if on_start is not None:
+            on_start()
         with worker.session_factory() as db:
             interrupted = queue.requeue_interrupted(db)
             db.commit()
