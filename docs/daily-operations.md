@@ -14,7 +14,7 @@ Dành cho admin shop online. Ở chế độ thủ công hệ thống không ghi
 ## Sau khi sales admin tạo SO và DO
 
 7. Trên màn hình lô bấm **Sales admin đã tạo SO và DO**.
-8. Chạy `zrsd001` trong SAP với lựa chọn **Complete**, lọc đúng ngày D, xuất Excel. Trang **Báo cáo SAP**, mục zrsd001: chọn lô vừa xác nhận rồi tải file lên. Nếu file không có SO nào của sàn trong ngày D, hệ thống báo để kiểm tra lại bộ lọc.
+8. Chạy `zrsd001` trong SAP với lựa chọn **Complete**, lọc đúng ngày D, xuất Excel. Trang **Báo cáo SAP**, mục zrsd001: chọn lô vừa xác nhận rồi tải file lên. Nếu file không có SO nào của sàn trong ngày D, hệ thống báo để kiểm tra lại bộ lọc. Khi robot đang bật, robot đọc `zrsd001` thay bạn ngay sau khi xác nhận lô; nếu sales admin tạo thêm SO sau đó, bấm **Đọc lại zrsd001** trên trang lô. Tải file bằng tay vẫn là đường dự phòng.
 9. Đọc phần **Đối chiếu SO** trên màn hình lô:
    - **Đơn sẵn sàng chưa có SO**: sales admin còn sót đơn.
    - **SO có PO No không khớp đơn nào**: thường do gõ sai mã đơn vào `PO No`. Chọn đúng đơn ở cột **Nối với đơn** rồi bấm **Nối**.
