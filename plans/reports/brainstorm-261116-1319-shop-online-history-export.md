@@ -22,7 +22,7 @@ Admin chọn khoảng ngày trên web và tải về một file có đúng 17 c�
 | billingPhone | Chữ `******` |
 | billingCity | Tách tỉnh/thành từ `customer_info.address` (xem bên dưới) |
 | Cust + time, Transaction | Công thức `=E{n}&" "&B{n}` và `=IF(H{n}=H{n-1},0,1)`, viết theo số dòng thật khi dán |
-| Customer paid | `unit_price × quantity`, khớp cách ghi tổng tiền dòng ở các dòng 2026 |
+| Customer paid | `(unit_price − unit_subsidy) × quantity`: tổng tiền của dòng sau giảm giá và trợ giá (người dùng chốt ngày 2026-11-16). Cùng công thức với `expected_so_value` trong `src/shoponline/domain/expected_value.py`, nên dùng lại cách tính đó cho từng dòng |
 | unitPrice | `unit_price` |
 | sellerDiscountTotal, shippingFee | Để trống, như các dòng 2026 |
 | Quantity | `quantity` |
@@ -61,4 +61,4 @@ Better approaches: không có cách nào tốt hơn. Hướng đề xuất đún
 - Có test cho phần tách tỉnh/thành, cách tính Customer paid/unitPrice, và điều kiện chặn xuất.
 
 ## Câu hỏi còn mở
-- Customer paid có trừ trợ giá (`unit_subsidy`) không? Các dòng 2026 trong file luôn ghi theo giá gốc, nên đề xuất trên dùng giá gốc. Trên production có 7 dòng đơn có trợ giá (4 Lazada, 3 TikTok).
+Không còn. Lưu ý khi làm: với TikTok, `unit_subsidy` là giảm giá của cả dòng chia nguyên cho số lượng. Khi giảm giá không chia hết, Customer paid có thể lệch vài đồng so với sàn; những đơn này đã bị đánh dấu "Cần kiểm tra" từ lúc nhập.
