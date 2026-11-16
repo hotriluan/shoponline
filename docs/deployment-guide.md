@@ -2,36 +2,54 @@
 
 Dành cho người dựng hoặc dựng lại máy chạy thật. Máy phát triển làm theo [README](../README.md).
 
-## 1. Chuẩn bị máy
+## 1. Dựng máy bằng script
 
-Máy Windows riêng, bật liên tục, cùng mạng nội bộ với admin shop online. Cài:
+Máy Windows 10 hoặc 11 64-bit, bật liên tục, cùng mạng nội bộ với admin shop online, có `winget` (App Installer). Tạo một tài khoản Windows thường cho hệ thống. Tài khoản này sở hữu `C:\shoponline`, `.env` và thư mục dữ liệu, chạy mọi tác vụ, và nên tự đăng nhập khi máy khởi động.
 
-- Python 3.12 trở lên (máy phát triển đang dùng 3.14) và [uv](https://docs.astral.sh/uv/).
-- PostgreSQL 16, cài trực tiếp trên Windows, chỉ nghe `localhost` (mặc định của bộ cài).
-- PowerShell 7 (`pwsh`) và 7-Zip.
-- Git, để lấy mã nguồn.
-
-Tạo một tài khoản Windows riêng cho hệ thống (ví dụ `shoponline`). Tài khoản này sở hữu thư mục mã nguồn, thư mục dữ liệu và chạy các tác vụ trong Task Scheduler.
-
-## 2. Lấy mã và cài phụ thuộc
+Đăng nhập tài khoản đó, mở PowerShell **thường** (không Run as administrator), rồi chạy:
 
 ```powershell
-git clone <địa chỉ repo> C:\shoponline
-cd C:\shoponline
-uv sync
+Invoke-WebRequest https://raw.githubusercontent.com/hotriluan/shoponline/main/scripts/windows/setup-production-machine.ps1 -OutFile $env:TEMP\setup.ps1
+powershell -ExecutionPolicy Bypass -File $env:TEMP\setup.ps1 -Archive <file .7z> -DataSource <thư mục dữ liệu cũ>
 ```
 
-Thêm `--extra robot` khi máy có SAP GUI và đã tới giai đoạn robot (phase 5 trở đi).
+[`setup-production-machine.ps1`](../scripts/windows/setup-production-machine.ps1) làm lần lượt:
 
-## 3. Database và file cấu hình
+1. Cài Git, PowerShell 7, 7-Zip, GitHub CLI, PostgreSQL 16 và uv bằng `winget`. Mỗi gói cài theo máy hỏi UAC một lần. Bộ cài PostgreSQL hỏi mật khẩu superuser `postgres`: ghi nhớ nó cho bước tạo database.
+2. Lấy mã về `C:\shoponline`. Thư mục đã có thì phải sạch, và được fast-forward tới `origin/main`.
+3. Chạy tiếp dưới `pwsh`: `uv sync`, tạo database và `.env` ([`create-databases.ps1`](../scripts/windows/create-databases.ps1)), rồi hỏi những dòng `.env` còn thiếu: IP web trong mạng nội bộ, thư mục sao lưu, mật khẩu sao lưu.
+4. Giới hạn quyền `.env` và thư mục dữ liệu cho tài khoản này, Administrators và SYSTEM.
+5. Chép thư mục dữ liệu cũ (`-DataSource`) bằng `robocopy`. Khôi phục bản sao lưu (`-Archive`) khi database `shoponline` còn trống; database đã có dữ liệu thì không ghi đè.
+6. `migrate`, đăng ký các tác vụ ẩn (mục 5), rồi một lần UAC để mở cổng web trên tường lửa (Domain, Private) và tắt chế độ ngủ khi cắm điện.
+7. Cài runner deploy (mục 5b; `gh auth login` nếu chưa đăng nhập), bật web và robot.
+
+Cuối cùng script in bảng kiểm tra: mục đã xong, và việc tay còn lại kèm hướng dẫn. Script chạy lại được bất cứ lúc nào: bước đã xong thì bỏ qua, không hỏi lại mật khẩu đã có trong `.env`.
+
+`-Prepare` dựng máy trước ngày chuyển máy chạy thật từ máy cũ sang: không cài runner, và tác vụ robot để Disabled vì robot trên máy cũ còn dùng user SAP.
+
+## 2. Việc tay sau script
+
+Làm theo [robot-machine-setup.md](robot-machine-setup.md) mục 1–2:
+
+- Sysinternals Autologon cho tài khoản hệ thống; tắt khóa màn hình và trình bảo vệ màn hình; đặt độ phân giải cố định.
+- Cài SAP GUI cùng phiên bản máy cũ, bật scripting phía máy khách, tạo mục SAP Logon trỏ `AEP`. Cài Microsoft Excel.
+- Nếu thư mục sao lưu nằm trên Google Drive: cài Google Drive for desktop và đăng nhập trước khi chạy script.
+- `uv run --extra robot shoponline sap-password set`, rồi trang **Robot SAP → Kết nối SAP** → **Kiểm tra**.
+
+## 3. Người dùng và bảng ánh xạ
+
+Chỉ cần khi máy bắt đầu với database trống (không có `-Archive`):
 
 ```powershell
-pwsh -ExecutionPolicy Bypass -File scripts\windows\create-databases.ps1 -Environment prod -WriteEnvFile -DataDir D:\shoponline-data
+uv run shoponline create-user <tên admin> --role admin
+uv run shoponline create-user <tên người xem> --role viewer
 ```
 
-Script liệt kê database đang có trên máy chủ và hỏi xác nhận trước khi tạo `shoponline` cùng role `shoponline_app`. Nó ghi `C:\shoponline\.env` với chuỗi kết nối, khóa phiên ngẫu nhiên và thư mục dữ liệu.
+Nhập bảng ánh xạ trên web: trang **Ánh xạ SAP**, chọn sàn, mục **Nhập từ Excel**. Sheet đầu tiên phải có các cột `Tên sản phẩm`, `Tên phân loại`, `Mã SAP`, `Tên SAP`.
 
-Mở `.env` và bổ sung:
+## 4. File cấu hình `.env`
+
+Script ghi sẵn các dòng chính. Bảng dưới để tra cứu và sửa tay:
 
 | Biến | Giá trị |
 |---|---|
@@ -39,21 +57,9 @@ Mở `.env` và bổ sung:
 | `SHOPONLINE_WEB_PORT` | Mặc định `8750`; đổi nếu cổng đã bị chiếm |
 | `SHOPONLINE_BACKUP_PASSWORD` | Mật khẩu mã hóa bản sao lưu, lấy từ kho bí mật |
 | `SHOPONLINE_BACKUP_DIRS` | Ví dụ `\\fileserver\it\shoponline-backup;G:\My Drive\shoponline-backup` |
-| `SHOPONLINE_RESTORE_DATABASE_URL` | Một database tạm để diễn tập khôi phục, không bao giờ là `shoponline` |
+| `SHOPONLINE_RESTORE_DATABASE_URL` | Một database tạm để diễn tập khôi phục, không bao giờ là `shoponline`; thêm tay |
 
-Giới hạn quyền của `.env` và thư mục dữ liệu chỉ cho tài khoản `shoponline` và quản trị viên. Thư mục dữ liệu chứa file sàn, file gửi kế toán có tên và địa chỉ khách.
-
-Mật khẩu sao lưu chỉ nằm trong `.env` của máy chạy thật và trong kho bí mật, không đặt cạnh bản sao lưu.
-
-## 4. Schema và người dùng
-
-```powershell
-uv run shoponline migrate
-uv run shoponline create-user <tên admin> --role admin
-uv run shoponline create-user <tên người xem> --role viewer
-```
-
-Nhập bảng ánh xạ trên web: trang **Ánh xạ SAP**, chọn sàn, mục **Nhập từ Excel**. Sheet đầu tiên phải có các cột `Tên sản phẩm`, `Tên phân loại`, `Mã SAP`, `Tên SAP`.
+Thư mục dữ liệu chứa file sàn, file gửi kế toán có tên và địa chỉ khách, nên chỉ tài khoản hệ thống và quản trị viên đọc được. Mật khẩu sao lưu chỉ nằm trong `.env` của máy chạy thật và trong kho bí mật, không đặt cạnh bản sao lưu.
 
 ## 5. Task Scheduler
 
@@ -69,6 +75,14 @@ Script dừng lại nếu cổng web đang có tiến trình khác giữ; khi đ
 - `shoponline-backup`: chạy `backup-db.ps1` hằng ngày.
 - `shoponline-retention`: hằng ngày lúc 23:30 (`-RetentionTime`), liệt kê dữ liệu khách và file quá thời hạn lưu vào `<SHOPONLINE_DATA_DIR>\logs\retention.log`. Chỉ xóa thật khi đăng ký với `-RetentionApply`, sau một tuần xem log (xem [security-and-data-retention.md](security-and-data-retention.md#thời-hạn-lưu)).
 
+Mọi tác vụ chạy ẩn, không mở cửa sổ nào để người khác lỡ tay đóng:
+
+- Script chạy chương trình qua `conhost.exe --headless`. Cách này cần thiết trên Windows 11, nơi Windows Terminal bỏ qua `pwsh -WindowStyle Hidden`.
+- Trước khi đăng ký, script thử `conhost --headless` một lần. Máy không qua được bài thử thì script quay về `pwsh -WindowStyle Hidden` và in cảnh báo: tác vụ vẫn chạy, chỉ có thể hiện cửa sổ.
+- Tác vụ được phép chạy khi máy dùng pin và không dừng khi rút sạc.
+
+Muốn biết web và robot có đang chạy không, xem cột Status trong Task Scheduler hoặc trang **Robot SAP**. Log của web ở `<SHOPONLINE_DATA_DIR>\logs\web.log` (lỗi và log ứng dụng; truy cập chỉ ghi từ mức WARNING), log của robot ở `logs\robot.log`.
+
 Mở cổng web trên Windows Firewall cho mạng nội bộ (profile Domain hoặc Private), không mở ra Internet.
 
 Robot SAP (phase 5 trở đi) đăng ký riêng bằng `-RobotUser`, sau khi dựng máy theo [robot-machine-setup.md](robot-machine-setup.md).
@@ -81,7 +95,7 @@ pwsh -ExecutionPolicy Bypass -File scripts\windows\register-tasks.ps1 -User $env
 
 ## 5b. Tự động triển khai khi push `main`
 
-[`.github/workflows/deploy.yml`](../.github/workflows/deploy.yml) chạy test trên GitHub (PostgreSQL 16), sau đó giao bước deploy cho self-hosted runner có nhãn `shoponline-prod` trên máy chạy thật. Runner gọi [`update-production.ps1`](../scripts/windows/update-production.ps1) trong `C:\shoponline`. Script dừng robot và web, sao lưu database, fast-forward tới commit vừa push, chạy `uv sync --frozen --no-dev --extra robot` và `migrate`. Sau đó nó đăng ký các tác vụ còn thiếu cho tài khoản chạy runner (`register-tasks.ps1 -AtLogOn -OnlyMissing`: web, sao lưu, retention, robot), khởi động lại web, chờ trang `/login` trả lời và bật robot. Tác vụ đã có được giữ nguyên, kể cả tùy chọn như `-RetentionApply`. Robot luôn được bật khi deploy: nó khởi động được cả khi cấu hình SAP chưa đủ, và trang **Kết nối SAP** báo thiếu gì (cấu hình SAP nằm trong database, mật khẩu trong Windows Credential Manager của tài khoản chạy robot; xem [robot-machine-setup.md](robot-machine-setup.md)). Nếu robot thoát ngay sau khi bật, job deploy báo lỗi. Nếu lỗi giữa chừng, script in commit cũ để lùi lại và vẫn cố khởi động web và robot.
+[`.github/workflows/deploy.yml`](../.github/workflows/deploy.yml) chạy test trên GitHub (PostgreSQL 16), sau đó giao bước deploy cho self-hosted runner có nhãn `shoponline-prod` trên máy chạy thật. Runner gọi [`update-production.ps1`](../scripts/windows/update-production.ps1) trong `C:\shoponline`. Script dừng robot và web, sao lưu database, fast-forward tới commit vừa push, chạy `uv sync --frozen --no-dev --extra robot` và `migrate`. Sau đó nó đăng ký các tác vụ còn thiếu cho tài khoản chạy runner (`register-tasks.ps1 -AtLogOn -OnlyMissing`: web, sao lưu, retention, robot), khởi động lại web, chờ trang `/login` trả lời và bật robot. Tác vụ đã có mà lệnh chạy hoặc cài đặt pin khác bản script đang đăng ký thì được cập nhật (log deploy in "Cập nhật cách chạy …"); trigger, tài khoản và chế độ `--apply` của retention được giữ nguyên. Deploy cũng cập nhật như vậy cho tác vụ `shoponline-deploy-runner` (`install-deploy-runner.ps1 -TaskOnly`); runner đang chạy job giữ cách chạy cũ tới lần đăng nhập sau. Robot luôn được bật khi deploy: nó khởi động được cả khi cấu hình SAP chưa đủ, và trang **Kết nối SAP** báo thiếu gì (cấu hình SAP nằm trong database, mật khẩu trong Windows Credential Manager của tài khoản chạy robot; xem [robot-machine-setup.md](robot-machine-setup.md)). Nếu robot thoát ngay sau khi bật, job deploy báo lỗi. Nếu lỗi giữa chừng, script in commit cũ để lùi lại và vẫn cố khởi động web và robot.
 
 Cài runner một lần, bằng tài khoản sở hữu `C:\shoponline` (cần `gh` đăng nhập với quyền admin repo):
 
@@ -96,7 +110,7 @@ Ràng buộc an toàn:
 - `C:\shoponline` chỉ được cập nhật qua GitHub. Sửa tay trong thư mục này làm deploy dừng lại.
 - Workflow không có trigger `pull_request`. Repo bật chế độ bắt buộc duyệt workflow của mọi người đóng góp bên ngoài (`fork-pr-contributor-approval = all_external_contributors`), nên code từ fork không tự chạy trên máy chạy thật.
 - Thay đổi trong `update-production.ps1` chỉ có hiệu lực từ lần deploy kế tiếp, vì runner chạy bản đang có trên đĩa.
-- Chạy lại deploy bằng tay: tab Actions, workflow `deploy`, **Run workflow** (hoặc `gh workflow run deploy`). Khi máy đã ở đúng commit, lần chạy này chỉ đăng ký tác vụ còn thiếu và bật web, robot nếu đang tắt. Dùng nó khi robot cần được bật lại hoặc tác vụ còn thiếu.
+- Chạy lại deploy bằng tay: tab Actions, workflow `deploy`, **Run workflow** (hoặc `gh workflow run deploy`). Khi máy đã ở đúng commit, lần chạy này chỉ đăng ký tác vụ còn thiếu hoặc lệch và bật web, robot nếu đang tắt. Dùng nó khi robot cần được bật lại hoặc tác vụ còn thiếu.
 
 ## 6. Kiểm tra sau khi triển khai
 
@@ -126,4 +140,20 @@ Start-ScheduledTask shoponline-web
 
 ## Khi máy hỏng
 
-Admin quay lại làm file Excel bằng tay như trước. Dựng máy mới theo mục 1 đến 5, rồi khôi phục bản sao lưu gần nhất vào `shoponline` bằng `restore-db.ps1 -AllowProduction`, với `SHOPONLINE_RESTORE_DATABASE_URL` trỏ tới database thật.
+Admin quay lại làm file Excel bằng tay như trước. Dựng máy mới theo mục 1 và 2, truyền `-Archive` là bản sao lưu gần nhất trong thư mục sao lưu: script khôi phục nó vào database `shoponline` còn trống. Nếu máy cũ có runner, gỡ nó khỏi repo (GitHub → Settings → Actions → Runners) để chỉ còn một runner nhãn `shoponline-prod`.
+
+## Phụ lục: dựng máy tay (máy không có `winget`)
+
+1. Cài Python 3.12 trở lên, [uv](https://docs.astral.sh/uv/), PostgreSQL 16 (chỉ nghe `localhost`, thư mục mặc định), PowerShell 7, 7-Zip, Git và GitHub CLI.
+2. Trong PowerShell 7, dưới tài khoản hệ thống:
+
+   ```powershell
+   git clone https://github.com/hotriluan/shoponline.git C:\shoponline
+   cd C:\shoponline
+   uv sync --frozen --no-dev --extra robot
+   pwsh -ExecutionPolicy Bypass -File scripts\windows\create-databases.ps1 -Environment prod -WriteEnvFile -DataDir C:\shoponline-data
+   ```
+
+3. Bổ sung `.env` theo mục 4 và giới hạn quyền `.env`, thư mục dữ liệu.
+4. Khôi phục bản sao lưu nếu có: `pwsh -File scripts\windows\restore-db.ps1 -Archive <file .7z> -TargetSetting SHOPONLINE_DATABASE_URL -AllowProduction`. Sau đó `uv run --no-dev shoponline migrate`.
+5. Đăng ký tác vụ theo mục 5, mở cổng web trên tường lửa, cài runner theo mục 5b.
