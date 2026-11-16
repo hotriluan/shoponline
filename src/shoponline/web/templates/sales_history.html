@@ -1,0 +1,67 @@
+{% extends "base.html" %}
+{% block title %}File Shop Online{% endblock %}
+{% block content %}
+<h1>Dòng cho file Shop Online 2022-2026</h1>
+<p class="muted">Lấy mọi đơn "Đã có DO" chưa được xác nhận là đã dán vào file lịch sử, đặt tới hết ngày chọn.
+  Tải file, copy từ dòng 2 trở đi, dán vào dòng trống đầu tiên của sheet1 trong file lịch sử, rồi bấm
+  <b>Xác nhận đã dán</b> cho đúng file đó ở bảng dưới.</p>
+
+<form class="box row" method="get" action="/sales-history">
+  <label>Đến ngày đặt hàng<input type="date" name="until" value="{{ until.isoformat() }}"></label>
+  <button class="secondary">Xem</button>
+</form>
+
+<div class="box">
+  <p><b>{{ orders }}</b> đơn, <b>{{ lines }}</b> dòng sẵn sàng xuất{% if blocked %}; <b class="bad">{{ blocked|length }}</b> đơn bị chặn{% endif %}.</p>
+  {% if blocked %}
+  <p class="bad">Xử lý hết các đơn bị chặn dưới đây thì mới tải được file.</p>
+  {% elif lines %}
+  <p><a class="button" href="/sales-history/file?until={{ until.isoformat() }}">Tải file</a></p>
+  {% else %}
+  <p class="muted">Không có đơn nào chờ xuất.</p>
+  {% endif %}
+</div>
+
+{% if blocked %}
+<h2 class="bad">Đơn bị chặn ({{ blocked|length }})</h2>
+<table>
+  <tr><th>Sàn</th><th>Mã đơn</th><th>Ngày đặt</th><th>Lý do</th></tr>
+  {% for b in blocked %}
+  <tr>
+    <td>{{ b.order.platform }}</td>
+    <td>{{ b.order.platform_order_id }}</td>
+    <td>{{ b.order.ordered_at.strftime('%d/%m/%Y %H:%M') }}</td>
+    <td>{% for text, link in b.reasons %}{% if link %}<a href="{{ link }}">{{ text }}</a>{% else %}{{ text }}{% endif %}{% if not loop.last %}<br>{% endif %}{% endfor %}</td>
+  </tr>
+  {% endfor %}
+</table>
+{% endif %}
+
+<h2>File đã tải ({{ files|length }} gần nhất)</h2>
+<table>
+  <tr><th>Thời gian</th><th>Người tải</th><th>File</th><th class="num">Số đơn</th><th>Trạng thái</th>{% if user.role == 'admin' %}<th></th>{% endif %}</tr>
+  {% for f in files %}
+  <tr>
+    <td>{{ f.file.created_at|localtime }}</td>
+    <td>{{ f.file.created_by }}</td>
+    <td>{% if f.stored %}<a href="/sales-history/files/{{ f.file.id }}">{{ f.file.file_name }}</a>{% else %}{{ f.file.file_name }} <span class="muted">(đã xóa theo thời hạn lưu)</span>{% endif %}</td>
+    <td class="num">{{ f.orders }}</td>
+    <td>{% if f.confirmed %}<span class="ok">Đã xác nhận {{ f.confirmed }} đơn</span>{% else %}<span class="bad">Chưa xác nhận</span>{% endif %}</td>
+    {% if user.role == 'admin' %}
+    <td>
+      {% if f.confirmed %}
+      <form class="inline" method="post" action="/sales-history/files/{{ f.file.id }}/unconfirm"
+            onsubmit="return confirm('Gỡ xác nhận: các đơn của file này sẽ có lại trong lần xuất sau. Tiếp tục?')">
+        <button class="secondary">Gỡ xác nhận</button></form>
+      {% else %}
+      <form class="inline" method="post" action="/sales-history/files/{{ f.file.id }}/confirm">
+        <button>Xác nhận đã dán</button></form>
+      {% endif %}
+    </td>
+    {% endif %}
+  </tr>
+  {% else %}
+  <tr><td colspan="6" class="muted">Chưa tải file nào.</td></tr>
+  {% endfor %}
+</table>
+{% endblock %}

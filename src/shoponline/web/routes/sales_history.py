@@ -1,0 +1,222 @@
+"""Rows for the accountants' Shop Online history file: preview, download, confirm as pasted.
+
+A downloaded file remembers its orders (sales_history_file_order). Confirming the file moves
+them into sales_history_exported, so the next download leaves them out; unconfirming takes back
+exactly what that file confirmed.
+"""
+
+from __future__ import annotations
+
+from datetime import date
+from pathlib import Path
+
+from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi.responses import FileResponse
+from sqlalchemy import delete, func, literal, select
+from sqlalchemy.dialects.postgresql import insert
+from sqlalchemy.orm import Session
+
+from shoponline.clock import today_vn
+from shoponline.db.models import (
+    AppUser,
+    GeneratedFile,
+    SalesHistoryExported,
+    SalesHistoryFileOrder,
+)
+from shoponline.domain import states
+from shoponline.exports.sales_history_workbook import (
+    CUSTOMER,
+    REPORT_NAME,
+    build_history_workbook,
+    collect_rows,
+    history_file_name,
+)
+from shoponline.web.app import current_user, flash, get_db, redirect, render, require_admin
+from shoponline.web.uploads import save_generated
+
+router = APIRouter()
+KIND = "sales_history"
+XLSX = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+RECENT_FILES = 20
+
+
+def _fix_link(kind: str, batch_id: int) -> str | None:
+    if kind == CUSTOMER:
+        return f"/customers?batch_id={batch_id}"
+    if kind == REPORT_NAME:
+        return "/report-names?missing=true"
+    return None
+
+
+def _recent_files(db: Session) -> list[dict]:
+    files = db.scalars(
+        select(GeneratedFile)
+        .where(GeneratedFile.kind == KIND)
+        .order_by(GeneratedFile.created_at.desc(), GeneratedFile.id.desc())
+        .limit(RECENT_FILES)
+    ).all()
+    ids = [f.id for f in files]
+    in_file = dict(
+        db.execute(
+            select(SalesHistoryFileOrder.generated_file_id, func.count())
+            .where(SalesHistoryFileOrder.generated_file_id.in_(ids))
+            .group_by(SalesHistoryFileOrder.generated_file_id)
+        ).all()
+    )
+    confirmed = dict(
+        db.execute(
+            select(SalesHistoryExported.generated_file_id, func.count())
+            .where(SalesHistoryExported.generated_file_id.in_(ids))
+            .group_by(SalesHistoryExported.generated_file_id)
+        ).all()
+    )
+    return [
+        dict(
+            file=f,
+            orders=in_file.get(f.id, 0),
+            confirmed=confirmed.get(f.id, 0),
+            stored=Path(f.stored_path).is_file(),
+        )
+        for f in files
+    ]
+
+
+@router.get("/sales-history")
+def sales_history_page(
+    request: Request,
+    until: date | None = None,
+    db: Session = Depends(get_db),
+    user: AppUser = Depends(current_user),
+):
+    until = until or today_vn()
+    result = collect_rows(db, until)
+    blocked = [
+        dict(order=b, reasons=[(r.text, _fix_link(r.kind, b.order_batch_id)) for r in b.reasons])
+        for b in result.blocked
+    ]
+    return render(
+        request,
+        "sales_history.html",
+        user,
+        until=until,
+        orders=len(result.order_ids),
+        lines=len(result.rows),
+        blocked=blocked,
+        files=_recent_files(db),
+    )
+
+
+@router.get("/sales-history/file")
+def download_history_file(
+    request: Request,
+    until: date | None = None,
+    db: Session = Depends(get_db),
+    user: AppUser = Depends(current_user),
+):
+    """Computed again from scratch, so the file holds exactly the orders recorded for it."""
+    until = until or today_vn()
+    back = f"/sales-history?until={until.isoformat()}"
+    result = collect_rows(db, until)
+    if result.blocked:
+        flash(request, f"Còn {len(result.blocked)} đơn bị chặn, xử lý trước khi tải.", "error")
+        return redirect(back)
+    if not result.rows:
+        flash(request, "Không có đơn nào chờ xuất.", "error")
+        return redirect(back)
+    file_name = history_file_name(today_vn())
+    record = save_generated(
+        db,
+        request.app.state.settings,
+        build_history_workbook(result.rows),
+        file_name,
+        KIND,
+        user.username,
+    )
+    db.add_all(
+        SalesHistoryFileOrder(generated_file_id=record.id, sales_order_id=order_id)
+        for order_id in result.order_ids
+    )
+    db.commit()
+    return FileResponse(record.stored_path, filename=file_name, media_type=XLSX)
+
+
+def _history_file(db: Session, file_id: int) -> GeneratedFile:
+    record = db.get(GeneratedFile, file_id)
+    if record is None or record.kind != KIND:
+        raise HTTPException(404, "Không có file này")
+    return record
+
+
+@router.get("/sales-history/files/{file_id}")
+def download_saved_file(
+    request: Request,
+    file_id: int,
+    db: Session = Depends(get_db),
+    user: AppUser = Depends(current_user),
+):
+    """The file exactly as downloaded then, not rebuilt."""
+    record = _history_file(db, file_id)
+    if not Path(record.stored_path).is_file():
+        flash(request, "File đã bị xóa theo thời hạn lưu.", "error")
+        return redirect("/sales-history")
+    return FileResponse(record.stored_path, filename=record.file_name, media_type=XLSX)
+
+
+@router.post("/sales-history/files/{file_id}/confirm")
+def confirm_file(
+    request: Request,
+    file_id: int,
+    db: Session = Depends(get_db),
+    user: AppUser = Depends(require_admin),
+):
+    record = _history_file(db, file_id)
+    in_file = select(
+        SalesHistoryFileOrder.sales_order_id,
+        literal(record.id),
+        literal(user.username),
+    ).where(SalesHistoryFileOrder.generated_file_id == record.id)
+    total = db.scalar(select(func.count()).select_from(in_file.subquery()))
+    # An order already confirmed through another file keeps that file (primary key).
+    confirmed = len(
+        db.scalars(
+            insert(SalesHistoryExported)
+            .from_select(["sales_order_id", "generated_file_id", "confirmed_by"], in_file)
+            .on_conflict_do_nothing(index_elements=["sales_order_id"])
+            .returning(SalesHistoryExported.sales_order_id)
+        ).all()
+    )
+    skipped = total - confirmed
+    states.log_event(
+        db,
+        user.username,
+        "sales_history_confirmed",
+        detail={"file_id": record.id, "confirmed": confirmed, "skipped": skipped},
+    )
+    db.commit()
+    flash(
+        request,
+        f"Đã xác nhận {confirmed} đơn, bỏ qua {skipped} đơn đã xác nhận ở file khác.",
+    )
+    return redirect("/sales-history")
+
+
+@router.post("/sales-history/files/{file_id}/unconfirm")
+def unconfirm_file(
+    request: Request,
+    file_id: int,
+    db: Session = Depends(get_db),
+    user: AppUser = Depends(require_admin),
+):
+    record = _history_file(db, file_id)
+    removed = db.execute(
+        delete(SalesHistoryExported).where(SalesHistoryExported.generated_file_id == record.id)
+    ).rowcount
+    states.log_event(
+        db,
+        user.username,
+        "sales_history_unconfirmed",
+        detail={"file_id": record.id, "removed": removed},
+    )
+    db.commit()
+    flash(request, f"Đã gỡ xác nhận {removed} đơn; các đơn này sẽ có lại trong lần xuất sau.")
+    return redirect("/sales-history")

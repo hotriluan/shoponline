@@ -13,6 +13,7 @@ from shoponline.db.models import (
     GeneratedFile,
     ImportBatch,
     OrderBatch,
+    SalesHistoryExported,
     SalesOrder,
 )
 from shoponline.domain import states
@@ -61,6 +62,23 @@ def _batch(db):
     return batch
 
 
+def _exported(db, *order_ids):
+    """Record the orders as pasted into the Shop Online history file."""
+    record = GeneratedFile(
+        kind="sales_history", file_name="h.xlsx", stored_path="h", sha256="0" * 64, created_by="t"
+    )
+    db.add(record)
+    db.flush()
+    for order_id in order_ids:
+        order = db.scalar(select(SalesOrder).where(SalesOrder.platform_order_id == order_id))
+        db.add(
+            SalesHistoryExported(
+                sales_order_id=order.id, generated_file_id=record.id, confirmed_by="t"
+            )
+        )
+    db.flush()
+
+
 def _file(path, mtime):
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_bytes(b"x")
@@ -68,7 +86,7 @@ def _file(path, mtime):
     return path
 
 
-def test_erases_old_customer_data_only_for_orders_sent_to_accounting(db, tmp_path):
+def test_erases_old_customer_data_only_for_orders_sent_to_accounting_and_exported(db, tmp_path):
     batch = _batch(db)
     db.add_all(
         AccountingSentDelivery(delivery=d) for d in ("1900000001", "1900000002")
@@ -79,6 +97,12 @@ def test_erases_old_customer_data_only_for_orders_sent_to_accounting(db, tmp_pat
     _customer(db, "SHOPEE", "R-NOT-SENT", OLD, states.DELIVERED, batch, "1900000077")
     _customer(db, "SHOPEE", "R-RECENT", RECENT, states.DELIVERED, batch, "1900000002")
     _customer(db, "SHOPEE", "R-NO-ORDER", OLD)  # Lazada-style row without sales_order
+    # DO sent to accounting, but the name is not yet in the Shop Online history file.
+    db.add(AccountingSentDelivery(delivery="1900000003"))
+    _customer(db, "SHOPEE", "R-NOT-EXPORTED", OLD, states.DELIVERED, batch, "1900000003")
+    # In the history file, but the DO has not been sent to accounting.
+    _customer(db, "SHOPEE", "R-EXPORTED-NOT-SENT", OLD, states.DELIVERED, batch, "1900000088")
+    _exported(db, "R-DELIVERED", "R-RECENT", "R-EXPORTED-NOT-SENT")
 
     plan = retention.find_expired(db, _settings(tmp_path), now=NOW)
 
@@ -87,12 +111,18 @@ def test_erases_old_customer_data_only_for_orders_sent_to_accounting(db, tmp_pat
         "R-DELIVERED",
         "R-NO-ORDER",
     ]
-    assert sorted(plan.held_orders) == [("SHOPEE", "R-LINKED"), ("SHOPEE", "R-NOT-SENT")]
+    assert sorted(plan.held_orders) == [
+        ("SHOPEE", "R-EXPORTED-NOT-SENT"),
+        ("SHOPEE", "R-LINKED"),
+        ("SHOPEE", "R-NOT-EXPORTED"),
+        ("SHOPEE", "R-NOT-SENT"),
+    ]
 
     retention.apply(db, plan, "test")
     db.flush()
     left = set(db.scalars(select(CustomerInfo.platform_order_id)).all())
-    assert {"R-LINKED", "R-NOT-SENT", "R-RECENT"} <= left
+    kept = {"R-LINKED", "R-NOT-SENT", "R-RECENT", "R-NOT-EXPORTED", "R-EXPORTED-NOT-SENT"}
+    assert kept <= left
     assert not left & {"R-DELIVERED", "R-CANCELLED", "R-NO-ORDER"}
     # Orders stay; only personal data goes.
     assert db.scalar(select(SalesOrder).where(SalesOrder.platform_order_id == "R-DELIVERED"))

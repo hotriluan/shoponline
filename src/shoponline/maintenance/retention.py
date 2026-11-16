@@ -3,9 +3,11 @@
 Orders themselves stay (platform order id, SKU lines, SO and DO numbers): they hold no
 personal data and keep re-imports idempotent. What goes:
 
-- customer_info rows (name, address) untouched for retention_days, unless the order's DO has
-  not yet been recorded as sent to accounting (accounting_sent_delivery). Cancelled orders and
-  rows typed in by hand for an order id with no sales_order go by age alone.
+- customer_info rows (name, address) untouched for retention_days, unless the order is still
+  needed: its DO has not yet been recorded as sent to accounting (accounting_sent_delivery), or
+  it has not yet been confirmed as pasted into the Shop Online history file
+  (sales_history_exported), which carries the customer name. Cancelled orders and rows typed in
+  by hand for an order id with no sales_order go by age alone.
 - files under uploads/, exports/ and robot-work/ older than retention_days, except a file that
   a finalized accounting run points to and the zrsd004 files of a run that is still open.
 
@@ -30,6 +32,7 @@ from shoponline.db.models import (
     CustomerInfo,
     GeneratedFile,
     ImportBatch,
+    SalesHistoryExported,
     SalesOrder,
     SapJob,
 )
@@ -63,6 +66,7 @@ def find_expired(
             CustomerInfo.platform_order_id,
             SalesOrder.status,
             AccountingSentDelivery.delivery,
+            SalesHistoryExported.sales_order_id,
         )
         .outerjoin(
             SalesOrder,
@@ -72,11 +76,13 @@ def find_expired(
             ),
         )
         .outerjoin(AccountingSentDelivery, AccountingSentDelivery.delivery == SalesOrder.do_number)
+        .outerjoin(SalesHistoryExported, SalesHistoryExported.sales_order_id == SalesOrder.id)
         .where(CustomerInfo.updated_at < cutoff)
         .order_by(CustomerInfo.platform, CustomerInfo.platform_order_id)
     ).all()
-    for info_id, platform, order_id, status, sent in rows:
-        if status is None or status == states.CANCELLED or sent is not None:
+    for info_id, platform, order_id, status, sent, exported in rows:
+        finished = sent is not None and exported is not None
+        if status is None or status == states.CANCELLED or finished:
             plan.customer_ids.append(info_id)
             plan.customer_orders.append((platform, order_id))
         else:

@@ -172,7 +172,9 @@ def create_app(
         imports,
         login,
         orders,
+        report_names,
         robot,
+        sales_history,
         sap_reports,
         sku_mapping,
     )
@@ -213,9 +215,11 @@ def create_app(
         batches,
         orders,
         sku_mapping,
+        report_names,
         customers,
         sap_reports,
         accounting,
+        sales_history,
         robot,
     ):
         app.include_router(module.router)

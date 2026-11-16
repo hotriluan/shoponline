@@ -193,7 +193,8 @@ def _cmd_retention(args: argparse.Namespace) -> int:
         f"{verb}: tên và địa chỉ của {len(plan.customer_orders)} đơn, {len(plan.files)} file",
         *(f"  đơn {platform} {order_id}" for platform, order_id in plan.customer_orders),
         *(f"  file {path}" for path in plan.files),
-        f"Giữ lại vì chưa có DO trong sổ gửi kế toán: {len(plan.held_orders)} đơn",
+        f"Giữ lại vì chưa có DO trong sổ gửi kế toán hoặc chưa vào file Shop Online: "
+        f"{len(plan.held_orders)} đơn",
         *(f"  đơn {platform} {order_id}" for platform, order_id in plan.held_orders),
     ]
     text = "\n".join(lines)

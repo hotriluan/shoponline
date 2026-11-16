@@ -1,0 +1,37 @@
+{% extends "base.html" %}
+{% block title %}Tên báo cáo{% endblock %}
+{% block content %}
+<h1>Tên báo cáo cho file Shop Online</h1>
+<p class="muted">Mỗi mã vật tư trong ánh xạ SAP được ghi vào file lịch sử Shop Online với itemName, kích cỡ
+  (cột Product Classification SKU) và variation ở đây. Mã chưa lưu hiện giá trị gợi ý từ tên sản phẩm trên sàn:
+  kiểm lại, sửa nếu cần rồi bấm <b>Lưu tất cả</b>. Dòng để trống cả ba ô được bỏ qua.</p>
+<p>
+  <a class="button {{ 'secondary' if missing else '' }}" href="/report-names">Tất cả</a>
+  <a class="button {{ '' if missing else 'secondary' }}" href="/report-names?missing=true">Chưa lưu ({{ unsaved }})</a>
+</p>
+<form method="post" action="/report-names">
+{% if missing %}<input type="hidden" name="missing" value="true">{% endif %}
+<div class="scroll">
+<table>
+  <tr><th>Mã vật tư</th><th>Tên SAP</th><th>itemName</th><th>Kích cỡ</th><th>variation</th><th>Trạng thái</th></tr>
+  {% for row in rows %}
+  <tr>
+    <td>{{ row.material_number }}<input type="hidden" name="material_number" value="{{ row.material_number }}"></td>
+    <td>{{ row.sap_name }}</td>
+    <td><input type="text" name="item_name" value="{{ row.item_name }}" size="44"{% if user.role != 'admin' %} readonly{% endif %}></td>
+    <td><input type="text" name="size" value="{{ row.size }}" size="10"{% if user.role != 'admin' %} readonly{% endif %}></td>
+    <td><input type="text" name="variation" value="{{ row.variation }}" size="30"{% if user.role != 'admin' %} readonly{% endif %}></td>
+    <td>
+      {% if row.error %}<span class="bad">{{ row.error }}</span>
+      {% elif row.saved %}<span class="muted">{{ row.saved.updated_by }}, {{ row.saved.updated_at|localtime('%d/%m/%Y') }}</span>
+      {% else %}<span class="tag s-NEED_REVIEW">gợi ý, chưa lưu</span>{% endif %}
+    </td>
+  </tr>
+  {% else %}
+  <tr><td colspan="6" class="muted">Không có mã nào.</td></tr>
+  {% endfor %}
+</table>
+</div>
+{% if user.role == 'admin' and rows %}<p><button>Lưu tất cả</button></p>{% endif %}
+</form>
+{% endblock %}

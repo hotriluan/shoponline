@@ -352,3 +352,48 @@ class AccountingBaseline(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True)
     cutoff_date: Mapped[date] = mapped_column(Date)
+
+
+class ReportItemName(Base):
+    """How a material is written in the Shop Online history file (itemName, size, variation)."""
+
+    __tablename__ = "report_item_name"
+    __table_args__ = (
+        CheckConstraint(
+            "item_name <> '' AND size <> '' AND variation <> ''",
+            name="ck_report_item_name_filled",
+        ),
+    )
+
+    material_number: Mapped[str] = mapped_column(String(20), primary_key=True)
+    item_name: Mapped[str] = mapped_column(Text)
+    size: Mapped[str] = mapped_column(Text)
+    variation: Mapped[str] = mapped_column(Text)
+    updated_by: Mapped[str] = mapped_column(String(50))
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+
+class SalesHistoryFileOrder(Base):
+    """An order contained in one downloaded Shop Online history file."""
+
+    __tablename__ = "sales_history_file_order"
+
+    generated_file_id: Mapped[int] = mapped_column(
+        ForeignKey("generated_file.id"), primary_key=True
+    )
+    sales_order_id: Mapped[int] = mapped_column(ForeignKey("sales_order.id"), primary_key=True)
+
+
+class SalesHistoryExported(Base):
+    """An order confirmed as pasted into the history file; at most once per order."""
+
+    __tablename__ = "sales_history_exported"
+
+    sales_order_id: Mapped[int] = mapped_column(ForeignKey("sales_order.id"), primary_key=True)
+    generated_file_id: Mapped[int] = mapped_column(ForeignKey("generated_file.id"), index=True)
+    confirmed_by: Mapped[str] = mapped_column(String(50))
+    confirmed_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )

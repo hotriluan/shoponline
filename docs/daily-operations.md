@@ -37,6 +37,20 @@ Dành cho admin shop online. Ở chế độ thủ công hệ thống không ghi
 
 Đợt không muốn chốt nữa thì bấm **Hủy đợt** (sổ không đổi). Chốt nhầm thì xem [operations-runbook.md](operations-runbook.md#chốt-nhầm-một-đợt-gửi-kế-toán).
 
+## Xuất dòng cho file Shop Online
+
+File lịch sử của kế toán `Shop Online 2022-2026` (sheet1, 17 cột) nhận một dòng cho mỗi sản phẩm của mỗi đơn **Đã có DO**. Web dựng sẵn các dòng đó; không cần gõ tay.
+
+1. **Lần đầu, và khi có mã vật tư mới:** vào **Tên báo cáo**. Mã chưa lưu đứng đầu và có giá trị gợi ý (itemName, kích cỡ, variation) lấy từ tên sản phẩm trên sàn; sửa theo cách file lịch sử vẫn ghi (ví dụ `Propan - ULTRAN VERNIS - V-09 - Sơn Dầu Bóng Màu` / `0.8 lít` / `Màu sắc:2004 Cánh gián`) rồi bấm **Lưu tất cả**. Dòng điền thiếu ô làm cả lần lưu bị từ chối; giá trị đã gõ vẫn còn.
+2. Vào **File Shop Online**. Ô **Đến ngày đặt hàng** mặc định là hôm nay; khi chốt tháng thì chọn ngày cuối tháng để không kéo đơn tháng sau vào. Trang lấy mọi đơn Đã có DO chưa được xác nhận, kể cả đơn đặt từ tháng trước mà DO mới có.
+3. **Đơn bị chặn** (thiếu tên khách, địa chỉ không ra tỉnh/thành, mã vật tư chưa có tên báo cáo): bấm vào lý do để sang trang sửa (**Khách hàng** của lô, hoặc **Tên báo cáo**), rồi mở lại trang. Còn đơn bị chặn thì không tải được file.
+4. Bấm **Tải file** (`SHOP ONLINE LỊCH SỬ ddmmyy.xlsx`). Tài khoản xem cũng tải được.
+5. Mở file lịch sử, copy từ **dòng 2** của file vừa tải và dán vào dòng trống đầu tiên của sheet1. Hai cột `Cust + time` và `Transaction` là công thức tương đối nên tự tính theo dòng mới.
+6. Trở lại trang, ở bảng **File đã tải** bấm **Xác nhận đã dán** cho đúng file vừa dán. Lần xuất sau không còn các đơn đó. Nếu một đơn đã được xác nhận qua file khác, thông báo ghi số đơn bỏ qua.
+7. Dán nhầm hoặc dán thiếu: xóa các dòng đã dán trong file lịch sử, bấm **Gỡ xác nhận** cho file đó, rồi xuất lại.
+
+Quên xác nhận thì lần xuất sau có lại các đơn đó (lặp chứ không sót); bảng **File đã tải** ghi "Chưa xác nhận" để nhắc. Chỉ admin xác nhận và gỡ xác nhận.
+
 ## Khi có sự cố
 
 - **Web không mở được hoặc máy chạy thật hỏng:** làm file Excel bằng tay như trước, báo người quản trị hệ thống.

@@ -7,7 +7,7 @@ Dành cho người quản trị hệ thống và chủ dự án. Kiến trúc: [
 | Dữ liệu | Ở đâu | Nhạy cảm |
 |---|---|---|
 | Tên, địa chỉ khách theo mã đơn | bảng `customer_info` | Có: dữ liệu cá nhân |
-| File sàn, file `zrsd001`/`zrsd004`, file gửi kế toán | `SHOPONLINE_DATA_DIR\uploads`, `exports`, `robot-work` | Có: tên, địa chỉ, tên nhân viên bán hàng |
+| File sàn, file `zrsd001`/`zrsd004`, file gửi kế toán, file dòng Shop Online | `SHOPONLINE_DATA_DIR\uploads`, `exports`, `robot-work` | Có: tên, địa chỉ, tên nhân viên bán hàng |
 | Ảnh màn hình SAP khi robot lỗi | `SHOPONLINE_DATA_DIR\robot-evidence` | Có thể có |
 | Đơn, dòng hàng, số SO, số DO, ánh xạ SKU | các bảng còn lại | Không có dữ liệu cá nhân |
 | Nhật ký sự kiện | bảng `event_log` | Không: mã nguồn cấm ghi tên, địa chỉ vào đây |
@@ -19,7 +19,7 @@ Chốt ngày 2026-11-13: **90 ngày**, đổi bằng `SHOPONLINE_RETENTION_DAYS`
 
 Lệnh `shoponline retention` ([retention.py](../src/shoponline/maintenance/retention.py)):
 
-- Xóa dòng `customer_info` không đổi trong 90 ngày, **trừ** khi DO của đơn chưa vào sổ gửi kế toán (`accounting_sent_delivery`) và đơn chưa hủy. Dòng nhập tay theo mã đơn không có trong hệ thống thì xóa theo tuổi.
+- Xóa dòng `customer_info` không đổi trong 90 ngày, **trừ** khi đơn chưa hủy và còn cần tên khách: DO của đơn chưa vào sổ gửi kế toán (`accounting_sent_delivery`), hoặc đơn chưa được xác nhận đã dán vào file lịch sử Shop Online (`sales_history_exported`). Vì vậy tên khách của đơn chưa xuất sang file lịch sử được giữ quá 90 ngày, tới khi admin xác nhận. Dòng nhập tay theo mã đơn không có trong hệ thống thì xóa theo tuổi.
 - Xóa file trong `uploads`, `exports`, `robot-work` có thời điểm sửa cũ hơn 90 ngày, **trừ** file kế toán đã chốt (`accounting_run.generated_file_id`) và các file `zrsd004` của đợt đang mở. Tải lại đúng một file cũ thì thời hạn của file đó tính lại từ đầu.
 - Giữ đơn, dòng hàng, số SO, số DO và sổ DO đã gửi (chỉ chứa số Delivery): không phải dữ liệu cá nhân, và cần để nhập lại file cũ không tạo đơn trùng, không gửi kế toán hai lần.
 - Ghi một dòng `retention_purge` vào `event_log` (chỉ số lượng).
@@ -31,7 +31,7 @@ Bản sao lưu giữ 30 ngày (`SHOPONLINE_BACKUP_KEEP_DAYS`), nên dữ liệu 
 ### Bật xóa thật
 
 1. `register-tasks.ps1` đăng ký tác vụ `shoponline-retention` chạy 23:30 hằng ngày ở chế độ **chỉ liệt kê**, ghi vào `<SHOPONLINE_DATA_DIR>\logs\retention.log`.
-2. Trong một tuần, người quản trị đọc log: chỉ có đơn đã gửi kế toán hoặc đã hủy, và file quá hạn.
+2. Trong một tuần, người quản trị đọc log: chỉ có đơn đã gửi kế toán và đã vào file lịch sử Shop Online, đơn đã hủy, và file quá hạn.
 3. Đăng ký lại với `-RetentionApply` (thêm cùng các tham số đã dùng lần đầu, ví dụ `-AtLogOn`):
 
    ```powershell

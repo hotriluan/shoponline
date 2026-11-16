@@ -1,0 +1,230 @@
+"""Rows to append to the accountants' `Shop Online 2022-2026` history file (sheet1, 17 columns).
+
+Every DELIVERED order not yet confirmed as pasted into that file (sales_history_exported) and
+ordered on or before a given day goes in, one row per order line. An order missing a value the
+file needs (customer name, a province in its address, the report name of a material) is
+reported as blocked instead of guessed. Columns H and I are the file's own relative formulas,
+so the rows can be pasted below the last row of sheet1 as they are.
+"""
+
+from __future__ import annotations
+
+from collections.abc import Sequence
+from dataclasses import dataclass, field
+from datetime import date, datetime, time, timedelta
+
+from openpyxl import Workbook
+from openpyxl.styles import Font
+from sqlalchemy import exists, select
+from sqlalchemy.orm import Session, selectinload
+
+from shoponline.db.models import (
+    CustomerInfo,
+    ReportItemName,
+    SalesHistoryExported,
+    SalesOrder,
+)
+from shoponline.domain import states
+from shoponline.domain.report_names import province_of
+
+SHEET = "sheet1"
+# Row 1 of sheet1, as written there (note the trailing space of "unitPrice ").
+COLUMNS = (
+    "Division",
+    "createTime",
+    "month",
+    "year",
+    "billingName",
+    "billingPhone",
+    "billingCity",
+    "Cust + time",
+    "Transaction",
+    "Customer paid",
+    "unitPrice ",
+    "sellerDiscountTotal",
+    "shippingFee",
+    "Quantity",
+    "itemName",
+    "Product Classification SKU",
+    "variation",
+)
+DIVISION = {
+    "SHOPEE": "Shopee Bình Dương",
+    "TIKTOK": "tiktok Bình Dương",
+    "LAZADA": "Lazada Mall",
+}
+HIDDEN_PHONE = "******"
+MONEY_FORMAT = "#,##0"
+MONEY_COLUMNS = ("J", "K")
+
+# Why an order is blocked; the kind tells the page where it is fixed.
+CUSTOMER = "customer"
+REPORT_NAME = "report_name"
+DIVISION_MISSING = "division"
+
+
+@dataclass(frozen=True)
+class Reason:
+    kind: str
+    text: str
+
+
+@dataclass(frozen=True)
+class BlockedOrder:
+    platform: str
+    platform_order_id: str
+    order_batch_id: int
+    ordered_at: datetime
+    reasons: tuple[Reason, ...]
+
+
+@dataclass(frozen=True)
+class HistoryRow:
+    division: str
+    ordered_at: datetime
+    billing_name: str
+    billing_city: str
+    customer_paid: int
+    unit_price: int
+    quantity: int
+    item_name: str
+    size: str
+    variation: str
+
+
+@dataclass
+class HistoryRows:
+    rows: list[HistoryRow] = field(default_factory=list)
+    order_ids: list[int] = field(default_factory=list)
+    blocked: list[BlockedOrder] = field(default_factory=list)
+
+
+def history_file_name(day: date) -> str:
+    return f"SHOP ONLINE LỊCH SỬ {day:%d%m%y}.xlsx"
+
+
+def pending_orders(session: Session, until: date) -> list[SalesOrder]:
+    """DELIVERED orders ordered on or before `until`, not yet confirmed into the history file.
+
+    ordered_at is the platform's local (Vietnam) time without zone, so it compares as is.
+    """
+    confirmed = exists().where(SalesHistoryExported.sales_order_id == SalesOrder.id)
+    return list(
+        session.scalars(
+            select(SalesOrder)
+            .where(
+                SalesOrder.status == states.DELIVERED,
+                ~confirmed,
+                SalesOrder.ordered_at < datetime.combine(until + timedelta(days=1), time()),
+            )
+            .options(selectinload(SalesOrder.items))
+            .order_by(SalesOrder.ordered_at, SalesOrder.platform_order_id)
+        )
+    )
+
+
+def collect_rows(session: Session, until: date) -> HistoryRows:
+    orders = pending_orders(session, until)
+    result = HistoryRows()
+    if not orders:
+        return result
+    wanted = {(o.platform, o.platform_order_id) for o in orders}
+    customers = {
+        (c.platform, c.platform_order_id): c
+        for c in session.scalars(
+            select(CustomerInfo).where(
+                CustomerInfo.platform_order_id.in_({oid for _, oid in wanted})
+            )
+        )
+        if (c.platform, c.platform_order_id) in wanted
+    }
+    materials = {i.material_number for o in orders for i in o.items if i.material_number}
+    names = {
+        n.material_number: n
+        for n in session.scalars(
+            select(ReportItemName).where(ReportItemName.material_number.in_(materials))
+        )
+    }
+
+    for order in orders:
+        reasons: list[Reason] = []
+        division = DIVISION.get(order.platform)
+        if division is None:
+            reasons.append(Reason(DIVISION_MISSING, f"Sàn {order.platform} chưa có tên Division"))
+        info = customers.get((order.platform, order.platform_order_id))
+        name = (info.customer_name or "").strip() if info else ""
+        if not name:
+            reasons.append(Reason(CUSTOMER, "Thiếu tên khách"))
+        city = province_of(info.address if info else None)
+        if city is None:
+            reasons.append(Reason(CUSTOMER, "Địa chỉ không ra tỉnh/thành"))
+        for item in order.items:
+            if not item.material_number:
+                reasons.append(Reason(REPORT_NAME, f"Dòng {item.line_no} chưa có mã vật tư"))
+            elif item.material_number not in names:
+                reasons.append(
+                    Reason(REPORT_NAME, f"Mã {item.material_number} chưa có tên báo cáo")
+                )
+        if reasons:
+            result.blocked.append(
+                BlockedOrder(
+                    order.platform,
+                    order.platform_order_id,
+                    order.order_batch_id,
+                    order.ordered_at,
+                    tuple(dict.fromkeys(reasons)),
+                )
+            )
+            continue
+        result.order_ids.append(order.id)
+        for item in order.items:  # ordered by line_no
+            report = names[item.material_number]
+            result.rows.append(
+                HistoryRow(
+                    division=division,
+                    ordered_at=order.ordered_at,
+                    billing_name=name,
+                    billing_city=city,
+                    customer_paid=(item.unit_price - item.unit_subsidy) * item.quantity,
+                    unit_price=item.unit_price,
+                    quantity=item.quantity,
+                    item_name=report.item_name,
+                    size=report.size,
+                    variation=report.variation,
+                )
+            )
+    return result
+
+
+def build_history_workbook(rows: Sequence[HistoryRow]) -> Workbook:
+    wb = Workbook()
+    ws = wb.active
+    ws.title = SHEET
+    bold = Font(bold=True)
+    for col, title in enumerate(COLUMNS, start=1):
+        ws.cell(1, col, title).font = bold
+    for r, row in enumerate(rows, start=2):
+        values = (
+            row.division,
+            f"{row.ordered_at:%Y-%m-%d %H:%M}",
+            row.ordered_at.month,
+            row.ordered_at.year,
+            row.billing_name,
+            HIDDEN_PHONE,
+            row.billing_city,
+            f'=E{r}&" "&B{r}',
+            f"=IF(H{r}=H{r - 1},0,1)",
+            row.customer_paid,
+            row.unit_price,
+            None,
+            None,
+            row.quantity,
+            row.item_name,
+            row.size,
+            row.variation,
+        )
+        for col, value in enumerate(values, start=1):
+            ws.cell(r, col, value)
+        for letter in MONEY_COLUMNS:
+            ws[f"{letter}{r}"].number_format = MONEY_FORMAT
+    return wb
