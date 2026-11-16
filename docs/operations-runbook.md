@@ -120,7 +120,9 @@ Làm như bước 8 của [daily-operations.md](daily-operations.md) cho `zrsd00
 ### Web không mở được hoặc máy chạy thật dừng
 
 - **Việc cần làm:** admin quay lại làm Excel bằng tay như trước khi có hệ thống. Người quản trị kiểm tra máy còn bật và tác vụ `shoponline-web` đang chạy; nếu máy hỏng, xem [Kế hoạch khi máy hỏng](#kế-hoạch-khi-máy-hỏng).
-- **Gọi lập trình viên khi:** máy chạy mà web không lên. Gửi kèm kết quả của Task Scheduler → `shoponline-web` → History.
+- **Gọi lập trình viên khi:** máy chạy mà web không lên. Gửi kèm kết quả của Task Scheduler → `shoponline-web` → History và 50 dòng cuối của `<SHOPONLINE_DATA_DIR>\logs\web.log`.
+
+Web, robot, sao lưu và runner chạy ẩn, không có cửa sổ để xem. Muốn biết chúng có đang chạy không, xem cột Status trong Task Scheduler (Running) hoặc trang **Robot SAP**.
 
 ### Cảnh báo sao lưu màu cam
 

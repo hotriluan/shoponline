@@ -6,15 +6,17 @@
 .DESCRIPTION
   Run from an elevated PowerShell 7 on the production machine, inside the repo folder.
   Tasks run as -User (the account that owns the repo, env file and data folder).
-  Refuses to register when something already listens on the web port, so no second web
-  process is started next to a stale one.
+  Every task runs with no window (conhost --headless, see settings.ps1) and keeps running on
+  battery. Refuses to register a new web task when something already listens on the web port,
+  so no second web process is started next to a stale one.
 
   With -RobotUser it registers only the SAP robot task instead: it starts when that account
   logs on (the robot needs the account's desktop for SAP GUI) and never runs twice at once.
   Run it after the robot machine is set up as in docs/robot-machine-setup.md.
 
-  With -OnlyMissing it registers only the tasks that do not exist yet, leaves existing ones
-  (and the options chosen for them, such as -RetentionApply) untouched, and starts nothing.
+  With -OnlyMissing it registers the tasks that do not exist yet, and updates the command and
+  battery settings of existing tasks that differ from what this script would register. Their
+  triggers, account and the retention --apply choice are kept. It starts nothing.
   update-production.ps1 calls it this way on every deploy.
 
 .EXAMPLE
@@ -43,32 +45,47 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
-$repoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..\..")).Path
+. (Join-Path $PSScriptRoot "settings.ps1")
+$repoRoot = $script:RepoRoot
 if (-not $Uv) { throw "Không thấy uv; truyền -Uv <đường dẫn uv.exe>" }
-# Hidden pwsh wrapper: an interactive-logon task would otherwise open a console window someone could close.
-$pwsh = (Get-Command pwsh).Source
 
-function Test-TaskWanted([string]$name) {
-    if (-not $OnlyMissing) { return $true }
-    if (Get-ScheduledTask -TaskName $name -ErrorAction SilentlyContinue) {
+# What to do with task $name given the wanted action and settings:
+#   "new"    - register it (always, without -OnlyMissing);
+#   "update" - it exists but runs another command or stops on battery: replace those, keep the rest;
+#   "keep"   - it exists as wanted.
+function Get-TaskChange([string]$name, $action, $settings) {
+    if (-not $OnlyMissing) { return "new" }
+    $existing = Get-ScheduledTask -TaskName $name -ErrorAction SilentlyContinue
+    if (-not $existing) { return "new" }
+    if (Test-TaskMatches $existing $action $settings) {
         Write-Host "Đã có $name, giữ nguyên"
-        return $false
+        return "keep"
     }
-    return $true
+    return "update"
+}
+
+# Replace the command and settings of an existing task; its triggers and account stay as they are.
+# A running instance keeps going; the new command applies from its next start.
+function Update-TaskCommand([string]$name, $action, $settings) {
+    Set-ScheduledTask -TaskName $name -Action $action -Settings $settings | Out-Null
+    Write-Host "Cập nhật cách chạy $name"
 }
 
 if ($RobotUser) {
-    if (-not (Test-TaskWanted "shoponline-robot")) { return }
+    $robotAction = New-HiddenTaskAction -Execute $Uv -Argument "run --no-dev --extra robot shoponline robot" -WorkingDirectory $repoRoot
+    $robotSettings = New-TaskSettings -MultipleInstances IgnoreNew -RestartCount 3 `
+        -RestartInterval (New-TimeSpan -Minutes 1) -ExecutionTimeLimit ([TimeSpan]::Zero)
+    $change = Get-TaskChange "shoponline-robot" $robotAction $robotSettings
+    if ($change -eq "keep") { return }
+    # Task Scheduler never starts a second robot (IgnoreNew), so a running robot may get its
+    # command updated; a fresh registration still requires it stopped.
+    if ($change -eq "update") { Update-TaskCommand "shoponline-robot" $robotAction $robotSettings; return }
     $running = Get-CimInstance Win32_Process -Filter "Name = 'python.exe' OR Name = 'uv.exe'" |
         Where-Object { $_.CommandLine -match 'shoponline(\.exe)?"?\s+robot(\s|$)' }
     if ($running) {
         throw "Robot đang chạy (PID $($running.ProcessId -join ', ')). Dừng nó trước khi đăng ký lại."
     }
-    $robotAction = New-ScheduledTaskAction -Execute $pwsh `
-        -Argument "-NoProfile -WindowStyle Hidden -Command `"& '$Uv' run --no-dev --extra robot shoponline robot`"" -WorkingDirectory $repoRoot
     $robotPrincipal = New-ScheduledTaskPrincipal -UserId $RobotUser -LogonType Interactive -RunLevel Limited
-    $robotSettings = New-ScheduledTaskSettingsSet -MultipleInstances IgnoreNew -RestartCount 3 `
-        -RestartInterval (New-TimeSpan -Minutes 1) -ExecutionTimeLimit ([TimeSpan]::Zero)
     Register-ScheduledTask -TaskName "shoponline-robot" -Action $robotAction `
         -Trigger (New-ScheduledTaskTrigger -AtLogOn -User $RobotUser) -Principal $robotPrincipal `
         -Settings $robotSettings -Force | Out-Null
@@ -78,13 +95,36 @@ if ($RobotUser) {
 if (-not $User) { throw "Truyền -User (web và sao lưu) hoặc -RobotUser (robot SAP)" }
 if ($OnlyMissing -and -not $AtLogOn) { throw "-OnlyMissing chỉ dùng cùng -AtLogOn (không hỏi mật khẩu)" }
 
-$wantWeb = Test-TaskWanted "shoponline-web"
-$wantBackup = Test-TaskWanted "shoponline-backup"
-$wantRetention = Test-TaskWanted "shoponline-retention"
-if (-not ($wantWeb -or $wantBackup -or $wantRetention)) { return }
+# On a deploy, keep whichever retention mode someone chose; never switch real deletion on or off here.
+$applyRetention = [bool]$RetentionApply
+if ($OnlyMissing) {
+    $existingRetention = Get-ScheduledTask -TaskName "shoponline-retention" -ErrorAction SilentlyContinue
+    if ($existingRetention -and "$($existingRetention.Actions[0].Arguments)" -match 'retention --apply') { $applyRetention = $true }
+}
+$retentionArgs = if ($applyRetention) { "retention --apply" } else { "retention" }
+
+$settings = New-TaskSettings -StartWhenAvailable -RestartCount 3 -RestartInterval (New-TimeSpan -Minutes 1) -ExecutionTimeLimit ([TimeSpan]::Zero)
+$dailySettings = New-TaskSettings -StartWhenAvailable -ExecutionTimeLimit (New-TimeSpan -Hours 1)
+$webAction = New-HiddenTaskAction -Execute $Uv -Argument "run --no-dev shoponline web" -WorkingDirectory $repoRoot
+$backupAction = New-HiddenTaskAction -Execute (Get-Command pwsh).Source `
+    -Argument "-NoProfile -ExecutionPolicy Bypass -File `"$repoRoot\scripts\windows\backup-db.ps1`"" -WorkingDirectory $repoRoot
+$retentionAction = New-HiddenTaskAction -Execute $Uv -Argument "run --no-dev shoponline $retentionArgs" -WorkingDirectory $repoRoot
+
+$tasks = @(
+    @{ Name = "shoponline-web"; Action = $webAction; Settings = $settings },
+    @{ Name = "shoponline-backup"; Action = $backupAction; Settings = $dailySettings },
+    @{ Name = "shoponline-retention"; Action = $retentionAction; Settings = $dailySettings }
+)
+foreach ($task in $tasks) {
+    $task.Change = Get-TaskChange $task.Name $task.Action $task.Settings
+    if ($task.Change -eq "update") { Update-TaskCommand $task.Name $task.Action $task.Settings }
+}
+$isNew = @{}
+foreach ($task in $tasks) { $isNew[$task.Name] = $task.Change -eq "new" }
+if (-not ($isNew.Values -contains $true)) { return }
 
 $listening = Get-NetTCPConnection -LocalPort $WebPort -State Listen -ErrorAction SilentlyContinue
-if ($listening -and $wantWeb) {
+if ($listening -and $isNew["shoponline-web"]) {
     $owner = Get-Process -Id $listening[0].OwningProcess -ErrorAction SilentlyContinue
     throw "Cổng $WebPort đang được $($owner.ProcessName) (PID $($listening[0].OwningProcess)) dùng. Dừng tiến trình đó hoặc đổi SHOPONLINE_WEB_PORT trước."
 }
@@ -101,32 +141,23 @@ if ($AtLogOn) {
     $webTrigger = New-ScheduledTaskTrigger -AtStartup
     $webWhen = "khi máy khởi động"
 }
-$settings = New-ScheduledTaskSettingsSet -StartWhenAvailable -RestartCount 3 -RestartInterval (New-TimeSpan -Minutes 1) -ExecutionTimeLimit ([TimeSpan]::Zero)
-$dailySettings = New-ScheduledTaskSettingsSet -StartWhenAvailable -ExecutionTimeLimit (New-TimeSpan -Hours 1)
 
-if ($wantWeb) {
-    $webAction = New-ScheduledTaskAction -Execute $pwsh `
-        -Argument "-NoProfile -WindowStyle Hidden -Command `"& '$Uv' run --no-dev shoponline web`"" -WorkingDirectory $repoRoot
+if ($isNew["shoponline-web"]) {
     Register-ScheduledTask -TaskName "shoponline-web" -Action $webAction -Trigger $webTrigger `
         -Settings $settings @account -Force | Out-Null
     Write-Host "Đã đăng ký shoponline-web (chạy $webWhen)"
 }
 
-if ($wantBackup) {
-    $backupAction = New-ScheduledTaskAction -Execute $pwsh `
-        -Argument "-NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File `"$repoRoot\scripts\windows\backup-db.ps1`"" -WorkingDirectory $repoRoot
+if ($isNew["shoponline-backup"]) {
     Register-ScheduledTask -TaskName "shoponline-backup" -Action $backupAction -Trigger (New-ScheduledTaskTrigger -Daily -At $BackupTime) `
         -Settings $dailySettings @account -Force | Out-Null
     Write-Host "Đã đăng ký shoponline-backup (hằng ngày lúc $BackupTime)"
 }
 
-if ($wantRetention) {
-    $retentionArgs = if ($RetentionApply) { "retention --apply" } else { "retention" }
-    $retentionAction = New-ScheduledTaskAction -Execute $pwsh `
-        -Argument "-NoProfile -WindowStyle Hidden -Command `"& '$Uv' run --no-dev shoponline $retentionArgs`"" -WorkingDirectory $repoRoot
+if ($isNew["shoponline-retention"]) {
     Register-ScheduledTask -TaskName "shoponline-retention" -Action $retentionAction -Trigger (New-ScheduledTaskTrigger -Daily -At $RetentionTime) `
         -Settings $dailySettings @account -Force | Out-Null
-    $retentionMode = if ($RetentionApply) { "xóa thật" } else { "chỉ liệt kê vào data\logs\retention.log" }
+    $retentionMode = if ($applyRetention) { "xóa thật" } else { "chỉ liệt kê vào data\logs\retention.log" }
     Write-Host "Đã đăng ký shoponline-retention (hằng ngày lúc $RetentionTime, $retentionMode)"
 }
 

@@ -10,8 +10,10 @@
      the shoponline-web task, and wait until the web port is free.
   3. Back up the database (backup-db.ps1) before any schema change.
   4. Fast-forward to the commit, uv sync without dev tools, migrate.
-  5. Register the Task Scheduler jobs that are still missing, for the account running this
-     script (register-tasks.ps1 -AtLogOn -OnlyMissing): web, backup, retention, robot.
+  5. Register the Task Scheduler jobs that are still missing, and update the command of those
+     that run differently from what register-tasks.ps1 now registers, for the account running
+     this script (register-tasks.ps1 -AtLogOn -OnlyMissing): web, backup, retention, robot; and
+     the runner's own task (install-deploy-runner.ps1 -TaskOnly).
   6. Start shoponline-web and wait until the login page answers, then shoponline-robot. The
      robot starts even with no SAP settings; the web page "Kết nối SAP" shows what is missing.
   Steps 5 and 6 also run when the checkout is already at the commit, so re-running the
@@ -97,6 +99,8 @@ function Register-MissingTasks {
     Invoke-Native "Đăng ký tác vụ"
     & pwsh -NoProfile -ExecutionPolicy Bypass -File $register -RobotUser $me -OnlyMissing
     Invoke-Native "Đăng ký tác vụ robot"
+    & pwsh -NoProfile -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot "install-deploy-runner.ps1") -TaskOnly
+    Invoke-Native "Cập nhật tác vụ runner"
 }
 
 # The robot always runs: it starts without SAP settings and reports on the web page "Kết nối SAP"

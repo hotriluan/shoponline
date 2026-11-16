@@ -10,7 +10,7 @@ import sys
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
 
-from shoponline.config import ConfigError, load_settings
+from shoponline.config import ConfigError, Settings, load_settings
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
@@ -46,13 +46,36 @@ def _cmd_create_user(args: argparse.Namespace) -> int:
     return 0
 
 
+def _setup_logging(settings: Settings, file_name: str) -> None:
+    """Log to the console and to <data>/logs/<file_name>, rotated at 5 MB, ten files kept."""
+    log_dir = settings.data_dir / "logs"
+    log_dir.mkdir(parents=True, exist_ok=True)
+    formatter = logging.Formatter("%(asctime)s %(levelname)s %(name)s: %(message)s")
+    root = logging.getLogger()
+    root.setLevel(logging.INFO)
+    for handler in (
+        logging.StreamHandler(),
+        RotatingFileHandler(
+            log_dir / file_name, maxBytes=5_000_000, backupCount=10, encoding="utf-8"
+        ),
+    ):
+        handler.setFormatter(formatter)
+        root.addHandler(handler)
+
+
 def _cmd_web(_args: argparse.Namespace) -> int:
     import uvicorn
 
     from shoponline.web.app import create_app
 
     settings = load_settings()
-    uvicorn.run(create_app(settings), host=settings.web_host, port=settings.web_port)
+    _setup_logging(settings, "web.log")
+    # One line per page load would fill the file; keep only failed requests.
+    logging.getLogger("uvicorn.access").setLevel(logging.WARNING)
+    # log_config=None leaves uvicorn's loggers to propagate to the root handlers set up above.
+    uvicorn.run(
+        create_app(settings), host=settings.web_host, port=settings.web_port, log_config=None
+    )
     return 0
 
 
@@ -68,18 +91,7 @@ def _cmd_robot(_args: argparse.Namespace) -> int:
 
     settings = load_settings()
     env = dict(os.environ)
-    log_dir = settings.data_dir / "logs"
-    log_dir.mkdir(parents=True, exist_ok=True)
-    logging.basicConfig(
-        level=logging.INFO,
-        format="%(asctime)s %(levelname)s %(name)s: %(message)s",
-        handlers=[
-            logging.StreamHandler(),
-            RotatingFileHandler(
-                log_dir / "robot.log", maxBytes=5_000_000, backupCount=10, encoding="utf-8"
-            ),
-        ],
-    )
+    _setup_logging(settings, "robot.log")
     factory = session_factory(settings.database_url)
     worker = Worker(
         settings,
