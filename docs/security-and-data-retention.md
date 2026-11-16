@@ -45,6 +45,15 @@ Chạy tay: `uv run shoponline retention` để xem, `uv run shoponline retentio
 - PostgreSQL chỉ nghe `localhost`. Ứng dụng dùng role `shoponline_app`, không dùng `postgres`.
 - Web chỉ mở cho mạng nội bộ (Windows Firewall profile Domain hoặc Private). Người dùng web có vai trò `admin` (thay đổi dữ liệu, bật robot) hoặc `viewer` (chỉ xem).
 - `.env` và `SHOPONLINE_DATA_DIR` chỉ cho tài khoản chạy hệ thống, tài khoản robot và quản trị viên.
+- SSH vào máy chạy thật (OpenSSH Server của Windows) dùng để xem log và tác vụ: chỉ nhận khóa (`PasswordAuthentication no`, `KbdInteractiveAuthentication no`), khóa nằm ở `C:\ProgramData\ssh\administrators_authorized_keys`, cổng 22 chỉ mở cho `192.168.18.0/24` và `192.168.68.0/24`. Khóa riêng trên máy phát triển có passphrase và nạp qua `ssh-agent`.
+
+## Máy chạy thật dùng Windows 10 không có ESU
+
+Từ 2026-11-16 máy chạy thật là Windows 10 không mua Extended Security Updates, nên không còn bản vá bảo mật. Chủ dự án chấp nhận rủi ro này ngày 2026-11-16, với các biện pháp bù:
+
+- Web và SSH chỉ mở cho mạng nội bộ, không mở ra Internet.
+- Không dùng máy để duyệt web hay đọc mail.
+- Quyền `.env` và thư mục dữ liệu bị giới hạn như mục trên.
 
 ## User SAP của robot
 

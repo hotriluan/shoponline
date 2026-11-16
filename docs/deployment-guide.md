@@ -20,7 +20,7 @@ powershell -ExecutionPolicy Bypass -File $env:TEMP\setup.ps1 -Archive <file .7z>
 3. Chạy tiếp dưới `pwsh`: `uv sync`, tạo database và `.env` ([`create-databases.ps1`](../scripts/windows/create-databases.ps1)), rồi hỏi những dòng `.env` còn thiếu: IP web trong mạng nội bộ, thư mục sao lưu, mật khẩu sao lưu.
 4. Giới hạn quyền `.env` và thư mục dữ liệu cho tài khoản này, Administrators và SYSTEM.
 5. Chép thư mục dữ liệu cũ (`-DataSource`) bằng `robocopy`. Khôi phục bản sao lưu (`-Archive`) khi database `shoponline` còn trống; database đã có dữ liệu thì không ghi đè.
-6. `migrate`, đăng ký các tác vụ ẩn (mục 5), rồi một lần UAC để mở cổng web trên tường lửa (Domain, Private) và tắt chế độ ngủ khi cắm điện.
+6. `migrate`, đăng ký các tác vụ ẩn (mục 5), rồi một lần UAC để mở cổng web trên tường lửa (Domain, Private) và tắt chế độ ngủ khi cắm điện. Nếu mạng của máy đang là **Public** (`Get-NetConnectionProfile`), quy tắc này không có tác dụng và máy khác không mở được web: chuyển mạng nội bộ sang Private bằng `Set-NetConnectionProfile -InterfaceAlias <tên> -NetworkCategory Private`.
 7. Cài runner deploy (mục 5b; `gh auth login` nếu chưa đăng nhập), bật web và robot.
 
 Cuối cùng script in bảng kiểm tra: mục đã xong, và việc tay còn lại kèm hướng dẫn. Script chạy lại được bất cứ lúc nào: bước đã xong thì bỏ qua, không hỏi lại mật khẩu đã có trong `.env`.
@@ -137,6 +137,47 @@ pwsh -File scripts\windows\backup-db.ps1   # sao lưu trước khi đổi schema
 uv run shoponline migrate
 Start-ScheduledTask shoponline-web
 ```
+
+## Chuyển máy chạy thật sang máy khác
+
+Máy chạy thật hiện tại: `AlkanaDuongPC` (Windows 10, `192.168.18.123`, tài khoản tự đăng nhập `this pc`), chuyển từ `Alkana_IT` ngày 2026-11-16.
+
+Hai điều không được xảy ra cùng lúc:
+
+- **Hai runner nhãn `shoponline-prod`.** GitHub giao job deploy cho runner nào đang rảnh, nên một push có thể lên nhầm máy.
+- **Hai robot dùng `AL17016`.** Khóa robot nằm trong database của từng máy, nên hai robot ở hai máy không chặn nhau.
+
+**Chuẩn bị** (máy cũ vẫn chạy): dựng máy mới theo mục 1 với `-Prepare`, `-Archive` là một bản sao lưu mới và `-DataSource` là bản chép thư mục dữ liệu; làm mục 2 trừ bước **Kiểm tra** SAP. Mở web máy mới từ máy admin, nhưng không nhập liệu ở đó.
+
+**Ngày chuyển** (ngoài giờ xử lý đơn):
+
+1. Máy cũ: dừng và Disable theo thứ tự `shoponline-deploy-runner` (dừng cả `Runner.Listener`), `shoponline-robot`, `shoponline-web`. Tab Actions không có job nào đang chạy.
+2. Máy cũ: đếm dòng mọi bảng và lưu ra file, chạy tay `backup-db.ps1`, rồi Disable `shoponline-backup` và `shoponline-retention`. Câu đếm, chạy bằng `psql` với role `shoponline_app`:
+
+   ```sql
+   SELECT table_name,
+          (xpath('/row/c/text()', query_to_xml(format('SELECT count(*) AS c FROM public.%I', table_name), false, true, '')))[1]::text::int AS rows
+   FROM information_schema.tables
+   WHERE table_schema = 'public' AND table_type = 'BASE TABLE'
+   ORDER BY 1;
+   ```
+
+3. Máy cũ: gỡ runner khỏi repo, rồi kiểm tra `gh api repos/hotriluan/shoponline/actions/runners` không còn tên máy cũ:
+
+   ```powershell
+   $t = gh api -X POST repos/hotriluan/shoponline/actions/runners/remove-token -q .token
+   C:\actions-runner\config.cmd remove --token $t
+   ```
+
+4. Máy mới: dừng `shoponline-web`, chép lại thư mục dữ liệu bằng `robocopy /E /COPY:DAT`, khôi phục đè bản sao lưu cuối (`restore-db.ps1 -Archive <bản cuối> -TargetSetting SHOPONLINE_DATABASE_URL -AllowProduction`), `uv run --no-dev shoponline migrate`.
+5. Máy mới: chạy lại script mục 1 **không** có `-Prepare`. Script cài runner và bật web, robot.
+6. Trang **Robot SAP → Kết nối SAP**: robot chạy trên máy mới, mật khẩu "đã có", **Kiểm tra** thành công với `AEP/300/AL17016`.
+7. Đếm lại trên máy mới; kết quả phải giống file ở bước 2.
+8. Push một commit lên `main`: job `deploy` phải chạy xanh trên runner máy mới. Gửi admin địa chỉ `http://<IP máy mới>:8750`.
+
+Máy cũ chỉ tắt, không xóa: các tác vụ để Disabled, `C:\shoponline`, `C:\actions-runner` và database giữ nguyên làm bản lùi lại. Xóa bản chép dữ liệu tạm sau khi bước 7 khớp, vì nó chứa dữ liệu khách.
+
+**Lùi lại**, khi admin chưa nhập liệu trên máy mới: trên máy mới dừng và Disable mọi tác vụ, gỡ runner bằng `config.cmd remove`. Trên máy cũ Enable năm tác vụ, chạy `install-deploy-runner.ps1`, rồi `Start-ScheduledTask` web và robot. Nếu admin đã nhập liệu trên máy mới, trước đó sao lưu máy mới, khôi phục bản đó vào máy cũ bằng `restore-db.ps1 -AllowProduction` và chép lại thư mục dữ liệu.
 
 ## Khi máy hỏng
 

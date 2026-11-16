@@ -45,7 +45,7 @@ Cấu hình SAP nằm trong database và sửa trên web: **Robot SAP → Kết 
 | Số lỗi liên tiếp thì dừng | Mặc định 3 |
 | Giữ ảnh lỗi (ngày) | Mặc định 30 |
 
-**Mật khẩu không nhập trên web.** Đặt trên máy robot, dưới đúng tài khoản Windows chạy robot (`luanh` trên máy hiện tại, `saprobot` trên máy riêng):
+**Mật khẩu không nhập trên web.** Đặt trên máy robot, dưới đúng tài khoản Windows chạy robot (`this pc` trên máy chạy thật hiện tại, `saprobot` trên máy riêng), tại màn hình máy hoặc qua Remote Desktop. Phiên SSH đăng nhập bằng khóa không mở được Credential Manager của tài khoản.
 
 ```powershell
 uv run --extra robot shoponline sap-password set      # hỏi hai lần, không in ra
@@ -81,7 +81,7 @@ pwsh -ExecutionPolicy Bypass -File scripts\windows\register-tasks.ps1 -RobotUser
 
 Tác vụ `shoponline-robot` chạy `uv run --no-dev --extra robot shoponline robot` khi `saprobot` đăng nhập.
 
-Máy dùng chung hiện tại (tài khoản `luanh`, xem plan) không cần bước này: mỗi lần deploy qua GitHub, `update-production.ps1` tự đăng ký `shoponline-robot` cho tài khoản chạy runner nếu chưa có, và luôn bật robot (robot khởi động được cả khi cấu hình SAP chưa đủ, và báo thiếu gì trên trang Kết nối SAP). Task Scheduler không chạy bản thứ hai. Robot cũng giữ một khóa trong PostgreSQL, nên robot thứ hai (kể cả trên máy khác) thoát ngay với mã 3.
+Máy chạy thật hiện tại (`AlkanaDuongPC`, Windows 10, một tài khoản tự đăng nhập `this pc` chạy cả web, robot và runner) không cần bước này: mỗi lần deploy qua GitHub, `update-production.ps1` tự đăng ký `shoponline-robot` cho tài khoản chạy runner nếu chưa có, và luôn bật robot (robot khởi động được cả khi cấu hình SAP chưa đủ, và báo thiếu gì trên trang Kết nối SAP). Task Scheduler không chạy bản thứ hai. Robot cũng giữ một khóa trong PostgreSQL, nên robot thứ hai (kể cả trên máy khác) thoát ngay với mã 3.
 
 ## 5. Kiểm tra
 
