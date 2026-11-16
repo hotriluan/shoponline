@@ -78,7 +78,7 @@ Admin dán dòng 2 trở đi vào cuối sheet1 ──► bấm "Xác nhận đ�
 | 2 | [Trang sửa tên báo cáo](phase-02-report-names-page.md) | completed | 1 |
 | 3 | [Bộ dựng file lịch sử](phase-03-history-workbook.md) | completed | 1 |
 | 4 | [Trang xuất file và xác nhận](phase-04-export-page.md) | completed | 2, 3 |
-| 5 | [Tài liệu và chạy thử production](phase-05-docs-and-live-check.md) | in-progress (tài liệu xong; chạy thử production chờ deploy) | 4 |
+| 5 | [Tài liệu và chạy thử production](phase-05-docs-and-live-check.md) | in-progress (đã deploy, tách tỉnh 62/62; còn admin duyệt tên báo cáo, xuất và xác nhận lần đầu: [biên bản](../reports/live-check-261116-1444-shop-online-history-export.md)) | 4 |
 
 Phase 2 và 3 sửa các file khác nhau và làm song song được sau phase 1. Phase 4 sau phase 2 vì cả hai sửa `app.py` và `base.html`.
 
