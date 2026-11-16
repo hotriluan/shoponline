@@ -4,6 +4,7 @@ from sqlalchemy.orm import Session
 
 from shoponline.db.models import AppUser, ImportBatch, OrderBatch
 from shoponline.importers.excel_table import FileRejected
+from shoponline.maintenance import retention
 from shoponline.reconcile.report_ingest import ingest_zrsd001, ingest_zrsd004
 from shoponline.web.app import current_user, flash, get_db, redirect, render, require_admin
 from shoponline.web.uploads import UploadRejected, save_upload
@@ -46,15 +47,20 @@ async def upload_zrsd001(
     user: AppUser = Depends(require_admin),
 ):
     batch = db.get(OrderBatch, batch_id) if batch_id else None
+    settings = request.app.state.settings
+    new_file = None
     try:
-        record = await save_upload(
-            request.app.state.settings, file, kind="zrsd001", platform=None, actor=user.username
+        record, created = await save_upload(
+            settings, file, kind="zrsd001", platform=None, actor=user.username
         )
+        new_file = record.stored_path if created else None
         result = ingest_zrsd001(db, record, user.username, expect_batch=batch)
     except (UploadRejected, FileRejected) as exc:
         db.rollback()
+        retention.discard_unused(db, settings, [new_file])
         return _page(request, db, user, error=str(exc), selected_batch=batch_id)
     db.commit()
+    retention.discard_unused(db, settings, [record.stored_path])  # read once, at import
     flash(
         request,
         f"zrsd001: {result.new} SO mới, {result.updated} cập nhật, {result.unchanged} không đổi; "
@@ -72,15 +78,21 @@ async def upload_zrsd004(
     db: Session = Depends(get_db),
     user: AppUser = Depends(require_admin),
 ):
+    settings = request.app.state.settings
+    new_file = None
     try:
-        record = await save_upload(
-            request.app.state.settings, file, kind="zrsd004", platform=None, actor=user.username
+        record, created = await save_upload(
+            settings, file, kind="zrsd004", platform=None, actor=user.username
         )
+        new_file = record.stored_path if created else None
         imported = ingest_zrsd004(db, record, user.username)
     except (UploadRejected, FileRejected) as exc:
         db.rollback()
+        retention.discard_unused(db, settings, [new_file])
         return _page(request, db, user, error=str(exc))
     db.commit()
+    # Normally kept: it waits to be attached to an accounting run.
+    retention.discard_unused(db, settings, [record.stored_path])
     return render(
         request,
         "accounting_preview.html",

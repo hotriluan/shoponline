@@ -1,14 +1,17 @@
 from collections import Counter
 from datetime import UTC, date, datetime
+from pathlib import Path
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Request
 from fastapi.responses import FileResponse
 from sqlalchemy import select
 from sqlalchemy.orm import Session
+from starlette.background import BackgroundTask
 
 from shoponline.db.models import AppUser, CustomerInfo, OrderBatch, PlatformSetting, SalesOrder
 from shoponline.domain import states
 from shoponline.exports.order_workbook import build_order_workbook
+from shoponline.maintenance import retention
 from shoponline.reconcile.so_link import LinkError, batch_report, link_manually
 from shoponline.sapjobs.queue import DuplicateJob
 from shoponline.sapjobs.report_requests import request_zrsd001
@@ -134,10 +137,12 @@ def download_order_file(
         user.username,
     )
     db.commit()
+    # Never downloaded again: the copy on the server goes once the response is sent.
     return FileResponse(
         record.stored_path,
         filename=order_file.file_name,
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        background=BackgroundTask(retention.remove, Path(record.stored_path)),
     )
 
 

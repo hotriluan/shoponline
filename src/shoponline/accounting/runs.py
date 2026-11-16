@@ -15,7 +15,7 @@ from datetime import date, datetime, timedelta
 from pathlib import Path
 
 from openpyxl import Workbook
-from sqlalchemy import and_, exists, or_, select
+from sqlalchemy import Select, and_, exists, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -327,6 +327,12 @@ def retry_read(
 def available_uploads(session: Session) -> list[ImportBatch]:
     """zrsd004 files uploaded by hand since the last finalized run that no open or finalized run
     holds yet."""
+    stmt = waiting_uploads(session).order_by(ImportBatch.id.desc())
+    return [b for b in session.scalars(stmt) if Path(b.stored_path).is_file()]
+
+
+def waiting_uploads(session: Session) -> Select[tuple[ImportBatch]]:
+    """The query behind available_uploads, without the check that the file is still on disk."""
     last = session.scalar(
         select(AccountingRun.finalized_at)
         .where(AccountingRun.status == FINALIZED)
@@ -338,18 +344,14 @@ def available_uploads(session: Session) -> list[ImportBatch]:
         .join(AccountingRun, AccountingRun.id == AccountingRunSource.run_id)
         .where(AccountingRun.status.in_((OPEN, FINALIZED)))
     )
-    stmt = (
-        select(ImportBatch)
-        .where(
-            ImportBatch.kind == "zrsd004",
-            ImportBatch.imported_by != ROBOT,
-            ImportBatch.id.not_in(held),
-        )
-        .order_by(ImportBatch.id.desc())
+    stmt = select(ImportBatch).where(
+        ImportBatch.kind == "zrsd004",
+        ImportBatch.imported_by != ROBOT,
+        ImportBatch.id.not_in(held),
     )
     if last is not None:
         stmt = stmt.where(ImportBatch.imported_at > last)
-    return [b for b in session.scalars(stmt) if Path(b.stored_path).is_file()]
+    return stmt
 
 
 def attach_upload(session: Session, run: AccountingRun, batch: ImportBatch, actor: str) -> None:

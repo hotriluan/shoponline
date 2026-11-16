@@ -20,8 +20,9 @@ from sqlalchemy import Connection, Engine, text
 from sqlalchemy.orm import Session
 
 from shoponline.config import Settings
-from shoponline.db.models import OrderBatch, SapJob
+from shoponline.db.models import ImportBatch, OrderBatch, SapJob
 from shoponline.domain import states
+from shoponline.maintenance import retention
 from shoponline.reconcile.report_ingest import ingest_zrsd001, ingest_zrsd004
 from shoponline.sapjobs import queue, sap_settings
 from shoponline.saprobot import credentials, evidence
@@ -99,9 +100,10 @@ TRANSACTIONS: dict[str, Transaction] = {}
 def _stored_report(settings: Settings, out: TransactionResult, kind: str):
     if out.file is None or not out.file.is_file():
         raise RobotError(f"Thao tác {kind} không trả về file báo cáo")
-    return store_file(
+    record, _ = store_file(
         settings, out.file.read_bytes(), out.file.name, kind=kind, platform=None, actor=ROBOT
     )
+    return record
 
 
 def _after_zrsd001(db: Session, job: SapJob, out: TransactionResult, settings: Settings) -> dict:
@@ -441,7 +443,20 @@ class Worker:
                 max_failures = sap_settings.load(db, self.env).max_failures
                 queue.record_outcome(db, outcome.status == queue.DONE, max_failures)
             db.commit()
+            if outcome.status == queue.DONE:
+                self._discard_spent(db, job)
         log.info("Việc #%s: %s %s", job_id, outcome.status, outcome.error or "")
+
+    def _discard_spent(self, db: Session, job: SapJob) -> None:
+        """A finished job's work folder only holds what SAP exported, already copied into
+        uploads/; that stored copy goes too unless an open accounting run still reads it. A failed
+        job keeps both for review."""
+        work_dir = self.settings.robot_work_dir / f"job-{job.id}"
+        if work_dir.exists():
+            retention.remove(work_dir)
+        if job.import_batch_id:
+            batch = db.get(ImportBatch, job.import_batch_id)
+            retention.discard_unused(db, self.settings, [batch.stored_path])
 
 
 class RobotAlreadyRunning(RuntimeError):

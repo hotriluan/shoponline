@@ -31,6 +31,7 @@ from shoponline.exports.sales_history_workbook import (
     collect_rows,
     history_file_name,
 )
+from shoponline.maintenance import retention
 from shoponline.web.app import current_user, flash, get_db, redirect, render, require_admin
 from shoponline.web.uploads import save_generated
 
@@ -157,7 +158,7 @@ def download_saved_file(
     """The file exactly as downloaded then, not rebuilt."""
     record = _history_file(db, file_id)
     if not Path(record.stored_path).is_file():
-        flash(request, "File đã bị xóa theo thời hạn lưu.", "error")
+        flash(request, "File đã bị xóa sau khi xác nhận đã dán.", "error")
         return redirect("/sales-history")
     return FileResponse(record.stored_path, filename=record.file_name, media_type=XLSX)
 
@@ -193,6 +194,17 @@ def confirm_file(
         detail={"file_id": record.id, "confirmed": confirmed, "skipped": skipped},
     )
     db.commit()
+    # This file, and any other file sharing its orders, goes once all its orders are confirmed.
+    sharing = select(SalesHistoryFileOrder.sales_order_id).where(
+        SalesHistoryFileOrder.generated_file_id == record.id
+    )
+    paths = db.scalars(
+        select(GeneratedFile.stored_path)
+        .join(SalesHistoryFileOrder, SalesHistoryFileOrder.generated_file_id == GeneratedFile.id)
+        .where(SalesHistoryFileOrder.sales_order_id.in_(sharing))
+        .distinct()
+    ).all()
+    retention.discard_unused(db, request.app.state.settings, paths)
     flash(
         request,
         f"Đã xác nhận {confirmed} đơn, bỏ qua {skipped} đơn đã xác nhận ở file khác.",

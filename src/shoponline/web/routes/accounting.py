@@ -14,6 +14,7 @@ from sqlalchemy.orm import Session
 
 from shoponline.accounting import ledger, runs
 from shoponline.clock import today_vn
+from shoponline.config import Settings
 from shoponline.db.models import (
     AccountingRun,
     AccountingRunRead,
@@ -23,6 +24,7 @@ from shoponline.db.models import (
     ImportBatch,
 )
 from shoponline.importers.excel_table import FileRejected
+from shoponline.maintenance import retention
 from shoponline.reconcile.report_ingest import ingest_zrsd004
 from shoponline.sapjobs import queue
 from shoponline.web.app import (
@@ -194,14 +196,18 @@ async def upload_to_run(
     user: AppUser = Depends(require_admin),
 ):
     run = _run(db, run_id)
+    settings = request.app.state.settings
+    new_file = None
     try:
-        record = await save_upload(
-            request.app.state.settings, file, kind="zrsd004", platform=None, actor=user.username
+        record, created = await save_upload(
+            settings, file, kind="zrsd004", platform=None, actor=user.username
         )
+        new_file = record.stored_path if created else None
         imported = ingest_zrsd004(db, record, user.username)
         runs.attach_upload(db, run, record, user.username)
     except (UploadRejected, FileRejected, runs.RunNotOpen) as exc:
         db.rollback()
+        retention.discard_unused(db, settings, [new_file])
         flash(request, str(exc), "error")
         return redirect(f"/accounting/runs/{run_id}")
     db.commit()
@@ -295,6 +301,7 @@ def finalize_run(
         if record is not None:
             Path(record.stored_path).unlink(missing_ok=True)
         raise
+    _discard_run_sources(db, request.app.state.settings, run_id)
     flash(request, f"Đã chốt đợt #{run_id} và ghi sổ. File: {record.file_name}.")
     return redirect(f"/accounting/runs/{run_id}")
 
@@ -313,8 +320,16 @@ def cancel_run(
         flash(request, str(exc), "error")
         return redirect(f"/accounting/runs/{run_id}")
     db.commit()
+    _discard_run_sources(db, request.app.state.settings, run_id)
     flash(request, f"Đã hủy đợt #{run_id}; sổ không đổi.")
     return redirect("/accounting")
+
+
+def _discard_run_sources(db: Session, settings: Settings, run_id: int) -> None:
+    """A closed run no longer needs its zrsd004 files. A hand upload of a cancelled run waits to
+    be attached again, so the keep rules hold it."""
+    sources = runs.run_sources(db, _run(db, run_id))
+    retention.discard_unused(db, settings, [b.stored_path for b in sources])
 
 
 @router.get("/accounting/runs/{run_id}/file")

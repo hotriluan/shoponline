@@ -132,7 +132,7 @@ Web, robot, sao lưu và runner chạy ẩn, không có cửa sổ để xem. Mu
 
 ### Xem danh sách xóa theo thời hạn
 
-Tác vụ `shoponline-retention` chạy hằng đêm và ghi vào `<SHOPONLINE_DATA_DIR>\logs\retention.log`. Trong tuần đầu nó chỉ liệt kê. Người quản trị đọc danh sách: chỉ được có đơn đã vào sổ gửi kế toán (hoặc đã hủy) và file quá 90 ngày. Sau một tuần không thấy sai, đăng ký lại tác vụ với `-RetentionApply` (xem [security-and-data-retention.md](security-and-data-retention.md#thời-hạn-lưu)).
+Tác vụ `shoponline-retention` chạy hằng đêm và ghi vào `<SHOPONLINE_DATA_DIR>\logs\retention.log`. Nó luôn xóa file hết dùng theo quy tắc giữ file, và in danh sách file đã xóa. Phần dữ liệu khách trong tuần đầu chỉ liệt kê. Người quản trị đọc danh sách: chỉ được có đơn đã vào sổ gửi kế toán (hoặc đã hủy). Sau một tuần không thấy sai, đăng ký lại tác vụ với `-RetentionApply` (xem [security-and-data-retention.md](security-and-data-retention.md#thời-hạn-lưu)).
 
 ## Kế hoạch khi máy hỏng
 

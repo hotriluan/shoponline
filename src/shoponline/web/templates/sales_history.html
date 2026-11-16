@@ -44,7 +44,7 @@
   <tr>
     <td>{{ f.file.created_at|localtime }}</td>
     <td>{{ f.file.created_by }}</td>
-    <td>{% if f.stored %}<a href="/sales-history/files/{{ f.file.id }}">{{ f.file.file_name }}</a>{% else %}{{ f.file.file_name }} <span class="muted">(đã xóa theo thời hạn lưu)</span>{% endif %}</td>
+    <td>{% if f.stored %}<a href="/sales-history/files/{{ f.file.id }}">{{ f.file.file_name }}</a>{% else %}{{ f.file.file_name }} <span class="muted">(đã xóa sau khi xác nhận)</span>{% endif %}</td>
     <td class="num">{{ f.orders }}</td>
     <td>{% if f.confirmed %}<span class="ok">Đã xác nhận {{ f.confirmed }} đơn</span>{% else %}<span class="bad">Chưa xác nhận</span>{% endif %}</td>
     {% if user.role == 'admin' %}

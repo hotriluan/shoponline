@@ -11,7 +11,7 @@ Một gói Python `shoponline`, một database PostgreSQL, một máy Windows. H
 | `web` | `shoponline web` | tài khoản hệ thống | FastAPI + Jinja2, render phía máy chủ; nhập file, sinh file, xếp việc cho robot |
 | `robot` | `shoponline robot` | phiên đăng nhập của tài khoản robot (cần màn hình cho SAP GUI) | Nhận việc từ hàng đợi, đọc `ZRSD001`, `ZRSD004` trên Production bằng SAP GUI Scripting |
 
-Ba tác vụ định kỳ: `shoponline-backup` (sao lưu mã hóa), `shoponline-retention` (xóa dữ liệu khách quá hạn), và runner deploy `shoponline-deploy-runner`. Đăng ký bằng [register-tasks.ps1](../scripts/windows/register-tasks.ps1) và [install-deploy-runner.ps1](../scripts/windows/install-deploy-runner.ps1).
+Ba tác vụ định kỳ: `shoponline-backup` (sao lưu mã hóa), `shoponline-retention` (xóa file hết dùng, liệt kê hoặc xóa dữ liệu khách quá hạn), và runner deploy `shoponline-deploy-runner`. Đăng ký bằng [register-tasks.ps1](../scripts/windows/register-tasks.ps1) và [install-deploy-runner.ps1](../scripts/windows/install-deploy-runner.ps1).
 
 Hệ thống không ghi gì vào SAP. Không có API sàn, không Docker, không LLM trong đường nghiệp vụ.
 
@@ -51,7 +51,7 @@ Tải file lên và robot đi qua cùng một hàm, [report_ingest.py](../src/sh
 | `reconcile/` | Nối SO với đơn theo `PO No`, báo lệch, đánh dấu đã có DO |
 | `sapjobs/` | Hàng đợi `sap_job` (nhận việc bằng `FOR UPDATE SKIP LOCKED`), công tắc dừng robot, xếp việc đọc báo cáo |
 | `saprobot/` | Robot: lớp chặn T-code (`guard.py`), phiên, thanh trạng thái, popup, ảnh lỗi, cửa sổ Windows (`desktop.py`), vòng lặp (`worker.py`), thao tác đọc báo cáo (`transactions/`) |
-| `maintenance/` | Xóa dữ liệu khách quá thời hạn lưu (`retention.py`) |
+| `maintenance/` | Quy tắc giữ file, xóa file hết dùng và dữ liệu khách quá thời hạn lưu (`retention.py`) |
 | `web/` | Route, template, xác thực, lưu file tải lên |
 | `config/` (gốc repo) | ID phần tử màn hình SAP và danh sách popup đã biết, lấy từ bản ghi recorder |
 
@@ -81,11 +81,13 @@ Dưới `SHOPONLINE_DATA_DIR`:
 
 | Thư mục | Nội dung | Thời hạn |
 |---|---|---|
-| `uploads/` | File tải lên và file robot xuất, đặt tên theo SHA-256 | `SHOPONLINE_RETENTION_DAYS` (90) |
-| `exports/` | File hệ thống sinh ra | 90 ngày |
-| `robot-work/job-<n>/` | File báo cáo robot vừa xuất từ SAP | 90 ngày |
+| `uploads/` | File tải lên và file robot xuất, đặt tên theo SHA-256 | Tới khi hết dùng: chỉ giữ `zrsd004` của đợt đang mở và `zrsd004` upload tay chờ gắn |
+| `exports/` | File hệ thống sinh ra | File kế toán của đợt: giữ. File Shop Online: tới khi xác nhận hết đơn. File đơn hàng: xóa sau khi tải |
+| `robot-work/job-<n>/` | File báo cáo robot vừa xuất từ SAP | Xóa khi việc `DONE`; việc lỗi giữ tới hết hạn ảnh màn hình |
 | `robot-evidence/` | Ảnh màn hình khi việc lỗi | `SHOPONLINE_ROBOT_EVIDENCE_KEEP_DAYS` (30) |
-| `logs/` | `robot.log`, `retention.log` | robot.log xoay vòng 10 × 5 MB |
+| `logs/` | `web.log`, `robot.log`, `retention.log` | Mỗi file xoay vòng 10 × 5 MB |
+
+Quy tắc giữ file chi tiết: [security-and-data-retention.md](security-and-data-retention.md#file).
 | `last-backup.txt` | Thời điểm sao lưu gần nhất; web cảnh báo sau 36 giờ | — |
 
 ## Triển khai

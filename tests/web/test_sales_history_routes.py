@@ -1,5 +1,6 @@
 from datetime import datetime
 from io import BytesIO
+from pathlib import Path
 from urllib.parse import unquote
 
 import pytest
@@ -31,6 +32,25 @@ def _file_ids(db):
             .order_by(GeneratedFile.id)
         )
     )
+
+
+def _stored(db, file_id):
+    return Path(db.get(GeneratedFile, file_id).stored_path)
+
+
+def test_a_file_with_an_order_still_unconfirmed_is_kept(db, login):
+    setup.report_name(db)
+    setup.order(db, "A-1", datetime(2026, 11, 11))
+    admin = login("admin")
+    _download(admin)
+    setup.order(db, "A-2", datetime(2026, 11, 11, 1))
+    _download(admin)  # A-1 again, and A-2
+    first, second = _file_ids(db)
+
+    admin.post(f"/sales-history/files/{first}/confirm")
+
+    assert not _stored(db, first).exists()
+    assert _stored(db, second).exists()  # A-2 is not confirmed yet
 
 
 def _download(client):
@@ -94,6 +114,10 @@ def test_download_confirm_and_unconfirm(db, login):
     late = setup.order(db, "LATE", datetime(2026, 10, 31, 23))
     page = admin.post(f"/sales-history/files/{file_id}/confirm").text
     assert "Đã xác nhận 2 đơn, bỏ qua 0 đơn" in page
+    assert not _stored(db, file_id).exists()  # every order in it is confirmed
+    assert "(đã xóa sau khi xác nhận)" in page
+    resp = admin.get(f"/sales-history/files/{file_id}", follow_redirects=True)
+    assert "File đã bị xóa sau khi xác nhận đã dán" in resp.text
 
     resp = _download(admin)
     assert _order_ids_in_sheet(resp) == 1
@@ -128,6 +152,8 @@ def test_an_order_is_confirmed_once_across_files(db, login):
     first, second = _file_ids(db)
 
     assert "Đã xác nhận 2 đơn" in admin.post(f"/sales-history/files/{second}/confirm").text
+    # The first file holds the same orders: both are spent.
+    assert not _stored(db, first).exists() and not _stored(db, second).exists()
     page = admin.post(f"/sales-history/files/{first}/confirm").text
     assert "Đã xác nhận 0 đơn, bỏ qua 2 đơn" in page
     assert _count(db, SalesHistoryExported) == 2

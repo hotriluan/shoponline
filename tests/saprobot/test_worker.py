@@ -1,13 +1,21 @@
 """Worker logic against the fake SAP GUI; report results must match the phase 4 upload path."""
 
 from datetime import date
+from pathlib import Path
 
 import pytest
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from shoponline.config import Settings
-from shoponline.db.models import ImportBatch, SalesOrder, SapJob, SapSoRef
+from shoponline.db.models import (
+    AccountingRun,
+    AccountingRunRead,
+    ImportBatch,
+    SalesOrder,
+    SapJob,
+    SapSoRef,
+)
 from shoponline.domain import states
 from shoponline.domain.sku_mapping import upsert_mapping
 from shoponline.importers.order_import import import_orders
@@ -355,3 +363,75 @@ def test_zrsd001_without_data_is_still_a_failure(db, settings, batch):
     job = _job(db, job.id)
     assert job.status == queue.FAILED and "không có dữ liệu" in job.error
     assert _failures(db) == 1
+
+
+# ---------------------------------------------------------------- files once the job is done
+
+
+def _export_into_work_dir(report):
+    """Like a real transaction: SAP saves the report into the job's work folder."""
+
+    def read(ctx: JobContext) -> TransactionResult:
+        saved = ctx.work_dir / report.name
+        saved.write_bytes(report.read_bytes())
+        return TransactionResult(file=saved)
+
+    return Transaction(read, False)
+
+
+def test_done_job_deletes_its_work_folder_and_the_spent_stored_report(
+    db, settings, batch, tmp_path
+):
+    report = zrsd001_file(tmp_path / "z1.xlsx", [zrsd001_row("210000001", "A1", "100000001", 2)])
+    job = request_zrsd001(db, QA, batch, "admin")
+    txn = _export_into_work_dir(report)
+    _worker(db, settings, _qa_session(), {queue.READ_ZRSD001: txn}).run_once()
+
+    job = _job(db, job.id)
+    assert job.status == queue.DONE, job.error
+    assert not (settings.robot_work_dir / f"job-{job.id}").exists()
+    record = db.get(ImportBatch, job.import_batch_id)  # the row stays, the file goes
+    assert not Path(record.stored_path).exists()
+
+
+def test_zrsd004_read_for_an_open_run_keeps_its_stored_report(db, settings, batch, tmp_path):
+    report = zrsd004_file(tmp_path / "z4.xlsx", [zrsd004_row("1900000001", "210000001", "1")])
+    run = AccountingRun(status="OPEN", created_by="t")
+    db.add(run)
+    db.flush()
+    job = request_zrsd004(db, QA, batch.platform, batch.gi_date, "admin")
+    db.add(
+        AccountingRunRead(
+            run_id=run.id, platform="SHOPEE", gi_date=batch.gi_date, sap_job_id=job.id
+        )
+    )
+    db.flush()
+    _worker(
+        db, settings, _qa_session(), {queue.READ_ZRSD004: _export_into_work_dir(report)}
+    ).run_once()
+
+    job = _job(db, job.id)
+    assert job.status == queue.DONE, job.error
+    assert not (settings.robot_work_dir / f"job-{job.id}").exists()
+    assert Path(db.get(ImportBatch, job.import_batch_id).stored_path).is_file()
+
+
+def test_failed_job_keeps_its_work_folder(db, settings, batch, tmp_path):
+    bad = zrsd004_file(tmp_path / "wrong.xlsx", [zrsd004_row("19", "21", "1")])  # not zrsd001
+    import_failed = request_zrsd001(db, QA, batch, "admin")
+    _worker(
+        db, settings, _qa_session(), {queue.READ_ZRSD001: _export_into_work_dir(bad)}
+    ).run_once()
+    gui = _qa_session()
+
+    def sap_error(ctx):
+        (ctx.work_dir / "partial.XLSX").write_bytes(b"x")
+        gui.status.MessageType, gui.status.Text = "E", "No authorization for ZRSD004"
+        ctx.step()
+
+    sap_failed = request_zrsd004(db, QA, batch.platform, batch.gi_date, "admin")
+    _worker(db, settings, gui, {queue.READ_ZRSD004: Transaction(sap_error, False)}).run_once()
+
+    for job_id in (import_failed.id, sap_failed.id):
+        assert _job(db, job_id).status == queue.FAILED
+        assert any((settings.robot_work_dir / f"job-{job_id}").iterdir())

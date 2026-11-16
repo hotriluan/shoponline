@@ -7,7 +7,9 @@
   2. Encrypt with 7-Zip AES-256 (file names hidden too) using SHOPONLINE_BACKUP_PASSWORD.
   3. Copy to every folder in SHOPONLINE_BACKUP_DIRS (separated by ';'), e.g. the company
      network share and the Google Drive for desktop folder.
-  4. Delete backups older than SHOPONLINE_BACKUP_KEEP_DAYS (default 30) in those folders.
+  4. In each folder the new backup reached: keep every backup of today and the newest backup of
+     each of the SHOPONLINE_BACKUP_KEEP_DAYS (default 14) days before; delete the rest
+     (backup-rotation.ps1). Nothing is deleted from a folder the copy did not reach.
   5. Write the time to <SHOPONLINE_DATA_DIR>\last-backup.txt; the web warns after 36 hours.
   Settings come from environment variables, or from the repo-root env file when not set.
   The encryption password must live in the secret store, never next to the backups.
@@ -22,11 +24,12 @@ param(
 
 $ErrorActionPreference = "Stop"
 . (Join-Path $PSScriptRoot "settings.ps1")
+. (Join-Path $PSScriptRoot "backup-rotation.ps1")
 
 $dbUrl = Get-Setting "SHOPONLINE_DATABASE_URL"
 $password = Get-Setting "SHOPONLINE_BACKUP_PASSWORD"
 $targets = (Get-Setting "SHOPONLINE_BACKUP_DIRS").Split(";") | Where-Object { $_.Trim() } | ForEach-Object { $_.Trim() }
-$keepDays = [int](Get-Setting "SHOPONLINE_BACKUP_KEEP_DAYS" "30")
+$keepDays = [int](Get-Setting "SHOPONLINE_BACKUP_KEEP_DAYS" "14")
 $dataDir = Get-Setting "SHOPONLINE_DATA_DIR"
 
 if (-not $dbUrl) { throw "Thiếu SHOPONLINE_DATABASE_URL" }
@@ -58,9 +61,7 @@ try {
         try {
             New-Item -ItemType Directory -Force -Path $target | Out-Null
             Copy-Item $archive $target
-            Get-ChildItem $target -Filter "shoponline-$pgDb-*.7z" |
-                Where-Object { $_.LastWriteTime -lt (Get-Date).AddDays(-$keepDays) } |
-                Remove-Item
+            Remove-OldBackups -Folder $target -Database $pgDb -KeepDays $keepDays
             Write-Host "Đã chép tới $target"
             $copied++
         } catch {

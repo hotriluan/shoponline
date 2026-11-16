@@ -41,7 +41,7 @@ uv run shoponline web
 | `SHOPONLINE_WEB_HOST`, `SHOPONLINE_WEB_PORT` | Địa chỉ và cổng web (mặc định `127.0.0.1:8750`) |
 | `SHOPONLINE_BACKUP_PASSWORD` | Mật khẩu mã hóa bản sao lưu (7-Zip AES-256) |
 | `SHOPONLINE_BACKUP_DIRS` | Các thư mục nhận bản sao lưu, cách nhau bằng `;` |
-| `SHOPONLINE_BACKUP_KEEP_DAYS` | Số ngày giữ bản sao lưu (mặc định 30) |
+| `SHOPONLINE_BACKUP_KEEP_DAYS` | Số ngày trước hôm nay còn giữ một bản sao lưu mỗi ngày (mặc định 14); hôm nay giữ mọi bản |
 | `SHOPONLINE_RESTORE_DATABASE_URL` | Database dùng cho diễn tập khôi phục |
 | `SHOPONLINE_SAP_SYSTEM`, `SHOPONLINE_SAP_CLIENT` | Hệ thống SAP robot làm việc; để trống thì không xếp việc cho robot |
 | `SHOPONLINE_SAP_CONNECTION`, `SHOPONLINE_SAP_USER`, `SHOPONLINE_SAP_PASSWORD`, `SHOPONLINE_SAP_LANGUAGE` | Đăng nhập lại SAP trên máy robot |
@@ -59,7 +59,7 @@ Bí mật (mật khẩu database, khóa phiên, mật khẩu sao lưu) nằm tro
 | `uv run shoponline web` | Chạy web |
 | `uv run shoponline robot` | Chạy robot SAP (máy robot, cần `uv sync --extra robot`) |
 | `uv run shoponline robot-pause [--reason …]`, `robot-resume` | Tạm dừng, bật lại robot |
-| `uv run shoponline retention [--apply]` | Liệt kê (hoặc xóa) dữ liệu khách và file quá thời hạn lưu |
+| `uv run shoponline retention [--apply]` | Xóa file hết dùng; liệt kê (hoặc xóa với `--apply`) dữ liệu khách quá thời hạn lưu |
 | `uv run pytest` | Chạy test (test cần database bị bỏ qua khi thiếu `SHOPONLINE_TEST_DATABASE_URL`) |
 | `uv run ruff check` | Kiểm tra mã |
 | `pwsh -File scripts\windows\backup-db.ps1` | Sao lưu mã hóa ra các thư mục trong `SHOPONLINE_BACKUP_DIRS` |

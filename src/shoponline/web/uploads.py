@@ -23,7 +23,8 @@ class UploadRejected(ValueError):
 
 async def save_upload(
     settings: Settings, upload: UploadFile, *, kind: str, platform: str | None, actor: str
-) -> ImportBatch:
+) -> tuple[ImportBatch, bool]:
+    """The record, and whether this call wrote the file (False: same content stored before)."""
     name = Path(upload.filename or "").name
     if not name.lower().endswith(ALLOWED_SUFFIXES):
         raise UploadRejected("Chỉ nhận file .xlsx")
@@ -35,17 +36,21 @@ async def save_upload(
 
 def store_file(
     settings: Settings, data: bytes, name: str, *, kind: str, platform: str | None, actor: str
-) -> ImportBatch:
-    """Store the file by content hash under the upload dir; the caller adds the record."""
+) -> tuple[ImportBatch, bool]:
+    """Store the file by content hash under the upload dir; the caller adds the record.
+
+    Also returns whether the file was written now, so a rejected upload deletes only a file it
+    created itself."""
     if not data:
         raise UploadRejected("File rỗng")
     digest = hashlib.sha256(data).hexdigest()
     settings.upload_dir.mkdir(parents=True, exist_ok=True)
     stored = settings.upload_dir / f"{digest}.xlsx"
-    if stored.exists():
-        stored.touch()  # same content uploaded again: restart its retention period
-    else:
+    created = not stored.exists()
+    if created:
         stored.write_bytes(data)
+    else:
+        stored.touch()  # same content again: the nightly sweep leaves it alone for an hour
     return ImportBatch(
         kind=kind,
         platform=platform,
@@ -53,7 +58,7 @@ def store_file(
         sha256=digest,
         stored_path=str(stored),
         imported_by=actor,
-    )
+    ), created
 
 
 def save_generated(

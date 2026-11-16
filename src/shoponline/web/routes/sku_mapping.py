@@ -17,6 +17,7 @@ from shoponline.importers.sku_mapping_file import (
     build_mapping_template,
     import_mapping_file,
 )
+from shoponline.maintenance import retention
 from shoponline.web.app import (
     autosave_reply,
     current_user,
@@ -210,23 +211,28 @@ async def import_mappings(
     db: Session = Depends(get_db),
     user: AppUser = Depends(require_admin),
 ):
+    settings = request.app.state.settings
+    new_file = None
     try:
-        record = await save_upload(
-            request.app.state.settings,
+        record, created = await save_upload(
+            settings,
             file,
             kind="sku_mapping",
             platform=platform,
             actor=user.username,
         )
+        new_file = record.stored_path if created else None
         result = import_mapping_file(db, Path(record.stored_path), platform, user.username)
     except (UploadRejected, FileRejected, ValueError) as exc:
         db.rollback()
+        retention.discard_unused(db, settings, [new_file])
         flash(request, str(exc), "error")
         return redirect(f"/sku-mappings?platform={platform}")
     record.new_count = result.saved
     record.unchanged_count = result.unchanged
     db.add(record)
     db.commit()
+    retention.discard_unused(db, settings, [record.stored_path])  # read once, at import
     skipped = f", {result.skipped} dòng để trống bỏ qua" if result.skipped else ""
     flash(
         request,

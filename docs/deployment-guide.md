@@ -73,7 +73,7 @@ Script dừng lại nếu cổng web đang có tiến trình khác giữ; khi đ
 
 - `shoponline-web`: chạy `uv run shoponline web` khi máy khởi động, tự chạy lại nếu dừng.
 - `shoponline-backup`: chạy `backup-db.ps1` hằng ngày.
-- `shoponline-retention`: hằng ngày lúc 23:30 (`-RetentionTime`), liệt kê dữ liệu khách và file quá thời hạn lưu vào `<SHOPONLINE_DATA_DIR>\logs\retention.log`. Chỉ xóa thật khi đăng ký với `-RetentionApply`, sau một tuần xem log (xem [security-and-data-retention.md](security-and-data-retention.md#thời-hạn-lưu)).
+- `shoponline-retention`: hằng ngày lúc 23:30 (`-RetentionTime`), xóa file hết dùng và liệt kê dữ liệu khách quá thời hạn lưu vào `<SHOPONLINE_DATA_DIR>\logs\retention.log`. Dữ liệu khách chỉ bị xóa thật khi đăng ký với `-RetentionApply`, sau một tuần xem log (xem [security-and-data-retention.md](security-and-data-retention.md#thời-hạn-lưu)).
 
 Mọi tác vụ chạy ẩn, không mở cửa sổ nào để người khác lỡ tay đóng:
 

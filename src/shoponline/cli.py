@@ -174,35 +174,32 @@ def _cmd_robot_switch(args: argparse.Namespace) -> int:
 
 
 def _cmd_retention(args: argparse.Namespace) -> int:
-    from datetime import datetime
-
+    """Files are always swept by the keep rules; --apply decides only the customer data."""
     from shoponline.db.session import session_scope
     from shoponline.maintenance import retention
+    from shoponline.sapjobs import sap_settings
 
     settings = load_settings()
+    _setup_logging(settings, "retention.log")
+    actor = getpass.getuser()
     with session_scope(settings.database_url) as session:
         plan = retention.find_expired(session, settings)
         if args.apply:
-            retention.apply(session, plan, getpass.getuser())
-    if args.apply:
-        retention.delete_files(settings, plan)
+            retention.apply(session, plan, actor)
+        keep_days = sap_settings.load(session, os.environ).evidence_keep_days
+        swept = retention.sweep_files(session, settings, keep_days, actor)
     verb = "Đã xóa" if args.apply else "Sẽ xóa (chế độ liệt kê, thêm --apply để xóa thật)"
     lines = [
-        f"{datetime.now():%Y-%m-%d %H:%M} thời hạn {settings.retention_days} ngày, "
-        f"mốc {plan.cutoff:%Y-%m-%d}",
-        f"{verb}: tên và địa chỉ của {len(plan.customer_orders)} đơn, {len(plan.files)} file",
+        f"Thời hạn {settings.retention_days} ngày, mốc {plan.cutoff:%Y-%m-%d}",
+        f"{verb}: tên và địa chỉ của {len(plan.customer_orders)} đơn",
         *(f"  đơn {platform} {order_id}" for platform, order_id in plan.customer_orders),
-        *(f"  file {path}" for path in plan.files),
         f"Giữ lại vì chưa có DO trong sổ gửi kế toán hoặc chưa vào file Shop Online: "
         f"{len(plan.held_orders)} đơn",
         *(f"  đơn {platform} {order_id}" for platform, order_id in plan.held_orders),
+        f"Đã xóa {len(swept.files)} file hết dùng và {swept.screenshots} ảnh màn hình robot",
+        *(f"  file {path}" for path in swept.files),
     ]
-    text = "\n".join(lines)
-    print(text)
-    log_dir = settings.data_dir / "logs"
-    log_dir.mkdir(parents=True, exist_ok=True)
-    with (log_dir / "retention.log").open("a", encoding="utf-8") as log:
-        log.write(text + "\n\n")
+    logging.getLogger("shoponline.retention").info("\n".join(lines))
     return 0
 
 
@@ -285,9 +282,12 @@ def main(argv: list[str] | None = None) -> int:
     sap_secret.add_argument("--user", default="", help="Mặc định: user SAP trong cấu hình")
     sap_secret.set_defaults(func=_cmd_sap_secret)
     keep = sub.add_parser(
-        "retention", help="Liệt kê (hoặc xóa với --apply) dữ liệu khách quá thời hạn lưu"
+        "retention",
+        help="Xóa file hết dùng; liệt kê (hoặc xóa với --apply) dữ liệu khách quá thời hạn lưu",
     )
-    keep.add_argument("--apply", action="store_true", help="Xóa thật thay vì chỉ liệt kê")
+    keep.add_argument(
+        "--apply", action="store_true", help="Xóa thật dữ liệu khách thay vì chỉ liệt kê"
+    )
     keep.set_defaults(func=_cmd_retention)
     book = sub.add_parser("accounting-ledger", help="Sổ DO đã gửi kế toán (sổ nền và mốc ngày)")
     book_actions = book.add_subparsers(dest="action", required=True)

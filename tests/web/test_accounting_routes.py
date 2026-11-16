@@ -1,6 +1,7 @@
 import hashlib
 import re
 from datetime import date
+from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
@@ -311,3 +312,51 @@ def test_upload_to_the_run_covers_a_pair_and_a_missing_robot_still_allows_a_run(
         )
     assert "Đã thêm file zrsd004 vào đợt" in resp.text
     assert "Xong, có DO" in resp.text
+
+
+def _stored_run(db, app, tmp_path):
+    """An open run whose robot read and hand upload are stored like real ones, in uploads/."""
+    up = app.state.settings.upload_dir
+    up.mkdir(parents=True)
+    make_order(db, make_batch(db, gi=date(2026, 11, 12)), "A1", "210000001")
+    run = runs.start_run(db, QA, "admin", TODAY)
+    first, second = db.scalars(
+        select(AccountingRunRead)
+        .where(AccountingRunRead.run_id == run.id)
+        .order_by(AccountingRunRead.gi_date)
+    ).all()
+    robot = make_source(db, up / "robot.xlsx", [delivery_row("1900000001", "210000001")])
+    finish_job(db, first.sap_job_id, record=robot)
+    finish_job(db, second.sap_job_id, no_data=True)
+    by_hand = make_source(
+        db,
+        up / "hand.xlsx",
+        [delivery_row("1900000001", "210000001")],
+        imported_by="admin",
+        ingest=False,
+    )
+    runs.attach_upload(db, run, by_hand, "admin")
+    db.flush()
+    return run, Path(robot.stored_path), Path(by_hand.stored_path)
+
+
+def test_finalize_deletes_the_zrsd004_files_of_the_run(db, app, tmp_path):
+    run, robot, by_hand = _stored_run(db, app, tmp_path)
+    admin = _login(app, "admin")
+    admin.post(
+        f"/accounting/runs/{run.id}/finalize", data={"fingerprint": _fingerprint(admin, run)}
+    )
+    db.expire_all()
+    assert db.get(AccountingRun, run.id).status == ledger.FINALIZED
+    assert not robot.exists() and not by_hand.exists()
+    final = db.scalars(select(GeneratedFile)).one()
+    assert Path(final.stored_path).is_file()
+
+
+def test_cancel_deletes_the_robot_read_and_keeps_the_hand_upload_for_the_next_run(
+    db, app, tmp_path
+):
+    run, robot, by_hand = _stored_run(db, app, tmp_path)
+    _login(app, "admin").post(f"/accounting/runs/{run.id}/cancel")
+    assert not robot.exists()
+    assert by_hand.is_file()

@@ -1,5 +1,7 @@
+import hashlib
 from datetime import date
 from io import BytesIO
+from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
@@ -11,6 +13,7 @@ from shoponline.accounting import ledger
 from shoponline.config import Settings
 from shoponline.db.models import (
     AccountingSentDelivery,
+    GeneratedFile,
     ImportBatch,
     OrderBatch,
     SalesOrder,
@@ -62,6 +65,11 @@ def _upload(client, url, path, **data):
         )
 
 
+def _stored(db, kind):
+    db.expire_all()
+    return Path(db.scalars(select(ImportBatch.stored_path).where(ImportBatch.kind == kind)).one())
+
+
 def test_pages_require_login(app):
     client = _client(app)
     resp = client.get("/batches", follow_redirects=False)
@@ -84,6 +92,7 @@ def test_manual_mode_end_to_end(app, db, tmp_path, frozen_today):
     resp = _upload(client, "/imports", shopee, platform="SHOPEE", processing_date="2026-11-11")
     assert resp.status_code == 200
     assert "2 đơn mới" in resp.text and "2 đơn cần xử lý" in resp.text
+    assert not _stored(db, "shopee_orders").exists()  # read once, at import
 
     # 2. mapping screen lists missing products; import one via form, fix both
     page = client.get("/sku-mappings?platform=SHOPEE").text
@@ -109,6 +118,8 @@ def test_manual_mode_end_to_end(app, db, tmp_path, frozen_today):
     assert resp.status_code == 200
     ws = load_workbook(BytesIO(resp.content))["SHOPEE"]
     assert ws["C10"].value == "2611110AAAAAAA" and ws["E10"].value == 100000001
+    order_file = db.scalar(select(GeneratedFile).where(GeneratedFile.kind == "order_file"))
+    assert not Path(order_file.stored_path).exists()  # never downloaded again
 
     # 4. customer name entered on the web
     client.post(
@@ -133,6 +144,7 @@ def test_manual_mode_end_to_end(app, db, tmp_path, frozen_today):
     )
     resp = _upload(client, "/sap-reports/zrsd001", z1, batch_id=str(batch.id))
     assert resp.headers["location"] == f"/batches/{batch.id}"
+    assert not _stored(db, "zrsd001").exists()
     page = client.get(f"/batches/{batch.id}").text
     assert "2611110BBBBBBX" in page  # unmatched SO listed for manual link
     wrong = db.scalar(select(SalesOrder).where(SalesOrder.platform_order_id == "2611110BBBBBBB"))
@@ -154,6 +166,7 @@ def test_manual_mode_end_to_end(app, db, tmp_path, frozen_today):
     db.expire_all()
     assert {o.status for o in db.scalars(select(SalesOrder))} == {states.DELIVERED}
     record = db.scalar(select(ImportBatch).where(ImportBatch.kind == "zrsd004"))
+    assert Path(record.stored_path).is_file()  # waits to be attached to a run
 
     # 7. accounting run: the earlier upload is offered, then draft, finalize and download
     ledger.set_cutoff(db, date(2000, 1, 1), "test")  # the migration set it to the day it ran
@@ -192,6 +205,7 @@ def test_manual_mode_end_to_end(app, db, tmp_path, frozen_today):
     ws = load_workbook(BytesIO(final.content)).active
     assert ws.cell(3, 5).value == "2611110BBBBBBB"
     assert client.get(f"{run_url}/file").content == final.content
+    assert not Path(record.stored_path).exists()  # the run is closed
 
     # 8. a stored file that is gone gives a clear 404, not a server error
     for stored in app.state.settings.export_dir.glob("*.xlsx"):
@@ -219,6 +233,22 @@ def test_rejects_non_xlsx_and_missing_columns(app, db, tmp_path):
     resp = _upload(client, "/imports", missing, platform="SHOPEE", processing_date="2026-11-11")
     assert "Giá gốc" in resp.text
     assert db.scalar(select(SalesOrder)) is None
+    assert not any(app.state.settings.upload_dir.iterdir())  # the rejected file is not kept
+
+
+def test_rejected_upload_leaves_a_file_it_did_not_write(app, db, tmp_path):
+    client = _client(app, "admin", "admin-password")
+    z4 = zrsd004_file(tmp_path / "z4.xlsx", [zrsd004_row("1900000001", "210000001", "1")])
+    content = z4.read_bytes()
+    # The same content is being stored by another request that has not committed yet.
+    stored = app.state.settings.upload_dir / f"{hashlib.sha256(content).hexdigest()}.xlsx"
+    stored.parent.mkdir(parents=True)
+    stored.write_bytes(content)
+
+    resp = _upload(client, "/sap-reports/zrsd001", z4)
+
+    assert "zrsd001" in resp.text and resp.status_code == 200
+    assert stored.exists()
 
 
 def test_cancel_order(app, db, tmp_path):
@@ -310,6 +340,7 @@ def test_unmapped_excel_round_trip(app, db, tmp_path):
     workbook.save(filled)
     resp = _upload(client, "/sku-mappings/import", filled, platform="SHOPEE")
     assert resp.status_code == 303
+    assert not _stored(db, "sku_mapping").exists()
     page = client.get("/sku-mappings?platform=SHOPEE").text
     assert "Đã lưu 2 ánh xạ" in page and "1 dòng để trống bỏ qua" in page
     statuses = {o.platform_order_id: o.status for o in db.scalars(select(SalesOrder))}

@@ -32,6 +32,10 @@ def prune(evidence_dir: Path, keep_days: int, now: float | None = None) -> int:
     removed = 0
     for path in evidence_dir.glob("job-*.png"):
         if path.stat().st_mtime < cutoff:
-            path.unlink(missing_ok=True)
+            try:
+                path.unlink(missing_ok=True)
+            except OSError as exc:  # still open somewhere: the next prune takes it
+                log.warning("Không xóa được ảnh %s: %s", path, exc)
+                continue
             removed += 1
     return removed
