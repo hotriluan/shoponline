@@ -42,3 +42,6 @@ Thumbs.db
 
 # SAP recorder scripts, screenshots and sample exports hold real customer data
 docs/sap-recordings/
+
+# Personal local notes
+startserver.txt
