@@ -20,13 +20,13 @@ router = APIRouter()
 @router.get("/customers")
 def list_customers(
     request: Request,
-    batch_id: int | None = None,
+    batch_id: str = "",  # the filter's "no batch" option submits an empty value
     platform: str | None = None,
     missing: bool = False,
     db: Session = Depends(get_db),
     user: AppUser = Depends(current_user),
 ):
-    batch = db.get(OrderBatch, batch_id) if batch_id else None
+    batch = db.get(OrderBatch, int(batch_id)) if batch_id.strip().isdigit() else None
     if batch is not None:
         order_ids = [o.platform_order_id for o in sorted(batch.orders, key=lambda o: o.ordered_at)]
         found = {

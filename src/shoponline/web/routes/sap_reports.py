@@ -29,11 +29,12 @@ def _page(request, db, user, **extra):
 @router.get("/sap-reports")
 def sap_reports(
     request: Request,
-    batch_id: int | None = None,
+    batch_id: str = "",  # an empty value means no batch is preselected
     db: Session = Depends(get_db),
     user: AppUser = Depends(current_user),
 ):
-    return _page(request, db, user, selected_batch=batch_id)
+    selected = int(batch_id) if batch_id.strip().isdigit() else None
+    return _page(request, db, user, selected_batch=selected)
 
 
 @router.post("/sap-reports/zrsd001")

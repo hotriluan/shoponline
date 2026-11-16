@@ -358,6 +358,14 @@ def test_autosave_answers_json_and_saves_one_row(app, db, tmp_path):
     assert batch.gi_date == date(2026, 11, 13)
 
 
+def test_filter_forms_accept_the_empty_batch_choice(login):
+    """The "no batch" option submits batch_id= and must not be a 422."""
+    client = login("viewer")
+    resp = client.get("/customers?batch_id=&platform=SHOPEE")
+    assert resp.status_code == 200 and "SHOPEE (0 dòng)" in resp.text
+    assert client.get("/sap-reports?batch_id=").status_code == 200
+
+
 def test_autosave_refused_for_viewer_and_expired_login(app, db, tmp_path):
     form = {"platform": "SHOPEE", "platform_order_id": "A1", "customer_name": "X"}
     resp = _client(app).post("/customers/save", data=form, headers=AUTOSAVE)
