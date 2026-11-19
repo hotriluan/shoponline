@@ -7,12 +7,23 @@ exactly what that file confirmed.
 
 from __future__ import annotations
 
-from datetime import date
+from calendar import monthrange
+from datetime import date, timedelta
 from io import BytesIO
 from pathlib import Path
 from urllib.parse import quote
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, Response, UploadFile
+from fastapi import (
+    APIRouter,
+    Depends,
+    File,
+    Form,
+    HTTPException,
+    Query,
+    Request,
+    Response,
+    UploadFile,
+)
 from fastapi.responses import FileResponse
 from sqlalchemy import delete, func, literal, select
 from sqlalchemy.dialects.postgresql import insert
@@ -59,6 +70,24 @@ router = APIRouter()
 KIND = "sales_history"
 XLSX = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 RECENT_FILES = 20
+MONTH = r"^\d{4}-(0[1-9]|1[0-2])$"  # YYYY-MM, as sent by <input type="month">
+
+
+def _month_bounds(month: str | None) -> tuple[str, date, date]:
+    """The chosen order month as YYYY-MM, its first and its last day.
+
+    Without a choice it is last month: the file for a month is made early in the next one.
+    """
+    if month is None:
+        first = (today_vn().replace(day=1) - timedelta(days=1)).replace(day=1)
+    else:
+        first = date.fromisoformat(f"{month}-01")
+    last = first.replace(day=monthrange(first.year, first.month)[1])
+    return first.strftime("%Y-%m"), first, last
+
+
+def _back(month: str) -> str:
+    return f"/sales-history?month={month}"
 
 
 def _fix_link(kind: str, batch_id: int) -> str | None:
@@ -73,13 +102,14 @@ def _fix_link(kind: str, batch_id: int) -> str | None:
     return None
 
 
-def _invoice_range(result: HistoryRows) -> tuple[date, date] | None:
-    """Billing dates that cover every order waiting for its invoice: an invoice is issued after
-    the DO, which comes after the order, so billing date >= order date."""
+def _invoice_range(result: HistoryRows, first_day: date) -> tuple[date, date] | None:
+    """Billing dates from the first day of the chosen month (or an older order still waiting)
+    up to today: an invoice is issued after the DO, which comes after the order, so the invoice
+    of an order placed at the end of the month is billed in the next one."""
     waiting = [
         b.ordered_at.date() for b in result.blocked if any(r.kind == TAX_INVOICE for r in b.reasons)
     ]
-    return (min(waiting), today_vn()) if waiting else None
+    return (min(first_day, *waiting), today_vn()) if waiting else None
 
 
 def _settlement_range(result: HistoryRows) -> tuple[date, date] | None:
@@ -130,11 +160,11 @@ def _recent_files(db: Session) -> list[dict]:
 @router.get("/sales-history")
 def sales_history_page(
     request: Request,
-    until: date | None = None,
+    month: str | None = Query(None, pattern=MONTH),
     db: Session = Depends(get_db),
     user: AppUser = Depends(current_user),
 ):
-    until = until or today_vn()
+    month, first_day, until = _month_bounds(month)
     result = collect_rows(db, until)
     rows = [
         dict(order=b, reasons=[(r.text, _fix_link(r.kind, b.order_batch_id)) for r in b.reasons])
@@ -143,12 +173,13 @@ def sales_history_page(
     blocked = [row for row in rows if not _only_settlement(row["order"])]
     waiting_settlement = [row for row in rows if _only_settlement(row["order"])]
     settlement_count = sum(any(r.kind == SETTLEMENT for r in b.reasons) for b in result.blocked)
-    invoice_range = _invoice_range(result)
+    invoice_range = _invoice_range(result, first_day)
     waiting_invoice = sum(any(r.kind == TAX_INVOICE for r in b.reasons) for b in result.blocked)
     return render(
         request,
         "sales_history.html",
         user,
+        month=month,
         until=until,
         invoice_range=invoice_range,
         waiting_invoice=waiting_invoice,
@@ -167,7 +198,7 @@ def sales_history_page(
 @router.get("/sales-history/file")
 def download_history_file(
     request: Request,
-    until: date | None = None,
+    month: str | None = Query(None, pattern=MONTH),
     db: Session = Depends(get_db),
     user: AppUser = Depends(current_user),
 ):
@@ -175,8 +206,8 @@ def download_history_file(
 
     Blocked orders are left out and stay pending, so they go into a later file once complete.
     """
-    until = until or today_vn()
-    back = f"/sales-history?until={until.isoformat()}"
+    month, _, until = _month_bounds(month)
+    back = _back(month)
     result = collect_rows(db, until)
     if not result.rows:
         if result.blocked:
@@ -205,7 +236,7 @@ def download_history_file(
 @router.get("/sales-history/draft")
 def download_draft_file(
     request: Request,
-    until: date | None = None,
+    month: str | None = Query(None, pattern=MONTH),
     db: Session = Depends(get_db),
     user: AppUser = Depends(current_user),
 ):
@@ -213,11 +244,11 @@ def download_draft_file(
 
     Nothing is stored: no generated file, no order record, so it cannot be confirmed as pasted.
     """
-    until = until or today_vn()
+    month, _, until = _month_bounds(month)
     result = collect_rows(db, until, draft=True)
     if not result.rows:
         flash(request, "Không có đơn nào để xuất nháp.", "error")
-        return redirect(f"/sales-history?until={until.isoformat()}")
+        return redirect(_back(month))
     buffer = BytesIO()
     build_history_workbook(result.rows, draft=True).save(buffer)
     name = quote(history_draft_file_name(today_vn()))
@@ -231,13 +262,14 @@ def download_draft_file(
 @router.post("/sales-history/read-zrsd003")
 def read_zrsd003(
     request: Request,
-    until: date = Form(...),
+    month: str = Form(..., pattern=MONTH),
     db: Session = Depends(get_db),
     user: AppUser = Depends(require_admin),
 ):
-    """Ask the robot to read zrsd003 over the billing dates of the orders waiting for invoices."""
-    back = f"/sales-history?until={until.isoformat()}"
-    invoice_range = _invoice_range(collect_rows(db, until))
+    """Ask the robot to read zrsd003 over the billing dates of the chosen month's orders."""
+    month, first_day, until = _month_bounds(month)
+    back = _back(month)
+    invoice_range = _invoice_range(collect_rows(db, until), first_day)
     if invoice_range is None:
         flash(request, "Không có đơn nào chờ Tax Invoice Doc.", "error")
         return redirect(back)
@@ -260,7 +292,7 @@ def read_zrsd003(
 @router.post("/sales-history/settlement")
 async def upload_settlement(
     request: Request,
-    until: date = Form(...),
+    month: str = Form(..., pattern=MONTH),
     file: UploadFile = File(...),
     db: Session = Depends(get_db),
     user: AppUser = Depends(require_admin),
@@ -268,7 +300,7 @@ async def upload_settlement(
     """Read a Shopee or TikTok settlement file once: it holds the seller's login and, for TikTok,
     withdrawal history, so only order ids, amounts and dates are kept."""
     settings = request.app.state.settings
-    back = f"/sales-history?until={until.isoformat()}"
+    back = _back(month)
     new_file = None
     try:
         record, created = await save_upload(

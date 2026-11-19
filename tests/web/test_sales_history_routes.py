@@ -22,6 +22,7 @@ from tests.fixtures.build_fixtures import (
 )
 
 pytestmark = pytest.mark.usefixtures("frozen_today")  # today is 2026-11-13
+PAGE = "/sales-history?month=2026-11"
 
 
 def _count(db, model):
@@ -60,7 +61,7 @@ def test_a_file_with_an_order_still_unconfirmed_is_kept(db, login):
 
 
 def _download(client):
-    resp = client.get("/sales-history/file", follow_redirects=False)
+    resp = client.get("/sales-history/file?month=2026-11", follow_redirects=False)
     assert resp.status_code == 200, resp.text
     return resp
 
@@ -76,9 +77,9 @@ def test_blocked_order_is_left_out_of_the_download(db, login):
     setup.order(db, "NO-NAME", datetime(2026, 11, 11, 9), name=None)
     client = login("admin")
 
-    page = client.get("/sales-history").text
+    page = client.get(PAGE).text
 
-    assert 'value="2026-11-13"' in page
+    assert 'value="2026-11"' in page
     assert "NO-NAME" in page and "Thiếu tên khách" in page
     assert "/customers?batch_id=" in page
     assert "/sales-history/file" in page
@@ -94,7 +95,7 @@ def test_blocked_order_goes_into_a_later_file_once_complete(db, login):
     setup.order(db, "GOOD", datetime(2026, 11, 11, 8))
     late = setup.order(db, "LATE", datetime(2026, 11, 10, 9), invoice=None)
     admin = login("admin")
-    assert f"DO {late.do_number} chưa có Tax Invoice Doc." in admin.get("/sales-history").text
+    assert f"DO {late.do_number} chưa có Tax Invoice Doc." in admin.get(PAGE).text
     _download(admin)
     (first,) = _file_ids(db)
     admin.post(f"/sales-history/files/{first}/confirm")
@@ -110,25 +111,50 @@ def test_only_blocked_orders_offer_no_download(db, login):
     setup.order(db, "NO-NAME", datetime(2026, 11, 11, 9), name=None)
     client = login("admin")
 
-    assert "/sales-history/file" not in client.get("/sales-history").text
-    resp = client.get("/sales-history/file", follow_redirects=False)
+    assert "/sales-history/file" not in client.get(PAGE).text
+    resp = client.get("/sales-history/file?month=2026-11", follow_redirects=False)
     assert resp.status_code == 303
     assert _file_ids(db) == []
 
 
 def test_missing_report_name_links_to_the_names_page(db, login):
     setup.order(db, "A-1", datetime(2026, 11, 11))
-    page = login("viewer").get("/sales-history").text
+    page = login("viewer").get(PAGE).text
     assert 'href="/report-names?missing=true"' in page
     assert f"Mã {setup.MATERIAL} chưa có tên báo cáo" in page
 
 
-def test_order_after_the_chosen_day_is_left_for_later(db, login):
+def test_an_order_after_the_chosen_month_is_left_for_later(db, login):
     setup.report_name(db)
-    setup.order(db, "TODAY", datetime(2026, 11, 13, 10))
+    setup.order(db, "OCT-31", datetime(2026, 10, 31, 23, 30))
+    setup.order(db, "NOV-01", datetime(2026, 11, 1, 0, 5))
     client = login("admin")
-    assert "<b>0</b> đơn" in client.get("/sales-history?until=2026-11-12").text
-    assert "<b>1</b> đơn" in client.get("/sales-history").text
+
+    october = client.get("/sales-history?month=2026-10").text
+    assert "<b>1</b> đơn" in october and "/sales-history/file?month=2026-10" in october
+    ws = load_workbook(BytesIO(client.get("/sales-history/file?month=2026-10").content))["sheet1"]
+    assert [ws.cell(r, 18).value for r in range(2, ws.max_row + 1)] == ["OCT-31"]
+    draft = client.get("/sales-history/draft?month=2026-10").content
+    assert load_workbook(BytesIO(draft))["sheet1"].max_row == 2
+    assert "<b>2</b> đơn" in client.get(PAGE).text  # OCT-31 stays until it is confirmed
+
+
+def test_the_page_opens_on_last_month(db, login):
+    setup.report_name(db)
+    setup.order(db, "OCT", datetime(2026, 10, 20))
+    setup.order(db, "NOV", datetime(2026, 11, 2))
+    page = login("viewer").get("/sales-history").text
+    assert 'name="month" value="2026-10"' in page
+    assert "<b>1</b> đơn" in page and "31/10/2026" in page
+
+
+@pytest.mark.parametrize("month", ["2026-13", "2026-1", "abc", "2026-11-13"])
+def test_a_malformed_month_is_refused(db, login, month):
+    client = login("admin")
+    assert client.get(f"/sales-history?month={month}").status_code == 422
+    assert client.get(f"/sales-history/file?month={month}").status_code == 422
+    resp = client.post("/sales-history/read-zrsd003", data={"month": month})
+    assert resp.status_code == 422
 
 
 def test_download_confirm_and_unconfirm(db, login):
@@ -142,7 +168,7 @@ def test_download_confirm_and_unconfirm(db, login):
     assert _order_ids_in_sheet(resp) == 3  # A-1 one line, A-2 two lines
     (file_id,) = _file_ids(db)
     assert _count(db, SalesHistoryFileOrder) == 2
-    page = admin.get("/sales-history").text
+    page = admin.get(PAGE).text
     assert "Chưa xác nhận" in page and "Xác nhận đã dán" in page
 
     # A late DO arrives before the paste is confirmed: it waits for the next file.
@@ -170,7 +196,7 @@ def test_download_confirm_and_unconfirm(db, login):
     db.expire_all()
     exported = set(db.scalars(select(SalesHistoryExported.sales_order_id)))
     assert first.id not in exported
-    assert "<b>3</b> đơn" in admin.get("/sales-history").text
+    assert "<b>3</b> đơn" in admin.get(PAGE).text
     kinds = [
         e.kind for e in db.scalars(select(EventLog).where(EventLog.kind.like("sales_history_%")))
     ]
@@ -213,7 +239,7 @@ def test_viewer_downloads_but_cannot_confirm(db, login):
     viewer = login("viewer")
     _download(viewer)
     (file_id,) = _file_ids(db)
-    assert "<button>Xác nhận đã dán</button>" not in viewer.get("/sales-history").text
+    assert "<button>Xác nhận đã dán</button>" not in viewer.get(PAGE).text
 
     resp = viewer.post(
         f"/sales-history/files/{file_id}/confirm",
@@ -222,7 +248,7 @@ def test_viewer_downloads_but_cannot_confirm(db, login):
     )
     assert resp.status_code == 303 and resp.headers["location"].endswith("/sales-history")
     assert _count(db, SalesHistoryExported) == 0
-    assert "Tài khoản xem không được thay đổi dữ liệu" in viewer.get("/sales-history").text
+    assert "Tài khoản xem không được thay đổi dữ liệu" in viewer.get(PAGE).text
 
     login("admin").post(f"/sales-history/files/{file_id}/confirm")
     viewer.post(f"/sales-history/files/{file_id}/unconfirm")
@@ -241,7 +267,7 @@ def test_orders_waiting_for_invoices_offer_a_zrsd003_read(db, login):
     setup.order(db, "LATE", datetime(2026, 11, 12, 8), invoice=None)
     admin = login("admin")
 
-    page = admin.get("/sales-history").text
+    page = admin.get(PAGE).text
     assert f"DO {early.do_number} chưa có Tax Invoice Doc." in page
     assert 'href="#tax-invoice"' in page and "<b>2</b> đơn đã có DO" in page
     assert "Robot chưa được bật" in page and 'href="/sap-reports"' in page
@@ -249,30 +275,52 @@ def test_orders_waiting_for_invoices_offer_a_zrsd003_read(db, login):
 
     configure_sap(db, SapTarget("QAS", "300"))
     db.expire_all()
-    page = admin.get("/sales-history").text
+    page = admin.get(PAGE).text
     assert 'action="/sales-history/read-zrsd003"' in page
-    assert "từ\n    10/11/2026 đến 13/11/2026" in page
+    assert "từ\n    01/11/2026 đến 13/11/2026" in page  # whole month up to today
 
     viewer = login("viewer")
-    assert "/sales-history/read-zrsd003" not in viewer.get("/sales-history").text
-    viewer.post("/sales-history/read-zrsd003", data={"until": "2026-11-13"})
+    assert "/sales-history/read-zrsd003" not in viewer.get(PAGE).text
+    viewer.post("/sales-history/read-zrsd003", data={"month": "2026-11"})
     assert _count(db, SapJob) == 0
 
-    resp = admin.post("/sales-history/read-zrsd003", data={"until": "2026-11-13"})
-    assert "Robot sẽ đọc zrsd003 từ 10/11/2026 đến 13/11/2026" in resp.text
+    resp = admin.post("/sales-history/read-zrsd003", data={"month": "2026-11"})
+    assert "Robot sẽ đọc zrsd003 từ 01/11/2026 đến 13/11/2026" in resp.text
+    assert str(resp.url).endswith("/sales-history?month=2026-11")  # back on the chosen month
     job = db.scalar(select(SapJob))
     assert job.kind == queue.READ_ZRSD003
-    assert queue.payload_of(job) == {"date_from": "2026-11-10", "date_to": "2026-11-13"}
-    again = admin.post("/sales-history/read-zrsd003", data={"until": "2026-11-13"}).text
+    assert queue.payload_of(job) == {"date_from": "2026-11-01", "date_to": "2026-11-13"}
+    again = admin.post("/sales-history/read-zrsd003", data={"month": "2026-11"}).text
     assert "Đã có việc" in again and _count(db, SapJob) == 1
+
+
+def test_the_zrsd003_read_reaches_back_to_an_older_order_still_waiting(db, login):
+    from shoponline.db.models import SapJob
+    from shoponline.sapjobs import queue
+    from shoponline.sapjobs.queue import SapTarget
+    from tests.sap_setup import configure_sap
+
+    setup.report_name(db)
+    configure_sap(db, SapTarget("QAS", "300"))
+    setup.order(db, "END-OCT", datetime(2026, 10, 30, 8), invoice=None)
+    admin = login("admin")
+
+    # The October file is made in November: the invoice of a 30/10 order is billed later.
+    page = admin.get("/sales-history?month=2026-10").text
+    assert "từ\n    01/10/2026 đến 13/11/2026" in page
+
+    setup.order(db, "SEPT", datetime(2026, 9, 25, 8), invoice=None)
+    admin.post("/sales-history/read-zrsd003", data={"month": "2026-10"})
+    job = db.scalar(select(SapJob))
+    assert queue.payload_of(job) == {"date_from": "2026-09-25", "date_to": "2026-11-13"}
 
 
 def test_no_zrsd003_box_when_every_order_has_its_invoice(db, login):
     setup.report_name(db)
     setup.order(db, "A-1", datetime(2026, 11, 11))
     admin = login("admin")
-    assert 'id="tax-invoice"' not in admin.get("/sales-history").text
-    resp = admin.post("/sales-history/read-zrsd003", data={"until": "2026-11-13"})
+    assert 'id="tax-invoice"' not in admin.get(PAGE).text
+    resp = admin.post("/sales-history/read-zrsd003", data={"month": "2026-11"})
     assert "Không có đơn nào chờ Tax Invoice Doc." in resp.text
 
 
@@ -280,7 +328,7 @@ def _upload(client, path):
     with path.open("rb") as handle:
         return client.post(
             "/sales-history/settlement",
-            data={"until": "2026-11-13"},
+            data={"month": "2026-11"},
             files={"file": (path.name, handle, "application/octet-stream")},
         )
 
@@ -299,7 +347,7 @@ def test_orders_waiting_for_settlement_have_their_own_box_and_enter_after_the_up
     setup.order(db, "NO-NAME", datetime(2026, 11, 11, 9), name=None, settlement=None)
     admin = login("admin")
 
-    page = admin.get("/sales-history").text
+    page = admin.get(PAGE).text
     assert 'id="settlement"' in page and "Đơn chờ tiền vô (2)" in page
     assert "<b>2</b> đơn chờ tiền vô" in page
     assert "10/11/2026 đến 13/11/2026" in page
@@ -313,7 +361,7 @@ def test_orders_waiting_for_settlement_have_their_own_box_and_enter_after_the_up
     assert "Tiền vô Shopee: 1 giao dịch của 1 đơn (1 mới, 0 đổi, 0 không đổi)" in resp.text
     assert _uploads(app) == []  # read once, then deleted
 
-    assert "Đơn chờ tiền vô (1)" in admin.get("/sales-history").text
+    assert "Đơn chờ tiền vô (1)" in admin.get(PAGE).text
     ws = load_workbook(BytesIO(_download(admin).content))["sheet1"]
     assert [(ws.cell(r, 18).value, ws.cell(r, 20).value) for r in range(2, ws.max_row + 1)] == [
         ("WAIT-1", 55000),
@@ -326,11 +374,11 @@ def test_a_page_with_only_waiting_orders_is_not_empty(db, login):
     setup.order(db, "WAIT-1", datetime(2026, 11, 10, 9), settlement=None)
     admin = login("admin")
 
-    page = admin.get("/sales-history").text
+    page = admin.get(PAGE).text
 
     assert "Không có đơn nào chờ xuất" not in page
     assert "/sales-history/file" not in page
-    resp = admin.get("/sales-history/file", follow_redirects=True)
+    resp = admin.get("/sales-history/file?month=2026-11", follow_redirects=True)
     assert "Không có đơn nào chờ xuất" not in resp.text
     assert "đang chờ hoặc bị chặn" in resp.text
 
@@ -340,7 +388,7 @@ def test_the_settlement_upload_is_for_admins_only(db, login, app, tmp_path):
     path = shopee_settlement_file(tmp_path / "s.xlsx", [shopee_settlement_row("WAIT-1", 1.0)])
     viewer = login("viewer")
 
-    assert 'action="/sales-history/settlement"' not in viewer.get("/sales-history").text
+    assert 'action="/sales-history/settlement"' not in viewer.get(PAGE).text
     _upload(viewer, path)
     assert _count(db, PlatformSettlement) == 0
     assert _uploads(app) == []
@@ -373,7 +421,7 @@ def test_an_unexpected_error_still_deletes_the_uploaded_file(db, login, app, tmp
 
 
 def _draft(client):
-    resp = client.get("/sales-history/draft", follow_redirects=False)
+    resp = client.get("/sales-history/draft?month=2026-11", follow_redirects=False)
     assert resp.status_code == 200, resp.text
     return resp
 
@@ -398,7 +446,7 @@ def test_the_draft_downloads_without_storing_or_remembering_anything(db, login):
     assert ws.max_row == 3
     assert _file_ids(db) == []
     assert _count(db, SalesHistoryFileOrder) == 0
-    assert "NHÁP" not in admin.get("/sales-history").text.split("File đã tải")[1]
+    assert "NHÁP" not in admin.get(PAGE).text.split("File đã tải")[1]
     _download(admin)  # the real file is unchanged: only the complete order
     assert _count(db, SalesHistoryFileOrder) == 1
 
@@ -408,11 +456,11 @@ def test_a_draft_is_offered_and_downloads_when_only_waiting_orders_exist(db, log
     setup.order(db, "WAIT-1", datetime(2026, 11, 10, 9), settlement=None)
     viewer = login("viewer")
 
-    page = viewer.get("/sales-history").text
+    page = viewer.get(PAGE).text
 
-    assert "/sales-history/draft?until=2026-11-13" in page and "/sales-history/file" not in page
+    assert "/sales-history/draft?month=2026-11" in page and "/sales-history/file" not in page
     assert _draft(viewer).content
-    resp = viewer.get("/sales-history/file", follow_redirects=True)
+    resp = viewer.get("/sales-history/file?month=2026-11", follow_redirects=True)
     assert "đang chờ hoặc bị chặn" in resp.text
 
 
@@ -421,6 +469,6 @@ def test_no_draft_when_no_order_can_be_one(db, login):
     setup.order(db, "NO-NAME", datetime(2026, 11, 11), name=None)
     admin = login("admin")
 
-    assert "/sales-history/draft" not in admin.get("/sales-history").text
-    resp = admin.get("/sales-history/draft", follow_redirects=True)
+    assert "/sales-history/draft" not in admin.get(PAGE).text
+    resp = admin.get("/sales-history/draft?month=2026-11", follow_redirects=True)
     assert "Không có đơn nào để xuất nháp." in resp.text
