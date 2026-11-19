@@ -37,11 +37,11 @@ from shoponline.web.app import (
     robot_refusal,
     sap_config,
 )
+from shoponline.web.pagination import paginate
 from shoponline.web.uploads import UploadRejected, save_upload
 
 router = APIRouter()
 XLSX = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-RECENT_RUNS = 20
 RETRYABLE = (runs.ERROR, runs.NO_DATA, runs.MISSING_FILE, runs.NO_JOB)
 
 
@@ -97,9 +97,16 @@ def accounting_page(
 ):
     today = today_vn()
     open_run = runs.open_run(db)
-    recent = db.scalars(
-        select(AccountingRun).order_by(AccountingRun.id.desc()).limit(RECENT_RUNS)
-    ).all()
+    page = paginate(
+        request,
+        db,
+        select(AccountingRun).order_by(AccountingRun.id.desc()),
+        AccountingRun.id,
+        AccountingRun.status,
+        AccountingRun.created_by,
+        AccountingRun.finalized_by,
+    )
+    recent = page.items
     due = None if open_run else runs.due_pairs(db, today)
     return render(
         request,
@@ -107,6 +114,7 @@ def accounting_page(
         user,
         open_run=open_run,
         recent=recent,
+        page=page,
         counts=_delivery_counts(db, [r.id for r in recent]),
         due=due,
     )

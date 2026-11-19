@@ -25,13 +25,18 @@
 </form>
 <p class="muted">Dùng khi robot không đọc được zrsd003. Hóa đơn xuất sau DO; trên SAP chọn Sales Organization 1000, Sales Office 1401 và Billing Date bao trùm các đơn đang chờ hóa đơn. Chỉ giữ hóa đơn của khách SAP các sàn; file gốc bị xóa ngay sau khi nhập.</p>
 {% endif %}
+{% from "pager.html" import search, links, empty_search %}
 <h2>Lần tải gần đây</h2>
-<table>
+{{ search(page, 'Tìm theo loại, tên file, người tải…') }}
+<table data-server>
   <tr><th>Lúc</th><th>Loại</th><th>File</th><th>Người</th><th>Mới / cập nhật / không đổi</th><th></th></tr>
   {% for r in recent %}
   <tr><td>{{ r.imported_at|localtime('%d/%m/%Y %H:%M') }}</td><td>{{ r.kind }}</td><td>{{ r.file_name }}</td><td>{{ r.imported_by }}</td>
       <td>{{ r.new_count }} / {{ r.updated_count }} / {{ r.unchanged_count }}</td>
       <td>{% if r.kind == 'zrsd004' %}<a href="/accounting">Gửi kế toán</a>{% endif %}</td></tr>
+  {% else %}
+  <tr><td colspan="6" class="muted">{{ empty_search(page, 'Chưa tải lần nào.') }}</td></tr>
   {% endfor %}
 </table>
+{{ links(page) }}
 {% endblock %}

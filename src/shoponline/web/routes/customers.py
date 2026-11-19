@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Depends, Form, Request
-from sqlalchemy import select
+from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
 from shoponline.db.models import AppUser, CustomerInfo, OrderBatch, PlatformSetting, SalesOrder
@@ -13,6 +13,7 @@ from shoponline.web.app import (
     render,
     require_admin,
 )
+from shoponline.web.pagination import paginate
 
 router = APIRouter()
 
@@ -27,6 +28,7 @@ def list_customers(
     user: AppUser = Depends(current_user),
 ):
     batch = db.get(OrderBatch, int(batch_id)) if batch_id.strip().isdigit() else None
+    page = None  # only the per-platform list is paged on the server
     if batch is not None:
         order_ids = [o.platform_order_id for o in sorted(batch.orders, key=lambda o: o.ordered_at)]
         found = {
@@ -45,15 +47,28 @@ def list_customers(
         platform = batch.platform
     else:
         platform = platform or "LAZADA"
-        rows = list(
-            db.scalars(
-                select(CustomerInfo)
-                .where(CustomerInfo.platform == platform)
-                .order_by(CustomerInfo.updated_at.desc())
-                .limit(200)
-            )
+        stmt = (
+            select(CustomerInfo)
+            .where(CustomerInfo.platform == platform)
+            .order_by(CustomerInfo.updated_at.desc(), CustomerInfo.id.desc())
         )
-    if missing:
+        if missing:
+            stmt = stmt.where(
+                or_(
+                    func.coalesce(CustomerInfo.customer_name, "") == "",
+                    func.coalesce(CustomerInfo.address, "") == "",
+                )
+            )
+        page = paginate(
+            request,
+            db,
+            stmt,
+            CustomerInfo.platform_order_id,
+            CustomerInfo.customer_name,
+            CustomerInfo.address,
+        )
+        rows = page.items
+    if batch is not None and missing:
         rows = [r for r in rows if not r.customer_name or not r.address]
     batches = db.scalars(
         select(OrderBatch).order_by(OrderBatch.processing_date.desc()).limit(30)
@@ -66,6 +81,7 @@ def list_customers(
         "customers.html",
         user,
         rows=rows,
+        page=page,
         batch=batch,
         batches=batches,
         platform=platform,

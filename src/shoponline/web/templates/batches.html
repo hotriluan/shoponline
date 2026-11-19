@@ -1,9 +1,12 @@
 {% extends "base.html" %}
 {% block title %}Lô đơn{% endblock %}
 {% block content %}
+{% from "pager.html" import search, links, empty_search %}
 <h1>Lô đơn</h1>
-{% if not batches %}<p class="muted">Chưa có lô nào. <a href="/imports">Tải file sàn</a> để bắt đầu.</p>{% else %}
-<table>
+{% if not page.total and not page.q %}<p class="muted">Chưa có lô nào. <a href="/imports">Tải file sàn</a> để bắt đầu.</p>{% else %}
+{{ search(page, 'Tìm theo sàn, ngày (dd/mm/yyyy), người xác nhận…') }}
+{% if not batches %}<p class="muted">{{ empty_search(page, '') }}</p>{% else %}
+<table data-server>
   <tr><th>Ngày xử lý</th><th>Sàn</th><th>Ngày goods issue</th><th>Số đơn</th><th>Theo trạng thái</th><th>Xác nhận SO/DO</th></tr>
   {% for b in batches %}
   <tr>
@@ -16,5 +19,7 @@
   </tr>
   {% endfor %}
 </table>
+{{ links(page) }}
+{% endif %}
 {% endif %}
 {% endblock %}

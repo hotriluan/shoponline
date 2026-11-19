@@ -1,0 +1,35 @@
+{# Search box, page size and page links for a list paged on the server (see web/pagination.py). #}
+{% macro search(page, placeholder='Tìm…') %}
+<form class="tt-bar" method="get">
+  {% for k, v in page.keep %}<input type="hidden" name="{{ k }}" value="{{ v }}">{% endfor %}
+  <label class="tt-search"><span class="tt-sr">Tìm trong danh sách</span>
+    <input type="search" name="q" value="{{ page.q }}" placeholder="{{ placeholder }}" autocomplete="off"></label>
+  <button class="secondary">Tìm</button>
+  {% if page.q %}<a class="button secondary" href="{{ page.url(1, '') }}">Xóa tìm kiếm</a>{% endif %}
+  <span class="tt-count">{% if page.q %}{{ page.total }} dòng khớp “{{ page.q }}”{% else %}{{ page.total }} dòng{% endif %}</span>
+  <label class="tt-size">Hiện
+    <select name="size" onchange="this.form.submit()">
+      {% for n in (10, 25, 50, 100) %}<option {{ 'selected' if n == page.size }}>{{ n }}</option>{% endfor %}
+    </select> dòng/trang</label>
+</form>
+{% endmacro %}
+
+{% macro links(page) %}
+{% if page.pages > 1 %}
+<nav class="tt-pager" aria-label="Phân trang">
+  <span>Hiển thị {{ page.first }}–{{ page.last }} trong {{ page.total }} dòng</span>
+  <span class="tt-pages">
+    {% if page.page > 1 %}<a class="button secondary" href="{{ page.url(page.page - 1) }}" aria-label="Trang trước">‹</a>{% endif %}
+    {% for n in page.numbers() %}
+      {% if n is none %}<span class="muted">…</span>
+      {% else %}<a class="button secondary" href="{{ page.url(n) }}" aria-label="Trang {{ n }}"{% if n == page.page %} aria-current="page"{% endif %}>{{ n }}</a>{% endif %}
+    {% endfor %}
+    {% if page.page < page.pages %}<a class="button secondary" href="{{ page.url(page.page + 1) }}" aria-label="Trang sau">›</a>{% endif %}
+  </span>
+</nav>
+{% endif %}
+{% endmacro %}
+
+{% macro empty_search(page, none_text) %}
+{% if page.q %}Không có dòng nào khớp “{{ page.q }}”. Thử từ khóa khác hoặc <a href="{{ page.url(1, '') }}">xóa tìm kiếm</a>.{% else %}{{ none_text }}{% endif %}
+{% endmacro %}

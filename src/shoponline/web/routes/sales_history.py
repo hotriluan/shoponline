@@ -64,12 +64,12 @@ from shoponline.web.app import (
     robot_refusal,
     sap_config,
 )
+from shoponline.web.pagination import Page, paginate
 from shoponline.web.uploads import UploadRejected, save_generated, save_upload
 
 router = APIRouter()
 KIND = "sales_history"
 XLSX = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-RECENT_FILES = 20
 MONTH = r"^\d{4}-(0[1-9]|1[0-2])$"  # YYYY-MM, as sent by <input type="month">
 
 
@@ -124,13 +124,17 @@ def _only_settlement(blocked) -> bool:
     return all(r.kind == SETTLEMENT for r in blocked.reasons)
 
 
-def _recent_files(db: Session) -> list[dict]:
-    files = db.scalars(
+def _recent_files(request: Request, db: Session) -> tuple[Page, list[dict]]:
+    page = paginate(
+        request,
+        db,
         select(GeneratedFile)
         .where(GeneratedFile.kind == KIND)
-        .order_by(GeneratedFile.created_at.desc(), GeneratedFile.id.desc())
-        .limit(RECENT_FILES)
-    ).all()
+        .order_by(GeneratedFile.created_at.desc(), GeneratedFile.id.desc()),
+        GeneratedFile.file_name,
+        GeneratedFile.created_by,
+    )
+    files = page.items
     ids = [f.id for f in files]
     in_file = dict(
         db.execute(
@@ -146,7 +150,7 @@ def _recent_files(db: Session) -> list[dict]:
             .group_by(SalesHistoryExported.generated_file_id)
         ).all()
     )
-    return [
+    return page, [
         dict(
             file=f,
             orders=in_file.get(f.id, 0),
@@ -173,6 +177,7 @@ def sales_history_page(
     blocked = [row for row in rows if not _only_settlement(row["order"])]
     waiting_settlement = [row for row in rows if _only_settlement(row["order"])]
     settlement_count = sum(any(r.kind == SETTLEMENT for r in b.reasons) for b in result.blocked)
+    files_page, files = _recent_files(request, db)
     invoice_range = _invoice_range(result, first_day)
     waiting_invoice = sum(any(r.kind == TAX_INVOICE for r in b.reasons) for b in result.blocked)
     return render(
@@ -191,7 +196,8 @@ def sales_history_page(
         waiting_settlement=waiting_settlement,
         settlement_count=settlement_count,
         settlement_range=_settlement_range(result),
-        files=_recent_files(db),
+        files=files,
+        files_page=files_page,
     )
 
 

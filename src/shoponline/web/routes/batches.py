@@ -4,7 +4,7 @@ from pathlib import Path
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Request
 from fastapi.responses import FileResponse
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 from starlette.background import BackgroundTask
 
@@ -28,6 +28,7 @@ from shoponline.web.app import (
     robot_refusal,
     sap_config,
 )
+from shoponline.web.pagination import paginate
 from shoponline.web.routes.accounting import begin_run
 from shoponline.web.uploads import save_generated
 
@@ -45,13 +46,17 @@ def _batch(db: Session, batch_id: int) -> OrderBatch:
 def list_batches(
     request: Request, db: Session = Depends(get_db), user: AppUser = Depends(current_user)
 ):
-    batches = db.scalars(
-        select(OrderBatch)
-        .order_by(OrderBatch.processing_date.desc(), OrderBatch.platform)
-        .limit(60)
-    ).all()
-    counts = {b.id: Counter(o.status for o in b.orders) for b in batches}
-    return render(request, "batches.html", user, batches=batches, counts=counts)
+    page = paginate(
+        request,
+        db,
+        select(OrderBatch).order_by(OrderBatch.processing_date.desc(), OrderBatch.platform),
+        OrderBatch.platform,
+        func.to_char(OrderBatch.processing_date, "DD/MM/YYYY"),
+        func.to_char(OrderBatch.gi_date, "DD/MM/YYYY"),
+        OrderBatch.confirmed_by,
+    )
+    counts = {b.id: Counter(o.status for o in b.orders) for b in page.items}
+    return render(request, "batches.html", user, page=page, batches=page.items, counts=counts)
 
 
 @router.get("/batches/{batch_id}")

@@ -26,8 +26,10 @@
 </div>
 {% endif %}
 
+{% from "pager.html" import search, links, empty_search %}
 <h2>Các đợt gần đây</h2>
-<table>
+{{ search(page, 'Tìm theo số đợt, trạng thái, người tạo…') }}
+<table data-server>
   <tr><th>Đợt</th><th>Trạng thái</th><th>Tạo</th><th>Chốt</th><th>Số DO</th><th></th></tr>
   {% for r in recent %}
   <tr>
@@ -39,7 +41,8 @@
     <td>{% if r.status in ('FINALIZED', 'REVOKED') and r.generated_file_id %}<a href="/accounting/runs/{{ r.id }}/file">Tải file đã chốt</a>{% endif %}</td>
   </tr>
   {% else %}
-  <tr><td colspan="6" class="muted">Chưa có đợt nào.</td></tr>
+  <tr><td colspan="6" class="muted">{{ empty_search(page, 'Chưa có đợt nào.') }}</td></tr>
   {% endfor %}
 </table>
+{{ links(page) }}
 {% endblock %}

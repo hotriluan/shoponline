@@ -56,6 +56,10 @@ File lịch sử của kế toán `Shop Online 2022-2026` (sheet1, 17 cột; fil
 
 Quên xác nhận thì lần xuất sau có lại các đơn đó (lặp chứ không sót); bảng **File đã tải** ghi "Chưa xác nhận" để nhắc. File sẽ không bao giờ được dán (tải thử, tải trùng) thì bấm **Xóa** ở dòng đó để làm sạch bảng; file và danh sách đơn của nó bị xóa, các đơn chưa xác nhận vẫn có trong lần xuất sau. File đã xác nhận không xóa được: gỡ xác nhận trước. Chỉ admin xác nhận, gỡ xác nhận và xóa.
 
+## Duyệt bảng dài
+
+Mọi bảng có dòng tiêu đề đều bấm được vào tên cột để sắp xếp (lần 1 tăng dần, lần 2 giảm dần, lần 3 về thứ tự gốc). Bảng từ 8 dòng trở lên có thêm ô **Tìm trong bảng** (không phân biệt hoa thường và dấu), ô chọn lọc ngay dưới tiêu đề cho cột chỉ có vài giá trị (sàn, trạng thái…), nút **Xóa bộ lọc**, và phân trang 10/25/50/100 dòng (lựa chọn được nhớ trên trình duyệt). Các dòng của cùng một đơn (đơn nhiều sản phẩm) luôn đi cùng nhau. Các danh sách lịch sử (Lô đơn, khách hàng theo sàn, hàng đợi robot, đợt gửi kế toán, lần tải báo cáo SAP, file Shop Online đã tải) được tìm và phân trang ngay trên máy chủ: ô **Tìm** quét toàn bộ dữ liệu cũ (không chỉ trang đang xem), có chọn 10/25/50/100 dòng/trang và liên kết số trang; tìm không phân biệt hoa thường nhưng phân biệt dấu. Ở các bảng này bấm tên cột chỉ sắp xếp các dòng của trang đang xem.
+
 ## Khi có sự cố
 
 - **Web không mở được hoặc máy chạy thật hỏng:** làm file Excel bằng tay như trước, báo người quản trị hệ thống.

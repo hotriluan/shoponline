@@ -93,8 +93,10 @@
 </table>
 {% endif %}
 
-<h2>File đã tải ({{ files|length }} gần nhất)</h2>
-<table>
+{% from "pager.html" import search, links, empty_search %}
+<h2>File đã tải ({{ files_page.total }})</h2>
+{{ search(files_page, 'Tìm theo tên file hoặc người tải…') }}
+<table data-server>
   <tr><th>Thời gian</th><th>Người tải</th><th>File</th><th class="num">Số đơn</th><th>Trạng thái</th>{% if user.role == 'admin' %}<th></th>{% endif %}</tr>
   {% for f in files %}
   <tr>
@@ -120,7 +122,8 @@
     {% endif %}
   </tr>
   {% else %}
-  <tr><td colspan="6" class="muted">Chưa tải file nào.</td></tr>
+  <tr><td colspan="6" class="muted">{{ empty_search(files_page, 'Chưa tải file nào.') }}</td></tr>
   {% endfor %}
 </table>
+{{ links(files_page) }}
 {% endblock %}

@@ -26,6 +26,7 @@ from shoponline.web.app import (
     robot_refusal,
     sap_config,
 )
+from shoponline.web.pagination import paginate
 
 router = APIRouter()
 
@@ -39,9 +40,20 @@ def robot_page(
     db: Session = Depends(get_db),
     user: AppUser = Depends(current_user),
 ):
-    stmt = select(SapJob).order_by(SapJob.id.desc()).limit(200)
+    stmt = select(SapJob).order_by(SapJob.id.desc())
     if status in queue.LABELS:
         stmt = stmt.where(SapJob.status == status)
+    page = paginate(
+        request,
+        db,
+        stmt,
+        SapJob.id,
+        SapJob.kind,
+        SapJob.created_by,
+        SapJob.payload,
+        SapJob.result,
+        SapJob.error,
+    )
     config = sap_config(request, db)
     batches = platforms = []
     if user.role == "admin" and config.target is not None:
@@ -57,7 +69,8 @@ def robot_page(
         "robot.html",
         user,
         control=queue.control(db),
-        jobs=db.scalars(stmt).all(),
+        jobs=page.items,
+        page=page,
         status=status,
         read_kinds=queue.READ_KINDS,
         retryable=(queue.FAILED, queue.UNKNOWN, queue.NEED_REVIEW),

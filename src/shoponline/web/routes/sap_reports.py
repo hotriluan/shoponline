@@ -7,6 +7,7 @@ from shoponline.importers.excel_table import FileRejected
 from shoponline.maintenance import retention
 from shoponline.reconcile.report_ingest import ingest_zrsd001, ingest_zrsd003, ingest_zrsd004
 from shoponline.web.app import current_user, flash, get_db, redirect, render, require_admin
+from shoponline.web.pagination import paginate
 from shoponline.web.uploads import UploadRejected, save_upload
 
 router = APIRouter()
@@ -18,13 +19,19 @@ def _page(request, db, user, **extra):
         .order_by(OrderBatch.processing_date.desc(), OrderBatch.platform)
         .limit(30)
     ).all()
-    recent = db.scalars(
+    page = paginate(
+        request,
+        db,
         select(ImportBatch)
         .where(ImportBatch.kind.in_(("zrsd001", "zrsd003", "zrsd004")))
-        .order_by(ImportBatch.imported_at.desc())
-        .limit(10)
-    ).all()
-    return render(request, "sap_reports.html", user, batches=batches, recent=recent, **extra)
+        .order_by(ImportBatch.imported_at.desc(), ImportBatch.id.desc()),
+        ImportBatch.kind,
+        ImportBatch.file_name,
+        ImportBatch.imported_by,
+    )
+    return render(
+        request, "sap_reports.html", user, batches=batches, recent=page.items, page=page, **extra
+    )
 
 
 @router.get("/sap-reports")

@@ -64,8 +64,10 @@
 <p>
   <a href="/robot">Tất cả</a>{% for code, label in JOB_LABELS.items() %} · <a href="/robot?status={{ code }}">{{ label }}</a>{% endfor %}
 </p>
+{% from "pager.html" import search, links, empty_search %}
+{{ search(page, 'Tìm theo số việc, loại, người tạo, nội dung, kết quả hoặc lỗi…') }}
 <div class="scroll">
-<table>
+<table data-server>
   <tr><th>#</th><th>Loại</th><th>Hệ thống</th><th>Nội dung</th><th>Trạng thái</th><th>Lần</th><th>Tạo</th><th>Xong</th><th>Kết quả hoặc lỗi</th><th></th></tr>
   {% for j in jobs %}
   {% set p = payload_of(j) %}
@@ -92,8 +94,9 @@
     </td>
   </tr>
   {% else %}
-  <tr><td colspan="10" class="muted">Chưa có việc nào.</td></tr>
+  <tr><td colspan="10" class="muted">{{ empty_search(page, 'Chưa có việc nào.') }}</td></tr>
   {% endfor %}
 </table>
 </div>
+{{ links(page) }}
 {% endblock %}
