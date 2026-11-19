@@ -64,7 +64,7 @@ def _order_ids_in_sheet(resp):
     return ws.max_row - 1
 
 
-def test_blocked_order_hides_the_download(db, login):
+def test_blocked_order_is_left_out_of_the_download(db, login):
     setup.report_name(db)
     setup.order(db, "GOOD", datetime(2026, 11, 11, 8))
     setup.order(db, "NO-NAME", datetime(2026, 11, 11, 9), name=None)
@@ -75,7 +75,36 @@ def test_blocked_order_hides_the_download(db, login):
     assert 'value="2026-11-13"' in page
     assert "NO-NAME" in page and "Thiếu tên khách" in page
     assert "/customers?batch_id=" in page
-    assert "/sales-history/file" not in page
+    assert "/sales-history/file" in page
+    assert "1 đơn bị chặn chưa có trong file này" in page
+    ws = load_workbook(BytesIO(_download(client).content))["sheet1"]
+    assert [ws.cell(r, 18).value for r in range(2, ws.max_row + 1)] == ["GOOD"]
+    assert len(_file_ids(db)) == 1
+    assert _count(db, SalesHistoryFileOrder) == 1
+
+
+def test_blocked_order_goes_into_a_later_file_once_complete(db, login):
+    setup.report_name(db)
+    setup.order(db, "GOOD", datetime(2026, 11, 11, 8))
+    late = setup.order(db, "LATE", datetime(2026, 11, 10, 9), invoice=None)
+    admin = login("admin")
+    assert f"DO {late.do_number} chưa có Tax Invoice Doc." in admin.get("/sales-history").text
+    _download(admin)
+    (first,) = _file_ids(db)
+    admin.post(f"/sales-history/files/{first}/confirm")
+
+    setup.tax_invoice(db, late.do_number, "HDLATE")
+    ws = load_workbook(BytesIO(_download(admin).content))["sheet1"]
+
+    assert [ws.cell(r, 18).value for r in range(2, ws.max_row + 1)] == ["LATE"]
+
+
+def test_only_blocked_orders_offer_no_download(db, login):
+    setup.report_name(db)
+    setup.order(db, "NO-NAME", datetime(2026, 11, 11, 9), name=None)
+    client = login("admin")
+
+    assert "/sales-history/file" not in client.get("/sales-history").text
     resp = client.get("/sales-history/file", follow_redirects=False)
     assert resp.status_code == 303
     assert _file_ids(db) == []

@@ -143,13 +143,13 @@ def download_history_file(
     db: Session = Depends(get_db),
     user: AppUser = Depends(current_user),
 ):
-    """Computed again from scratch, so the file holds exactly the orders recorded for it."""
+    """Computed again from scratch, so the file holds exactly the orders recorded for it.
+
+    Blocked orders are left out and stay pending, so they go into a later file once complete.
+    """
     until = until or today_vn()
     back = f"/sales-history?until={until.isoformat()}"
     result = collect_rows(db, until)
-    if result.blocked:
-        flash(request, f"Còn {len(result.blocked)} đơn bị chặn, xử lý trước khi tải.", "error")
-        return redirect(back)
     if not result.rows:
         flash(request, "Không có đơn nào chờ xuất.", "error")
         return redirect(back)

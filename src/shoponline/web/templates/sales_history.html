@@ -13,11 +13,12 @@
 
 <div class="box">
   <p><b>{{ orders }}</b> đơn, <b>{{ lines }}</b> dòng sẵn sàng xuất{% if blocked %}; <b class="bad">{{ blocked|length }}</b> đơn bị chặn{% endif %}.</p>
-  {% if blocked %}
-  <p class="bad">Xử lý hết các đơn bị chặn dưới đây thì mới tải được file.</p>
-  {% elif lines %}
+  {% if lines %}
   <p><a class="button" href="/sales-history/file?until={{ until.isoformat() }}">Tải file</a></p>
-  {% else %}
+  {% if blocked %}
+  <p class="bad">{{ blocked|length }} đơn bị chặn chưa có trong file này; sửa xong thì đơn sẽ vào lần tải sau.</p>
+  {% endif %}
+  {% elif not blocked %}
   <p class="muted">Không có đơn nào chờ xuất.</p>
   {% endif %}
 </div>
