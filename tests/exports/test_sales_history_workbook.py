@@ -15,6 +15,7 @@ from shoponline.exports.sales_history_workbook import (
     Reason,
     build_history_workbook,
     collect_rows,
+    history_draft_file_name,
     history_file_name,
 )
 from tests import sales_history_setup as setup
@@ -264,3 +265,63 @@ def test_settlement_reason_adds_to_the_others(db):
     (blocked,) = collect_rows(db, UNTIL).blocked
 
     assert {r.kind for r in blocked.reasons} == {CUSTOMER, SETTLEMENT}
+
+
+def _draft_orders(db):
+    setup.report_name(db)
+    setup.order(db, "FULL", datetime(2026, 11, 11, 1))
+    setup.order(db, "NO-INV", datetime(2026, 11, 11, 2), invoice=None)
+    setup.order(db, "NO-PAID", datetime(2026, 11, 11, 3), settlement=None)
+    setup.order(db, "NO-NAME", datetime(2026, 11, 11, 4), lines=(("999", 1, 1, 0),))
+
+
+def test_a_draft_adds_the_orders_that_only_wait_for_an_invoice_or_settlement(db):
+    _draft_orders(db)
+
+    result = collect_rows(db, UNTIL, draft=True)
+
+    assert [(r.platform_order_id, r.status) for r in result.rows] == [
+        ("FULL", ""),
+        ("NO-INV", "Chờ hóa đơn"),
+        ("NO-PAID", "Chờ tiền vô"),
+    ]
+    by_id = {r.platform_order_id: r for r in result.rows}
+    assert by_id["NO-INV"].tax_invoice_doc is None and by_id["NO-INV"].settlement == setup.SETTLED
+    assert by_id["NO-PAID"].settlement is None and by_id["NO-PAID"].tax_invoice_doc
+    assert [b.platform_order_id for b in result.blocked] == ["NO-NAME"]
+    assert len(result.order_ids) == 3
+
+
+def test_without_the_draft_flag_the_waiting_orders_stay_blocked(db):
+    _draft_orders(db)
+
+    result = collect_rows(db, UNTIL)
+
+    assert [r.platform_order_id for r in result.rows] == ["FULL"]
+    assert [b.platform_order_id for b in result.blocked] == ["NO-INV", "NO-PAID", "NO-NAME"]
+
+
+def test_a_draft_order_waiting_for_both_lists_both(db):
+    setup.report_name(db)
+    setup.order(db, "BOTH", datetime(2026, 11, 11), invoice=None, settlement=None)
+
+    (row,) = collect_rows(db, UNTIL, draft=True).rows
+
+    assert row.status == "Chờ hóa đơn; Chờ tiền vô"
+
+
+def test_the_draft_workbook_has_a_status_column_and_the_real_one_does_not(db):
+    _draft_orders(db)
+    rows = collect_rows(db, UNTIL, draft=True).rows
+    buffer = BytesIO()
+    build_history_workbook(rows, draft=True).save(buffer)
+    draft = load_workbook(buffer)["sheet1"]
+
+    assert draft.max_column == 21 and draft["U1"].value == "Trạng thái"
+    assert [draft.cell(r, 21).value for r in (2, 3, 4)] == [None, "Chờ hóa đơn", "Chờ tiền vô"]
+    assert draft["S3"].value is None and draft["T4"].value is None
+    assert _sheet(rows).max_column == len(COLUMNS) == 20
+
+
+def test_draft_file_name():
+    assert history_draft_file_name(date(2026, 11, 16)) == "NHÁP SHOP ONLINE LỊCH SỬ 161126.xlsx"

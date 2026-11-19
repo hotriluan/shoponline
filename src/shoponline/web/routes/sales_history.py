@@ -8,9 +8,11 @@ exactly what that file confirmed.
 from __future__ import annotations
 
 from datetime import date
+from io import BytesIO
 from pathlib import Path
+from urllib.parse import quote
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, Response, UploadFile
 from fastapi.responses import FileResponse
 from sqlalchemy import delete, func, literal, select
 from sqlalchemy.dialects.postgresql import insert
@@ -32,7 +34,9 @@ from shoponline.exports.sales_history_workbook import (
     HistoryRows,
     build_history_workbook,
     collect_rows,
+    history_draft_file_name,
     history_file_name,
+    is_draftable,
 )
 from shoponline.importers.excel_table import FileRejected
 from shoponline.maintenance import retention
@@ -150,6 +154,7 @@ def sales_history_page(
         waiting_invoice=waiting_invoice,
         robot_refusal=robot_refusal(sap_config(request, db)) if invoice_range else None,
         orders=len(result.order_ids),
+        draft_orders=len(result.order_ids) + sum(is_draftable(b.reasons) for b in result.blocked),
         lines=len(result.rows),
         blocked=blocked,
         waiting_settlement=waiting_settlement,
@@ -195,6 +200,32 @@ def download_history_file(
     )
     db.commit()
     return FileResponse(record.stored_path, filename=file_name, media_type=XLSX)
+
+
+@router.get("/sales-history/draft")
+def download_draft_file(
+    request: Request,
+    until: date | None = None,
+    db: Session = Depends(get_db),
+    user: AppUser = Depends(current_user),
+):
+    """A preview that also holds the orders waiting for an invoice or settlement.
+
+    Nothing is stored: no generated file, no order record, so it cannot be confirmed as pasted.
+    """
+    until = until or today_vn()
+    result = collect_rows(db, until, draft=True)
+    if not result.rows:
+        flash(request, "Không có đơn nào để xuất nháp.", "error")
+        return redirect(f"/sales-history?until={until.isoformat()}")
+    buffer = BytesIO()
+    build_history_workbook(result.rows, draft=True).save(buffer)
+    name = quote(history_draft_file_name(today_vn()))
+    return Response(
+        buffer.getvalue(),
+        media_type=XLSX,
+        headers={"Content-Disposition": f"attachment; filename*=utf-8''{name}"},
+    )
 
 
 @router.post("/sales-history/read-zrsd003")

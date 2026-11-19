@@ -370,3 +370,57 @@ def test_an_unexpected_error_still_deletes_the_uploaded_file(db, login, app, tmp
         _upload(admin, path)
 
     assert _uploads(app) == []
+
+
+def _draft(client):
+    resp = client.get("/sales-history/draft", follow_redirects=False)
+    assert resp.status_code == 200, resp.text
+    return resp
+
+
+def test_the_draft_downloads_without_storing_or_remembering_anything(db, login):
+    setup.report_name(db)
+    setup.order(db, "FULL", datetime(2026, 11, 11, 1))
+    setup.order(db, "NO-INV", datetime(2026, 11, 11, 2), invoice=None)
+    setup.order(db, "NO-NAME", datetime(2026, 11, 11, 3), name=None)
+    admin = login("admin")
+
+    resp = _draft(admin)
+
+    disposition = resp.headers["content-disposition"]
+    name = unquote(disposition.split("filename*=utf-8''")[1])
+    assert name == "NHÁP SHOP ONLINE LỊCH SỬ 131126.xlsx"
+    ws = load_workbook(BytesIO(resp.content))["sheet1"]
+    assert [(ws.cell(r, 18).value, ws.cell(r, 21).value) for r in (2, 3)] == [
+        ("FULL", None),
+        ("NO-INV", "Chờ hóa đơn"),
+    ]
+    assert ws.max_row == 3
+    assert _file_ids(db) == []
+    assert _count(db, SalesHistoryFileOrder) == 0
+    assert "NHÁP" not in admin.get("/sales-history").text.split("File đã tải")[1]
+    _download(admin)  # the real file is unchanged: only the complete order
+    assert _count(db, SalesHistoryFileOrder) == 1
+
+
+def test_a_draft_is_offered_and_downloads_when_only_waiting_orders_exist(db, login):
+    setup.report_name(db)
+    setup.order(db, "WAIT-1", datetime(2026, 11, 10, 9), settlement=None)
+    viewer = login("viewer")
+
+    page = viewer.get("/sales-history").text
+
+    assert "/sales-history/draft?until=2026-11-13" in page and "/sales-history/file" not in page
+    assert _draft(viewer).content
+    resp = viewer.get("/sales-history/file", follow_redirects=True)
+    assert "đang chờ hoặc bị chặn" in resp.text
+
+
+def test_no_draft_when_no_order_can_be_one(db, login):
+    setup.report_name(db)
+    setup.order(db, "NO-NAME", datetime(2026, 11, 11), name=None)
+    admin = login("admin")
+
+    assert "/sales-history/draft" not in admin.get("/sales-history").text
+    resp = admin.get("/sales-history/draft", follow_redirects=True)
+    assert "Không có đơn nào để xuất nháp." in resp.text

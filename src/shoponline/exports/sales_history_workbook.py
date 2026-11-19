@@ -10,6 +10,10 @@ is reported as blocked instead of guessed. The invoice is issued after the DO an
 settles days after delivery, so an order waiting for either is the normal state in between.
 Columns H and I are the file's own relative formulas, so the rows can be pasted below the last
 row of sheet1 as they are.
+
+A draft (collect_rows(draft=True)) also takes the orders blocked only by those two waits, leaves
+the missing cells empty and adds a 21st column saying what each order waits for. It is for
+checking only: it is never stored, so it cannot be confirmed as pasted.
 """
 
 from __future__ import annotations
@@ -76,6 +80,9 @@ TAX_INVOICE = "tax_invoice"
 SETTLEMENT = "settlement"
 # Platforms whose settlement files give money per order. Lazada's does not: its column stays empty.
 SETTLED_PLATFORMS = ("SHOPEE", "TIKTOK")
+# The only waits a draft accepts, in the order the status column lists them.
+DRAFT_LABELS = {TAX_INVOICE: "Chờ hóa đơn", SETTLEMENT: "Chờ tiền vô"}
+STATUS_COLUMN = "Trạng thái"
 
 
 @dataclass(frozen=True)
@@ -106,8 +113,9 @@ class HistoryRow:
     size: str
     variation: str
     platform_order_id: str
-    tax_invoice_doc: str
+    tax_invoice_doc: str | None
     settlement: int | None = None  # the order's total, on its first line only
+    status: str = ""  # what a draft order waits for; empty when complete
 
 
 @dataclass
@@ -119,6 +127,15 @@ class HistoryRows:
 
 def history_file_name(day: date) -> str:
     return f"SHOP ONLINE LỊCH SỬ {day:%d%m%y}.xlsx"
+
+
+def history_draft_file_name(day: date) -> str:
+    return f"NHÁP {history_file_name(day)}"
+
+
+def is_draftable(reasons: Sequence[Reason]) -> bool:
+    """True when every reason is a wait a draft accepts."""
+    return all(r.kind in DRAFT_LABELS for r in reasons)
 
 
 def pending_orders(session: Session, until: date) -> list[SalesOrder]:
@@ -141,7 +158,7 @@ def pending_orders(session: Session, until: date) -> list[SalesOrder]:
     )
 
 
-def collect_rows(session: Session, until: date) -> HistoryRows:
+def collect_rows(session: Session, until: date, draft: bool = False) -> HistoryRows:
     orders = pending_orders(session, until)
     result = HistoryRows()
     if not orders:
@@ -214,14 +231,19 @@ def collect_rows(session: Session, until: date) -> HistoryRows:
         total = settlements.get((order.platform, order.platform_order_id))
         if order.platform in SETTLED_PLATFORMS and total is None:
             reasons.append(Reason(SETTLEMENT, "Chưa có tiền vô"))
-        if reasons:
+        unique = tuple(dict.fromkeys(reasons))
+        status = ""
+        if unique and draft and is_draftable(unique):
+            kinds = {r.kind for r in unique}
+            status = "; ".join(label for kind, label in DRAFT_LABELS.items() if kind in kinds)
+        elif unique:
             result.blocked.append(
                 BlockedOrder(
                     order.platform,
                     order.platform_order_id,
                     order.order_batch_id,
                     order.ordered_at,
-                    tuple(dict.fromkeys(reasons)),
+                    unique,
                 )
             )
             continue
@@ -243,17 +265,18 @@ def collect_rows(session: Session, until: date) -> HistoryRows:
                     platform_order_id=order.platform_order_id,
                     tax_invoice_doc=invoice,
                     settlement=int(total) if total is not None and index == 0 else None,
+                    status=status if index == 0 else "",
                 )
             )
     return result
 
 
-def build_history_workbook(rows: Sequence[HistoryRow]) -> Workbook:
+def build_history_workbook(rows: Sequence[HistoryRow], draft: bool = False) -> Workbook:
     wb = Workbook()
     ws = wb.active
     ws.title = SHEET
     bold = Font(bold=True)
-    for col, title in enumerate(COLUMNS, start=1):
+    for col, title in enumerate(COLUMNS + (STATUS_COLUMN,) if draft else COLUMNS, start=1):
         ws.cell(1, col, title).font = bold
     for r, row in enumerate(rows, start=2):
         values = (
@@ -278,6 +301,8 @@ def build_history_workbook(rows: Sequence[HistoryRow]) -> Workbook:
             row.tax_invoice_doc,
             row.settlement,
         )
+        if draft:
+            values += (row.status or None,)
         for col, value in enumerate(values, start=1):
             ws.cell(r, col, value)
         for letter in MONEY_COLUMNS:

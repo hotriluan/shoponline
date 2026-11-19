@@ -13,8 +13,12 @@
 
 <div class="box">
   <p><b>{{ orders }}</b> đơn, <b>{{ lines }}</b> dòng sẵn sàng xuất{% if blocked %}; <b class="bad">{{ blocked|length }}</b> đơn bị chặn{% endif %}{% if settlement_count %}; <b>{{ settlement_count }}</b> đơn chờ tiền vô{% endif %}.</p>
-  {% if lines %}
-  <p><a class="button" href="/sales-history/file?until={{ until.isoformat() }}">Tải file</a></p>
+  {% if lines or draft_orders %}
+  <p>{% if lines %}<a class="button" href="/sales-history/file?until={{ until.isoformat() }}">Tải file</a>{% endif %}
+    {% if draft_orders %}<a class="button secondary" href="/sales-history/draft?until={{ until.isoformat() }}">Tải file nháp</a>{% endif %}</p>
+  {% if draft_orders %}
+  <p class="muted">Nháp để kiểm tra, gồm cả đơn chờ hóa đơn hoặc tiền vô (cột Trạng thái). Không dán nháp vào file lịch sử; nháp không có trong bảng File đã tải.</p>
+  {% endif %}
   {% if blocked %}
   <p class="bad">{{ blocked|length }} đơn bị chặn chưa có trong file này; sửa xong thì đơn sẽ vào lần tải sau.</p>
   {% endif %}
