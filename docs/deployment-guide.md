@@ -138,6 +138,8 @@ uv run shoponline migrate
 Start-ScheduledTask shoponline-web
 ```
 
+**Cột Tiền Vô (migration `0009_platform_settlement`).** Lùi tính năng bằng cách revert code, **không** chạy `alembic downgrade` cho 0009: bảng `platform_settlement` còn lại không ảnh hưởng code cũ, và vì file quyết toán gốc đã bị xóa sau khi nhập, bảng là bản duy nhất của dữ liệu. Gỡ một lần nhập sai: sao lưu database, xóa các dòng `platform_settlement` có `import_batch_id` của lần nhập đó (tìm trong `import_batch`, `kind = 'settlement'`), rồi upload lại file đúng.
+
 ## Chuyển máy chạy thật sang máy khác
 
 Máy chạy thật hiện tại: `AlkanaDuongPC` (Windows 10, `192.168.18.123`, tài khoản tự đăng nhập `this pc`), chuyển từ `Alkana_IT` ngày 2026-11-16.
