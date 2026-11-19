@@ -55,6 +55,7 @@ collect_rows tra theo do_number ──► đủ thì xuất, cột 19 = Tax Invo
 | 3 | [Job robot đọc ZRSD003](phase-03-robot-read-zrsd003.md) | completed | 1 |
 | 4 | [Chặn đơn chờ hóa đơn, cột 19, nút đọc](phase-04-history-file-column.md) | completed | 1, 3 |
 | 5 | [Tài liệu và chạy thử production](phase-05-docs-and-live-check.md) | in-progress (tài liệu xong; chờ deploy và chạy thử production) | 2, 3, 4 |
+| 6 | [Tải file với các đơn đã đủ dữ liệu](phase-06-download-ready-orders.md) | completed | 4 |
 
 Phase 2 và 3 sửa file khác nhau, làm song song được sau phase 1. Phase 4 dùng hàm xếp job của phase 3.
 
@@ -64,7 +65,7 @@ Phase 2 và 3 sửa file khác nhau, làm song song được sau phase 1. Phase 
 2. File thiếu `OD Doc.`, `Tax Invoice Doc.`, `Bill-to` hoặc `Billing Date` bị từ chối, không ghi gì.
 3. Upload tay và robot cho cùng kết quả (cùng hàm `ingest_zrsd003`); file gốc không còn trong `uploads/` sau khi nhập.
 4. Robot điền đúng `P_VKORG`, `P_VKBUR-LOW`, `P_FKDAT-LOW`, `P_FKDAT-HIGH`, xuất từ cột `TAXSR`; test với fake SAP qua.
-5. Trang File Shop Online: đơn `DELIVERED` chưa có hóa đơn bị chặn với lý do "DO … chưa có Tax Invoice Doc."; có nút xếp job zrsd003 với khoảng ngày đúng; viewer không xếp được job.
+5. Trang File Shop Online: đơn `DELIVERED` chưa có hóa đơn bị chặn (từ phase 6, đơn bị chặn chỉ bị để lại; file vẫn tải được với các đơn đã đủ dữ liệu) với lý do "DO … chưa có Tax Invoice Doc."; có nút xếp job zrsd003 với khoảng ngày đúng; viewer không xếp được job.
 6. File tải về có 19 cột, cột 19 header `Tax Invoice Doc.`, giá trị dạng text đúng theo DO.
 7. `uv run pytest` và `uv run ruff check` thoát mã 0.
 
