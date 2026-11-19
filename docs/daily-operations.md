@@ -39,7 +39,7 @@ Dành cho admin shop online. Ở chế độ thủ công hệ thống không ghi
 
 ## Xuất dòng cho file Shop Online
 
-File lịch sử của kế toán `Shop Online 2022-2026` (sheet1, 17 cột) nhận một dòng cho mỗi sản phẩm của mỗi đơn **Đã có DO**. Web dựng sẵn các dòng đó; không cần gõ tay.
+File lịch sử của kế toán `Shop Online 2022-2026` (sheet1, 17 cột; file tải về thêm cột thứ 18 `Mã đơn` sau `variation`, để đối chiếu đơn) nhận một dòng cho mỗi sản phẩm của mỗi đơn **Đã có DO**. Web dựng sẵn các dòng đó; không cần gõ tay.
 
 1. **Lần đầu, và khi có mã vật tư mới:** vào **Tên báo cáo**. Mã chưa lưu đứng đầu và có giá trị gợi ý (itemName, kích cỡ, variation) lấy từ tên sản phẩm trên sàn; sửa theo cách file lịch sử vẫn ghi (ví dụ `Propan - ULTRAN VERNIS - V-09 - Sơn Dầu Bóng Màu` / `0.8 lít` / `Màu sắc:2004 Cánh gián`) rồi bấm **Lưu tất cả**. Dòng điền thiếu ô làm cả lần lưu bị từ chối; giá trị đã gõ vẫn còn.
 2. Vào **File Shop Online**. Ô **Đến ngày đặt hàng** mặc định là hôm nay; khi chốt tháng thì chọn ngày cuối tháng để không kéo đơn tháng sau vào. Trang lấy mọi đơn Đã có DO chưa được xác nhận, kể cả đơn đặt từ tháng trước mà DO mới có.

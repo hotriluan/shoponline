@@ -59,7 +59,7 @@ def test_money_order_and_layout(db):
         (120000, 120000, 1),
     ]
     ws = _sheet(result.rows)
-    assert len(COLUMNS) == 17
+    assert len(COLUMNS) == 18 and COLUMNS[-2:] == ("variation", "Mã đơn")
     assert [c.value for c in ws[1]] == list(COLUMNS)
     assert ws.max_row == 4
     assert [c.value for c in ws[2]] == [
@@ -80,6 +80,7 @@ def test_money_order_and_layout(db):
         "Propan - SƠN 100001787",
         "0.8 lít",
         "Màu sắc:2004 Cánh gián",
+        "A-1",
     ]
     assert ws["H3"].value == '=E3&" "&B3' and ws["I3"].value == "=IF(H3=H2,0,1)"
     assert ws["O3"].value == "Propan - SƠN 100002000"

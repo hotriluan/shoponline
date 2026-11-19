@@ -65,7 +65,7 @@ Bảng `accounting_run` (một đợt: `OPEN`, `FINALIZED`, `CANCELLED`, `REVOKE
 
 ## File lịch sử Shop Online
 
-Trang `/sales-history` dựng dòng nối tiếp cho file lịch sử của kế toán ([sales_history_workbook.py](../src/shoponline/exports/sales_history_workbook.py)): mọi đơn `DELIVERED` chưa có trong `sales_history_exported`, đặt tới hết ngày chọn, mỗi dòng sản phẩm một dòng 17 cột. Tỉnh/thành tách từ `customer_info.address`, itemName, kích cỡ, variation lấy từ `report_item_name` theo mã vật tư (sửa ở `/report-names`, gợi ý từ `sku_mapping`; [report_names.py](../src/shoponline/domain/report_names.py)). Đơn thiếu một giá trị thì bị chặn, không đoán.
+Trang `/sales-history` dựng dòng nối tiếp cho file lịch sử của kế toán ([sales_history_workbook.py](../src/shoponline/exports/sales_history_workbook.py)): mọi đơn `DELIVERED` chưa có trong `sales_history_exported`, đặt tới hết ngày chọn, mỗi dòng sản phẩm một dòng 18 cột (17 cột của file kế toán và cột `Mã đơn` cuối cùng). Tỉnh/thành tách từ `customer_info.address`, itemName, kích cỡ, variation lấy từ `report_item_name` theo mã vật tư (sửa ở `/report-names`, gợi ý từ `sku_mapping`; [report_names.py](../src/shoponline/domain/report_names.py)). Đơn thiếu một giá trị thì bị chặn, không đoán.
 
 Bảng `sales_history_file_order` ghi các đơn có trong từng file đã tải (`generated_file` kind `sales_history`); `sales_history_exported` (khóa chính `sales_order_id`) ghi đơn đã được xác nhận là đã dán, kèm file đã xác nhận. Xác nhận chép danh sách đơn của file sang sổ, bỏ qua đơn đã có; gỡ xác nhận xóa đúng các dòng của file đó.
 

@@ -1,4 +1,4 @@
-"""Rows to append to the accountants' `Shop Online 2022-2026` history file (sheet1, 17 columns).
+"""Rows to append to the accountants' `Shop Online 2022-2026` history file (sheet1's 17 columns plus a trailing order id column).
 
 Every DELIVERED order not yet confirmed as pasted into that file (sales_history_exported) and
 ordered on or before a given day goes in, one row per order line. An order missing a value the
@@ -47,6 +47,7 @@ COLUMNS = (
     "itemName",
     "Product Classification SKU",
     "variation",
+    "Mã đơn",
 )
 DIVISION = {
     "SHOPEE": "Shopee Bình Dương",
@@ -90,6 +91,7 @@ class HistoryRow:
     item_name: str
     size: str
     variation: str
+    platform_order_id: str
 
 
 @dataclass
@@ -191,6 +193,7 @@ def collect_rows(session: Session, until: date) -> HistoryRows:
                     item_name=report.item_name,
                     size=report.size,
                     variation=report.variation,
+                    platform_order_id=order.platform_order_id,
                 )
             )
     return result
@@ -222,6 +225,7 @@ def build_history_workbook(rows: Sequence[HistoryRow]) -> Workbook:
             row.item_name,
             row.size,
             row.variation,
+            row.platform_order_id,
         )
         for col, value in enumerate(values, start=1):
             ws.cell(r, col, value)
