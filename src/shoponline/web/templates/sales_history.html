@@ -112,6 +112,9 @@
       {% else %}
       <form class="inline" method="post" action="/sales-history/files/{{ f.file.id }}/confirm">
         <button>Xác nhận đã dán</button></form>
+      <form class="inline" method="post" action="/sales-history/files/{{ f.file.id }}/delete"
+            onsubmit="return confirm('Xóa file {{ f.file.file_name }} tải lúc {{ f.file.created_at|localtime }}? Chỉ xóa khi file này sẽ không dán vào file lịch sử. Đơn chưa xác nhận vẫn có trong lần xuất sau.')">
+        <button class="secondary">Xóa</button></form>
       {% endif %}
     </td>
     {% endif %}

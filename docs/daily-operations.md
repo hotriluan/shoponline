@@ -54,7 +54,7 @@ File lịch sử của kế toán `Shop Online 2022-2026` (sheet1, 17 cột; fil
 6. Trở lại trang, ở bảng **File đã tải** bấm **Xác nhận đã dán** cho đúng file vừa dán. Lần xuất sau không còn các đơn đó. Nếu một đơn đã được xác nhận qua file khác, thông báo ghi số đơn bỏ qua.
 7. Dán nhầm hoặc dán thiếu: xóa các dòng đã dán trong file lịch sử, bấm **Gỡ xác nhận** cho file đó, rồi xuất lại.
 
-Quên xác nhận thì lần xuất sau có lại các đơn đó (lặp chứ không sót); bảng **File đã tải** ghi "Chưa xác nhận" để nhắc. Chỉ admin xác nhận và gỡ xác nhận.
+Quên xác nhận thì lần xuất sau có lại các đơn đó (lặp chứ không sót); bảng **File đã tải** ghi "Chưa xác nhận" để nhắc. File sẽ không bao giờ được dán (tải thử, tải trùng) thì bấm **Xóa** ở dòng đó để làm sạch bảng; file và danh sách đơn của nó bị xóa, các đơn chưa xác nhận vẫn có trong lần xuất sau. File đã xác nhận không xóa được: gỡ xác nhận trước. Chỉ admin xác nhận, gỡ xác nhận và xóa.
 
 ## Khi có sự cố
 

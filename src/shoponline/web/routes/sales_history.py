@@ -425,3 +425,39 @@ def unconfirm_file(
     db.commit()
     flash(request, f"Đã gỡ xác nhận {removed} đơn; các đơn này sẽ có lại trong lần xuất sau.")
     return redirect("/sales-history")
+
+
+@router.post("/sales-history/files/{file_id}/delete")
+def delete_file(
+    request: Request,
+    file_id: int,
+    db: Session = Depends(get_db),
+    user: AppUser = Depends(require_admin),
+):
+    """Clear a file that will never be pasted. Its orders were not confirmed through it, so
+    the ones still pending go into the next download; a confirmed file must be unconfirmed first,
+    or the record of what was pasted would be lost."""
+    record = _history_file(db, file_id)
+    confirmed = db.scalar(
+        select(func.count())
+        .select_from(SalesHistoryExported)
+        .where(SalesHistoryExported.generated_file_id == record.id)
+    )
+    if confirmed:
+        flash(request, "File đã xác nhận đã dán: gỡ xác nhận trước khi xóa.", "error")
+        return redirect("/sales-history")
+    db.execute(
+        delete(SalesHistoryFileOrder).where(SalesHistoryFileOrder.generated_file_id == record.id)
+    )
+    path, name = record.stored_path, record.file_name
+    db.delete(record)
+    states.log_event(
+        db,
+        user.username,
+        "sales_history_deleted",
+        detail={"file_id": file_id, "file_name": name},
+    )
+    db.commit()
+    retention.discard_unused(db, request.app.state.settings, [path])
+    flash(request, f"Đã xóa file {name}; các đơn chưa xác nhận sẽ có trong lần xuất sau.")
+    return redirect("/sales-history")

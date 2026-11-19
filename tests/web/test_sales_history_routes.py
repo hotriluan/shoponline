@@ -222,6 +222,55 @@ def test_an_order_is_confirmed_once_across_files(db, login):
     assert set(db.scalars(select(SalesHistoryExported.generated_file_id))) == {second}
 
 
+def test_an_unconfirmed_file_can_be_deleted_and_its_orders_stay_pending(db, login):
+    setup.report_name(db)
+    setup.order(db, "A-1", datetime(2026, 11, 11))
+    admin = login("admin")
+    _download(admin)
+    _download(admin)  # downloaded twice, only one will be pasted
+    first, second = _file_ids(db)
+    path = _stored(db, first)
+    assert "/delete" in admin.get(PAGE).text
+
+    page = admin.post(f"/sales-history/files/{first}/delete").text
+    assert "Đã xóa file SHOP ONLINE LỊCH SỬ 131126.xlsx" in page
+    assert _file_ids(db) == [second]
+    assert not path.exists()
+    assert _stored(db, second).exists()
+    assert _count(db, SalesHistoryFileOrder) == 1
+    assert "<b>1</b> đơn" in admin.get(PAGE).text  # A-1 still waits to be pasted
+    db.expire_all()
+    kinds = [
+        e.kind for e in db.scalars(select(EventLog).where(EventLog.kind.like("sales_history_%")))
+    ]
+    assert kinds == ["sales_history_deleted"]
+
+
+def test_a_confirmed_file_cannot_be_deleted(db, login):
+    setup.report_name(db)
+    setup.order(db, "A-1", datetime(2026, 11, 11))
+    admin = login("admin")
+    _download(admin)
+    (file_id,) = _file_ids(db)
+    admin.post(f"/sales-history/files/{file_id}/confirm")
+
+    page = admin.post(f"/sales-history/files/{file_id}/delete").text
+    assert "gỡ xác nhận trước khi xóa" in page
+    assert _file_ids(db) == [file_id]
+    assert _count(db, SalesHistoryExported) == 1
+
+
+def test_a_viewer_cannot_delete_a_file(db, login):
+    setup.report_name(db)
+    setup.order(db, "A-1", datetime(2026, 11, 11))
+    viewer = login("viewer")
+    _download(viewer)
+    (file_id,) = _file_ids(db)
+    assert "/delete" not in viewer.get(PAGE).text
+    viewer.post(f"/sales-history/files/{file_id}/delete")
+    assert _file_ids(db) == [file_id]
+
+
 def test_saved_file_downloads_again_unchanged(db, login):
     setup.report_name(db)
     setup.order(db, "A-1", datetime(2026, 11, 11))
