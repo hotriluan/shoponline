@@ -319,7 +319,9 @@ def test_no_zrsd003_box_when_every_order_has_its_invoice(db, login):
     setup.report_name(db)
     setup.order(db, "A-1", datetime(2026, 11, 11))
     admin = login("admin")
-    assert 'id="tax-invoice"' not in admin.get(PAGE).text
+    page = admin.get(PAGE).text
+    assert "Không có đơn nào của tháng 11/2026 chờ Tax Invoice Doc., không cần đọc zrsd003." in page
+    assert 'action="/sales-history/read-zrsd003"' not in page
     resp = admin.post("/sales-history/read-zrsd003", data={"month": "2026-11"})
     assert "Không có đơn nào chờ Tax Invoice Doc." in resp.text
 

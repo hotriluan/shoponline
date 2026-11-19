@@ -27,8 +27,8 @@
   {% endif %}
 </div>
 
-{% if invoice_range %}
 <div class="box" id="tax-invoice">
+  {% if invoice_range %}
   <p><b>{{ waiting_invoice }}</b> đơn đã có DO nhưng chưa có Tax Invoice Doc. Hóa đơn xuất sau DO; khi SAP đã xuất hóa đơn, đọc zrsd003 với ngày hóa đơn từ
     {{ invoice_range[0].strftime('%d/%m/%Y') }} đến {{ invoice_range[1].strftime('%d/%m/%Y') }}
     (từ đầu tháng chọn, hoặc đơn chờ cũ hơn, đến hôm nay: hóa đơn của đơn cuối tháng ra trong tháng sau).</p>
@@ -42,8 +42,10 @@
   {% endif %}
   <a href="/sap-reports">Hoặc tải file zrsd003 bằng tay</a>
   {% endif %}
+  {% else %}
+  <p class="muted">Không có đơn nào của tháng {{ until.strftime('%m/%Y') }} chờ Tax Invoice Doc., không cần đọc zrsd003.</p>
+  {% endif %}
 </div>
-{% endif %}
 
 <div class="box" id="settlement">
   <h2>Đơn chờ tiền vô ({{ settlement_count }})</h2>
