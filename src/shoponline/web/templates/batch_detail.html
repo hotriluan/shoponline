@@ -72,9 +72,10 @@
 {% endif %}
 
 <h2>Đơn ({{ orders|length }})</h2>
+<p><span class="tag">Đã có hóa đơn: {{ invoiced }}</span> <span class="tag">Đã có tiền vô: {{ paid }}</span></p>
 <div class="scroll"><table>
   <tr><th>Mã đơn</th><th>Đặt lúc</th><th>Sản phẩm</th><th>SL</th><th>Đơn giá</th><th>Trợ giá/đv</th><th>Mã SAP</th>
-      <th>Trạng thái</th><th>SO</th><th>DO</th><th>Khách</th></tr>
+      <th>Trạng thái</th><th>SO</th><th>DO</th><th>Số hóa đơn</th><th>Tiền vô</th><th>Khách</th></tr>
   {% for o in orders %}
   {% for i in o.items %}
   <tr>
@@ -92,6 +93,9 @@
       {% if o.status_reason and o.status in ('MAPPING_ERROR','NEED_REVIEW') %}<br><span class="muted">{{ o.status_reason }}</span>{% endif %}</td>
     <td rowspan="{{ o.items|length }}">{{ o.so_number or '' }}</td>
     <td rowspan="{{ o.items|length }}">{{ o.do_number or '' }}</td>
+    {% set p = progress[o.id] %}
+    <td rowspan="{{ o.items|length }}">{% if p.invoice %}{{ p.invoice }}{% else %}<span class="muted">chưa có</span>{% endif %}</td>
+    <td rowspan="{{ o.items|length }}" class="num">{% if p.paid is not none %}{{ p.paid|money }}{% else %}<span class="muted">chưa có</span>{% endif %}</td>
     {% set c = customers.get(o.platform_order_id) %}
     <td rowspan="{{ o.items|length }}">{% if c and c.customer_name %}{{ c.customer_name }}{% else %}<span class="bad">chưa có tên</span>{% endif %}</td>
     {% endif %}

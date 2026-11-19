@@ -12,6 +12,7 @@ from shoponline.db.models import AppUser, CustomerInfo, OrderBatch, PlatformSett
 from shoponline.domain import states
 from shoponline.exports.order_workbook import build_order_workbook
 from shoponline.maintenance import retention
+from shoponline.reconcile.order_progress import batch_progress, order_progress
 from shoponline.reconcile.so_link import LinkError, batch_report, link_manually
 from shoponline.sapjobs.queue import DuplicateJob
 from shoponline.sapjobs.report_requests import request_zrsd001
@@ -56,7 +57,16 @@ def list_batches(
         OrderBatch.confirmed_by,
     )
     counts = {b.id: Counter(o.status for o in b.orders) for b in page.items}
-    return render(request, "batches.html", user, page=page, batches=page.items, counts=counts)
+    progress = batch_progress(db, page.items)
+    return render(
+        request,
+        "batches.html",
+        user,
+        page=page,
+        batches=page.items,
+        counts=counts,
+        progress=progress,
+    )
 
 
 @router.get("/batches/{batch_id}")
@@ -80,6 +90,7 @@ def batch_detail(
     excluded = sum(1 for o in orders if o.status in (states.MAPPING_ERROR, states.NEED_REVIEW))
     report = batch_report(db, batch) if batch.confirmed_at else None
     open_orders = [o for o in orders if o.status in states.OPEN_STATUSES and not o.so_number]
+    progress = order_progress(db, orders)
     return render(
         request,
         "batch_detail.html",
@@ -90,6 +101,9 @@ def batch_detail(
         excluded=excluded,
         report=report,
         open_orders=open_orders,
+        progress=progress,
+        invoiced=sum(1 for p in progress.values() if p.invoice),
+        paid=sum(1 for p in progress.values() if p.paid is not None),
     )
 
 

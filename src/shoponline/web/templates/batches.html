@@ -7,7 +7,7 @@
 {{ search(page, 'Tìm theo sàn, ngày (dd/mm/yyyy), người xác nhận…') }}
 {% if not batches %}<p class="muted">{{ empty_search(page, '') }}</p>{% else %}
 <table data-server>
-  <tr><th>Ngày xử lý</th><th>Sàn</th><th>Ngày goods issue</th><th>Số đơn</th><th>Theo trạng thái</th><th>Xác nhận SO/DO</th></tr>
+  <tr><th>Ngày xử lý</th><th>Sàn</th><th>Ngày goods issue</th><th>Số đơn</th><th>Theo trạng thái</th><th>Hóa đơn và tiền vô</th><th>Xác nhận SO/DO</th></tr>
   {% for b in batches %}
   <tr>
     <td><a href="/batches/{{ b.id }}">{{ b.processing_date.strftime('%d/%m/%Y') }}</a></td>
@@ -15,6 +15,7 @@
     <td>{{ b.gi_date.strftime('%d/%m/%Y') }}</td>
     <td class="num">{{ b.orders|length }}</td>
     <td>{% for s, n in counts[b.id].items() %}<span class="tag s-{{ s }}">{{ STATUS_LABELS[s] }}: {{ n }}</span> {% endfor %}</td>
+    <td><span class="tag">Đã có hóa đơn: {{ progress[b.id].invoiced }}</span> <span class="tag">Đã có tiền vô: {{ progress[b.id].paid }}</span></td>
     <td>{% if b.confirmed_at %}{{ b.confirmed_by }}, {{ b.confirmed_at|localtime('%d/%m %H:%M') }}{% else %}<span class="muted">chưa</span>{% endif %}</td>
   </tr>
   {% endfor %}
