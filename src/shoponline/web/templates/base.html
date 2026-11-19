@@ -36,6 +36,25 @@
   .row { display:flex; gap:12px; flex-wrap:wrap; align-items:end; }
   .row label { display:flex; flex-direction:column; gap:2px; }
   .scroll { overflow-x:auto; }
+  :focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
+  tr[hidden] { display:none; }
+  th.tt-sort { cursor:pointer; user-select:none; white-space:nowrap; }
+  th.tt-sort:hover { background:#e3e9f0; }
+  th.tt-sort::after { content:" ↕"; color:#9aa5b1; font-weight:400; }
+  th[aria-sort=ascending]::after { content:" ▲"; color:var(--accent); }
+  th[aria-sort=descending]::after { content:" ▼"; color:var(--accent); }
+  tr.tt-filters th { background:#f7f9fb; padding:3px 4px; font-weight:400; }
+  tr.tt-filters select { width:100%; max-width:180px; padding:2px 4px; font-size:12px; }
+  .tt-bar { display:flex; gap:8px 12px; flex-wrap:wrap; align-items:center; margin:8px 0 6px; }
+  .tt-search input { width:280px; max-width:100%; padding:5px 8px; border:1px solid var(--line); border-radius:3px; font:inherit; }
+  .tt-count { color:var(--muted); }
+  .tt-size { margin-left:auto; color:var(--muted); display:flex; gap:6px; align-items:center; }
+  .tt-sr { position:absolute; width:1px; height:1px; overflow:hidden; clip:rect(0 0 0 0); white-space:nowrap; }
+  .tt-pager { display:flex; justify-content:space-between; align-items:center; gap:8px; flex-wrap:wrap; margin:6px 0 12px; color:var(--muted); }
+  .tt-pages { display:flex; gap:4px; align-items:center; }
+  .tt-pages button, .tt-pages a.button { min-width:32px; min-height:32px; padding:2px 8px; }
+  .tt-pages button[aria-current], .tt-pages a.button[aria-current] { background:var(--accent); color:#fff; }
+  .tt-pages button:disabled { opacity:.45; cursor:default; }
 </style>
 </head>
 <body>
@@ -127,5 +146,6 @@
   });
 })();
 </script>
+{% include "table_tools.html" %}
 </body>
 </html>

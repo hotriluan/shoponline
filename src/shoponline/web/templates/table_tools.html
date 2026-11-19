@@ -1,0 +1,265 @@
+<script>
+/* Table tools: every table in <main> that has a header row gets click-to-sort headers; once it has
+   TOOLS_FROM or more rows it also gets a search box, drop-down filters for columns with few
+   distinct values, and pagination. A table paged by the server (data-server) keeps only the
+   sorting, because search and paging belong to the server there. Rows joined by rowspan (an order with several items) move,
+   match and page together. A table opts out with the data-plain attribute. */
+(function () {
+  var SIZES = [10, 25, 50, 100], DEFAULT_SIZE = 25, TOOLS_FROM = 8, MAX_FILTER_VALUES = 12;
+  var collator = new Intl.Collator('vi', {numeric: true, sensitivity: 'base'});
+  var slice = Array.prototype.slice;
+
+  function fold(s) {
+    return s.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/đ/g, 'd');
+  }
+  function cellValue(cell) {
+    if (!cell) return '';
+    var f = cell.querySelector('input[type=text], input:not([type]), select, textarea');
+    if (f) return (f.tagName === 'SELECT' ? (f.options[f.selectedIndex] || {text: ''}).text : f.value).trim();
+    return cell.textContent.replace(/\s+/g, ' ').trim();
+  }
+  function rowText(g) {
+    return g.rows.map(function (r) { return slice.call(r.cells).map(cellValue).join(' '); }).join(' ');
+  }
+  /* A number or a dd/mm/yyyy [hh:mm] date as a comparable number, otherwise null. Money is
+     written 1.234.567 and a comma is the decimal mark. Long digit strings (order ids) stay text
+     so they never lose precision. */
+  function toNumber(v) {
+    var m = /^(\d{1,2})\/(\d{1,2})(?:\/(\d{4}))?(?: (\d{1,2}):(\d{2})(?::(\d{2}))?)?$/.exec(v);
+    if (m && (m[3] || m[4])) return Date.UTC(+(m[3] || 2000), m[2] - 1, m[1], m[4] || 0, m[5] || 0, m[6] || 0);
+    var s = v.replace(/\s/g, '');
+    if (s.replace(/\D/g, '').length > 15) return null;
+    if (/^-?\d{1,3}(\.\d{3})+$/.test(s)) return parseFloat(s.replace(/\./g, ''));
+    if (/^-?\d+(,\d+)?$/.test(s)) return parseFloat(s.replace(',', '.'));
+    if (/^-?\d+(\.\d+)?$/.test(s)) return parseFloat(s);
+    return null;
+  }
+  function el(tag, cls, html) {
+    var e = document.createElement(tag);
+    if (cls) e.className = cls;
+    if (html) e.innerHTML = html;
+    return e;
+  }
+
+  function enhance(table) {
+    var rows = slice.call(table.rows), headCount = 0;
+    while (headCount < rows.length && rows[headCount].cells.length &&
+           slice.call(rows[headCount].cells).every(function (c) { return c.tagName === 'TH'; })) headCount++;
+    if (!headCount) return;
+    var headRow = rows[headCount - 1], headers = slice.call(headRow.cells);
+
+    var groups = [], i = headCount;
+    while (i < rows.length) {
+      var r = rows[i], span = 1;
+      slice.call(r.cells).forEach(function (c) { if (c.rowSpan > span) span = c.rowSpan; });
+      var placeholder = r.cells.length === 1 && r.cells[0].colSpan > 1;
+      if (!placeholder) groups.push({rows: rows.slice(i, i + span), cells: slice.call(r.cells), idx: groups.length});
+      i += span;
+    }
+    if (groups.length < 2) return;
+
+    var container = groups[0].rows[0].parentNode;
+    var full = groups.length >= TOOLS_FROM && !table.hasAttribute('data-server');
+    var st = {q: '', filters: {}, col: -1, dir: 1, page: 1, size: DEFAULT_SIZE};
+    try {
+      var saved = parseInt(localStorage.getItem('table-page-size'), 10);
+      if (SIZES.indexOf(saved) >= 0) st.size = saved;
+    } catch (e) { /* storage blocked: keep the default */ }
+
+    var empty = el('tr', 'tt-empty');
+    empty.hidden = true;
+    var emptyCell = el('td');
+    emptyCell.colSpan = headers.length;
+    empty.appendChild(emptyCell);
+    container.appendChild(empty);
+
+    var bar, pager, searchBox, countEl, clearBtn, sizeSel, rangeEl, pagesEl;
+    if (full) {
+      bar = el('div', 'tt-bar',
+        '<label class="tt-search"><span class="tt-sr">Tìm trong bảng</span>' +
+        '<input type="search" placeholder="Tìm trong bảng…" autocomplete="off"></label>' +
+        '<span class="tt-count" aria-live="polite"></span>' +
+        '<button type="button" class="secondary tt-clear" hidden>Xóa bộ lọc</button>' +
+        '<label class="tt-size">Hiện <select>' +
+        SIZES.map(function (n) { return '<option>' + n + '</option>'; }).join('') + '</select> dòng/trang</label>');
+      pager = el('div', 'tt-pager', '<span class="tt-range"></span><span class="tt-pages"></span>');
+      searchBox = bar.querySelector('input');
+      countEl = bar.querySelector('.tt-count');
+      clearBtn = bar.querySelector('.tt-clear');
+      sizeSel = bar.querySelector('select');
+      sizeSel.value = String(st.size);
+      rangeEl = pager.querySelector('.tt-range');
+      pagesEl = pager.querySelector('.tt-pages');
+      var anchor = table.parentNode.classList.contains('scroll') ? table.parentNode : table;
+      anchor.parentNode.insertBefore(bar, anchor);
+      anchor.parentNode.insertBefore(pager, anchor.nextSibling);
+
+      var filterRow = el('tr', 'tt-filters'), anyFilter = false;
+      headers.forEach(function (h, j) {
+        var th = el('th'), seen = {}, distinct = [], usable = !!h.textContent.trim();
+        groups.forEach(function (g) {
+          var cell = g.cells[j];
+          if (!cell) return;
+          if (cell.querySelector('input:not([type=hidden]), select, textarea')) { usable = false; return; }
+          var v = cellValue(cell);
+          if (v && !seen[v]) { seen[v] = 1; distinct.push(v); }
+        });
+        if (usable && distinct.length > 1 && distinct.length <= MAX_FILTER_VALUES && distinct.length < groups.length &&
+            distinct.every(function (v) { return v.length <= 40; })) {
+          var sel = el('select');
+          sel.setAttribute('aria-label', 'Lọc theo ' + h.textContent.trim());
+          sel.dataset.col = j;
+          sel.appendChild(new Option('Tất cả', ''));
+          distinct.sort(collator.compare).forEach(function (v) { sel.appendChild(new Option(v, v)); });
+          th.appendChild(sel);
+          anyFilter = true;
+        }
+        filterRow.appendChild(th);
+      });
+      if (anyFilter) headRow.parentNode.insertBefore(filterRow, headRow.nextSibling);
+    } else {
+      st.size = groups.length;
+    }
+
+    var sorted = groups;
+    function sortGroups() {
+      if (st.col < 0) { sorted = groups.slice(); return; }
+      var vals = groups.map(function (g) { return cellValue(g.cells[st.col]); });
+      var nums = vals.map(toNumber);
+      var numeric = vals.every(function (v, k) { return v === '' || nums[k] !== null; });
+      var order = groups.map(function (g, k) { return k; });
+      order.sort(function (a, b) {
+        var ea = vals[a] === '', eb = vals[b] === '';
+        if (ea || eb) return ea === eb ? a - b : (ea ? 1 : -1);
+        var c = numeric ? nums[a] - nums[b] : collator.compare(vals[a], vals[b]);
+        return c ? c * st.dir : a - b;
+      });
+      sorted = order.map(function (k) { return groups[k]; });
+    }
+    function reorder() {
+      sorted.forEach(function (g) { g.rows.forEach(function (r) { container.appendChild(r); }); });
+      container.appendChild(empty);
+    }
+
+    function matches() {
+      var terms = fold(st.q).split(/\s+/).filter(Boolean), cols = Object.keys(st.filters);
+      return sorted.filter(function (g) {
+        for (var k = 0; k < cols.length; k++) if (cellValue(g.cells[cols[k]]) !== st.filters[cols[k]]) return false;
+        if (!terms.length) return true;
+        var t = fold(rowText(g));
+        return terms.every(function (w) { return t.indexOf(w) >= 0; });
+      });
+    }
+
+    function pageButton(label, page, opts) {
+      opts = opts || {};
+      var b = el('button', 'secondary');
+      b.type = 'button';
+      b.textContent = label;
+      b.dataset.page = page;
+      if (opts.label) b.setAttribute('aria-label', opts.label);
+      if (opts.current) b.setAttribute('aria-current', 'page');
+      if (opts.disabled) b.disabled = true;
+      return b;
+    }
+    function renderPager(total, pages) {
+      pagesEl.textContent = '';
+      if (pages < 2) return;
+      pagesEl.appendChild(pageButton('‹', st.page - 1, {label: 'Trang trước', disabled: st.page === 1}));
+      var last = 0;
+      for (var p = 1; p <= pages; p++) {
+        if (p !== 1 && p !== pages && Math.abs(p - st.page) > 1) continue;
+        if (last && p - last > 1) pagesEl.appendChild(el('span', 'muted', '…'));
+        pagesEl.appendChild(pageButton(p, p, {label: 'Trang ' + p, current: p === st.page}));
+        last = p;
+      }
+      pagesEl.appendChild(pageButton('›', st.page + 1, {label: 'Trang sau', disabled: st.page === pages}));
+    }
+
+    function render() {
+      var list = matches(), total = list.length;
+      var pages = Math.max(1, Math.ceil(total / st.size));
+      if (st.page > pages) st.page = pages;
+      var from = (st.page - 1) * st.size, to = Math.min(total, from + st.size);
+      var visible = new Set(list.slice(from, to));
+      groups.forEach(function (g) {
+        var show = visible.has(g);
+        g.rows.forEach(function (r) { r.hidden = !show; });
+      });
+      var filtered = !!(st.q.trim() || Object.keys(st.filters).length);
+      empty.hidden = total > 0;
+      if (!total) {
+        emptyCell.className = 'muted';
+        emptyCell.textContent = 'Không có dòng nào khớp. Thử bỏ bớt từ khóa hoặc bộ lọc.';
+      }
+      if (full) {
+        countEl.textContent = filtered ? total + ' / ' + groups.length + ' dòng' : groups.length + ' dòng';
+        clearBtn.hidden = !filtered;
+        pager.hidden = pages < 2;
+        rangeEl.textContent = total ? 'Hiển thị ' + (from + 1) + '–' + to + ' trong ' + total + ' dòng' : '';
+        renderPager(total, pages);
+      }
+    }
+
+    headers.forEach(function (h, j) {
+      if (!h.textContent.trim()) return;
+      h.classList.add('tt-sort');
+      h.tabIndex = 0;
+      h.setAttribute('aria-sort', 'none');
+      function toggle() {
+        /* ascending, then descending, then the original order */
+        if (st.col !== j) { st.col = j; st.dir = 1; }
+        else if (st.dir === 1) st.dir = -1;
+        else { st.col = -1; st.dir = 1; }
+        headers.forEach(function (o) { if (o.classList.contains('tt-sort')) o.setAttribute('aria-sort', 'none'); });
+        if (st.col >= 0) h.setAttribute('aria-sort', st.dir === 1 ? 'ascending' : 'descending');
+        sortGroups(); reorder(); st.page = 1; render();
+      }
+      h.addEventListener('click', toggle);
+      h.addEventListener('keydown', function (e) {
+        if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggle(); }
+      });
+    });
+
+    if (full) {
+      var timer = null;
+      searchBox.addEventListener('input', function () {
+        clearTimeout(timer);
+        timer = setTimeout(function () { st.q = searchBox.value; st.page = 1; render(); }, 150);
+      });
+      searchBox.addEventListener('keydown', function (e) {
+        /* the table may sit inside a form: Enter must not submit it */
+        if (e.key === 'Enter') e.preventDefault();
+        if (e.key === 'Escape' && searchBox.value) { searchBox.value = ''; st.q = ''; st.page = 1; render(); }
+      });
+      function clearAll() {
+        st.q = ''; st.filters = {}; st.page = 1; searchBox.value = '';
+        slice.call(filterRow.querySelectorAll('select')).forEach(function (s) { s.value = ''; });
+        render();
+      }
+      clearBtn.addEventListener('click', clearAll);
+      filterRow.addEventListener('change', function (e) {
+        var col = e.target.dataset.col;
+        if (e.target.value) st.filters[col] = e.target.value; else delete st.filters[col];
+        st.page = 1; render();
+      });
+      sizeSel.addEventListener('change', function () {
+        st.size = parseInt(sizeSel.value, 10); st.page = 1; render();
+        try { localStorage.setItem('table-page-size', String(st.size)); } catch (e) { /* ignore */ }
+      });
+      pager.addEventListener('click', function (e) {
+        var b = e.target.closest('button[data-page]');
+        if (!b || b.disabled) return;
+        st.page = parseInt(b.dataset.page, 10);
+        render();
+        var again = pagesEl.querySelector('button[data-page="' + b.dataset.page + '"]');
+        if (again && !again.disabled) again.focus();
+        if (bar.getBoundingClientRect().top < 0) bar.scrollIntoView();
+      });
+    }
+    render();
+  }
+
+  slice.call(document.querySelectorAll('main table:not([data-plain])')).forEach(enhance);
+})();
+</script>
