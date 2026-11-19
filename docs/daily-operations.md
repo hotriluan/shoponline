@@ -39,11 +39,12 @@ Dành cho admin shop online. Ở chế độ thủ công hệ thống không ghi
 
 ## Xuất dòng cho file Shop Online
 
-File lịch sử của kế toán `Shop Online 2022-2026` (sheet1, 17 cột; file tải về thêm cột thứ 18 `Mã đơn` sau `variation`, để đối chiếu đơn) nhận một dòng cho mỗi sản phẩm của mỗi đơn **Đã có DO**. Web dựng sẵn các dòng đó; không cần gõ tay.
+File lịch sử của kế toán `Shop Online 2022-2026` (sheet1, 17 cột; file tải về thêm cột 18 `Mã đơn` sau `variation` để đối chiếu đơn, và cột 19 `Tax Invoice Doc.` là số hóa đơn của DO, lấy từ `zrsd003`) nhận một dòng cho mỗi sản phẩm của mỗi đơn **Đã có DO**. Web dựng sẵn các dòng đó; không cần gõ tay.
 
 1. **Lần đầu, và khi có mã vật tư mới:** vào **Tên báo cáo**. Mã chưa lưu đứng đầu và có giá trị gợi ý (itemName, kích cỡ, variation) lấy từ tên sản phẩm trên sàn; sửa theo cách file lịch sử vẫn ghi (ví dụ `Propan - ULTRAN VERNIS - V-09 - Sơn Dầu Bóng Màu` / `0.8 lít` / `Màu sắc:2004 Cánh gián`) rồi bấm **Lưu tất cả**. Dòng điền thiếu ô làm cả lần lưu bị từ chối; giá trị đã gõ vẫn còn.
 2. Vào **File Shop Online**. Ô **Đến ngày đặt hàng** mặc định là hôm nay; khi chốt tháng thì chọn ngày cuối tháng để không kéo đơn tháng sau vào. Trang lấy mọi đơn Đã có DO chưa được xác nhận, kể cả đơn đặt từ tháng trước mà DO mới có.
-3. **Đơn bị chặn** (thiếu tên khách, địa chỉ không ra tỉnh/thành, mã vật tư chưa có tên báo cáo): bấm vào lý do để sang trang sửa (**Khách hàng** của lô, hoặc **Tên báo cáo**), rồi mở lại trang. Còn đơn bị chặn thì không tải được file.
+3. **Đơn bị chặn** (thiếu tên khách, địa chỉ không ra tỉnh/thành, mã vật tư chưa có tên báo cáo, DO chưa có Tax Invoice Doc.): bấm vào lý do để sang trang sửa (**Khách hàng** của lô, hoặc **Tên báo cáo**), rồi mở lại trang. Còn đơn bị chặn thì không tải được file.
+   - **Chờ hóa đơn:** hóa đơn xuất sau DO, nên đơn mới có DO mà chưa có hóa đơn là bình thường. Khi SAP đã xuất hóa đơn, bấm **Robot đọc zrsd003** trong ô hóa đơn trên trang: robot đọc `zrsd003` (Sales Organization `1000`, Sales Office `1401`) với ngày hóa đơn từ ngày đặt sớm nhất của các đơn chờ đến hôm nay, rồi mở lại trang khi việc **Xong**. Robot không chạy thì xuất `zrsd003` tay từ SAP với cùng bộ lọc và tải lên ở trang **Báo cáo SAP**, mục zrsd003. Cả hai đường chỉ giữ hóa đơn của khách SAP các sàn và xóa file gốc ngay sau khi nhập.
 4. Bấm **Tải file** (`SHOP ONLINE LỊCH SỬ ddmmyy.xlsx`). Tài khoản xem cũng tải được.
 5. Mở file lịch sử, copy từ **dòng 2** của file vừa tải và dán vào dòng trống đầu tiên của sheet1. Hai cột `Cust + time` và `Transaction` là công thức tương đối nên tự tính theo dòng mới.
 6. Trở lại trang, ở bảng **File đã tải** bấm **Xác nhận đã dán** cho đúng file vừa dán. Lần xuất sau không còn các đơn đó. Nếu một đơn đã được xác nhận qua file khác, thông báo ghi số đơn bỏ qua.

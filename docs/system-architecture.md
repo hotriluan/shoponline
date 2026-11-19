@@ -25,6 +25,9 @@ flowchart LR
   D --> SA[Sales admin tạo SO, DO trong SAP]
   SA --> R1[zrsd001]
   SA --> R4[zrsd004]
+  SA --> R3[zrsd003: hóa đơn, sau DO]
+  R3 -->|tải lên hoặc robot, lọc Bill-to sàn| TI[(sap_tax_invoice)]
+  TI -->|theo do_number| H[File lịch sử Shop Online]
   R1 -->|tải lên hoặc robot| L[reconcile: nối SO, báo lệch]
   R4 -->|tải lên hoặc robot| RUN[accounting/runs: đợt xuất]
   RUN --> A[exports/accounting_workbook: gộp nhiều nguồn]
@@ -44,7 +47,7 @@ Tải file lên và robot đi qua cùng một hàm, [report_ingest.py](../src/sh
 | `config.py`, `cli.py` | Đọc biến môi trường; các lệnh `shoponline …` |
 | `db/` | Model SQLAlchemy, phiên; schema đổi qua Alembic trong `migrations/versions/` |
 | `domain/` | Trạng thái đơn và chuyển trạng thái, ánh xạ SKU, ngày goods issue, giá trị SO dự kiến |
-| `importers/` | Đọc file Shopee, TikTok, Lazada, `zrsd001`, `zrsd004`, bảng ánh xạ; nhận cột theo tên, thiếu cột bắt buộc thì từ chối cả file |
+| `importers/` | Đọc file Shopee, TikTok, Lazada, `zrsd001`, `zrsd003`, `zrsd004`, bảng ánh xạ; nhận cột theo tên, thiếu cột bắt buộc thì từ chối cả file |
 | `exports/` | File `ĐƠN HÀNG ONLINE`, dòng cho file lịch sử Shop Online và file gửi kế toán (một file `zrsd004`: giữ nguyên, chèn ba cột; nhiều file: gộp, lọc, tính lại dòng tổng) |
 | `accounting/` | Sổ DO đã gửi kế toán và mốc ngày (`ledger.py`); đợt xuất: cặp sàn × ngày cần đọc, đối chiếu, bản nháp, chốt, hủy (`runs.py`) |
 | `clock.py` | "Hôm nay" theo múi giờ `Asia/Saigon`, dùng chung cho cả ứng dụng |
@@ -65,7 +68,7 @@ Bảng `accounting_run` (một đợt: `OPEN`, `FINALIZED`, `CANCELLED`, `REVOKE
 
 ## File lịch sử Shop Online
 
-Trang `/sales-history` dựng dòng nối tiếp cho file lịch sử của kế toán ([sales_history_workbook.py](../src/shoponline/exports/sales_history_workbook.py)): mọi đơn `DELIVERED` chưa có trong `sales_history_exported`, đặt tới hết ngày chọn, mỗi dòng sản phẩm một dòng 18 cột (17 cột của file kế toán và cột `Mã đơn` cuối cùng). Tỉnh/thành tách từ `customer_info.address`, itemName, kích cỡ, variation lấy từ `report_item_name` theo mã vật tư (sửa ở `/report-names`, gợi ý từ `sku_mapping`; [report_names.py](../src/shoponline/domain/report_names.py)). Đơn thiếu một giá trị thì bị chặn, không đoán.
+Trang `/sales-history` dựng dòng nối tiếp cho file lịch sử của kế toán ([sales_history_workbook.py](../src/shoponline/exports/sales_history_workbook.py)): mọi đơn `DELIVERED` chưa có trong `sales_history_exported`, đặt tới hết ngày chọn, mỗi dòng sản phẩm một dòng 19 cột (17 cột của file kế toán, rồi `Mã đơn` và `Tax Invoice Doc.`). Số hóa đơn lấy từ `sap_tax_invoice` (khóa `delivery`, nạp từ `zrsd003` bởi `ingest_zrsd003`) theo `sales_order.do_number`; đơn chưa có hóa đơn bị chặn, và trang xếp việc robot `read_zrsd003` cho khoảng ngày cần đọc. Tỉnh/thành tách từ `customer_info.address`, itemName, kích cỡ, variation lấy từ `report_item_name` theo mã vật tư (sửa ở `/report-names`, gợi ý từ `sku_mapping`; [report_names.py](../src/shoponline/domain/report_names.py)). Đơn thiếu một giá trị thì bị chặn, không đoán.
 
 Bảng `sales_history_file_order` ghi các đơn có trong từng file đã tải (`generated_file` kind `sales_history`); `sales_history_exported` (khóa chính `sales_order_id`) ghi đơn đã được xác nhận là đã dán, kèm file đã xác nhận. Xác nhận chép danh sách đơn của file sang sổ, bỏ qua đơn đã có; gỡ xác nhận xóa đúng các dòng của file đó.
 

@@ -7,9 +7,9 @@ Dành cho người quản trị hệ thống và chủ dự án. Kiến trúc: [
 | Dữ liệu | Ở đâu | Nhạy cảm |
 |---|---|---|
 | Tên, địa chỉ khách theo mã đơn | bảng `customer_info` | Có: dữ liệu cá nhân |
-| File sàn, file `zrsd001`/`zrsd004`, file gửi kế toán, file dòng Shop Online, tới khi hết dùng | `SHOPONLINE_DATA_DIR\uploads`, `exports`, `robot-work` | Có: tên, địa chỉ, tên nhân viên bán hàng |
+| File sàn, file `zrsd001`/`zrsd003`/`zrsd004`, file gửi kế toán, file dòng Shop Online, tới khi hết dùng | `SHOPONLINE_DATA_DIR\uploads`, `exports`, `robot-work` | Có: tên, địa chỉ, tên nhân viên bán hàng; `zrsd003` có tên và mã số thuế khách doanh nghiệp |
 | Ảnh màn hình SAP khi robot lỗi | `SHOPONLINE_DATA_DIR\robot-evidence` | Có thể có |
-| Đơn, dòng hàng, số SO, số DO, ánh xạ SKU | các bảng còn lại | Không có dữ liệu cá nhân |
+| Đơn, dòng hàng, số SO, số DO, số hóa đơn của DO các sàn, ánh xạ SKU | các bảng còn lại | Không có dữ liệu cá nhân; `sap_tax_invoice` chỉ giữ dòng có Bill-to là khách SAP của sàn, không giữ tên, mã số thuế hay giá trị tiền |
 | Nhật ký sự kiện | bảng `event_log` | Không: mã nguồn cấm ghi tên, địa chỉ vào đây |
 | Bản sao lưu database | ổ mạng công ty, Google Drive | Có, mã hóa AES-256 |
 
@@ -30,7 +30,7 @@ Một bộ quy tắc giữ (`kept_files` trong [retention.py](../src/shoponline/
 
 Xóa ngay, sau khi ghi database:
 
-- File sàn, bảng ánh xạ SKU và `zrsd001`, dù upload tay hay robot đọc: ngay khi nhập xong. File bị từ chối cũng bị xóa, trừ khi file cùng nội dung đã có từ trước.
+- File sàn, bảng ánh xạ SKU, `zrsd001` và `zrsd003`, dù upload tay hay robot đọc: ngay khi nhập xong. File bị từ chối cũng bị xóa, trừ khi file cùng nội dung đã có từ trước.
 - `zrsd004`: khi đợt chốt hoặc hủy. Khi hủy, file upload tay của đợt quay lại danh sách chờ gắn nên vẫn được giữ. Nếu gỡ một đợt đã chốt, phải upload lại các file `zrsd004` tay của đợt đó.
 - `robot-work/job-<n>`: ngay khi việc nhập xong (`DONE`). Việc lỗi giữ thư mục để xem lại.
 - File `ĐƠN HÀNG ONLINE`: ngay sau khi gửi xong cho trình duyệt. Muốn có lại thì bấm tải lần nữa.

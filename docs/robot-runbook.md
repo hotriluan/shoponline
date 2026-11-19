@@ -4,16 +4,17 @@ Dành cho admin shop online và người trực hệ thống. Cách dựng máy:
 
 ## Robot làm gì
 
-Robot chỉ đọc SAP, không tạo chứng từ nào. Nó chạy trên Production `AEP`, client `300`, bằng user `AL17016`, và chỉ vào hai báo cáo `ZRSD001` và `ZRSD004`; lớp chặn T-code bảo đảm điều này (xem [Lớp chặn T-code](#lớp-chặn-t-code)).
+Robot chỉ đọc SAP, không tạo chứng từ nào. Nó chạy trên Production `AEP`, client `300`, bằng user `AL17016`, và chỉ vào ba báo cáo `ZRSD001`, `ZRSD003` và `ZRSD004`; lớp chặn T-code bảo đảm điều này (xem [Lớp chặn T-code](#lớp-chặn-t-code)).
 
 | Khi nào | Việc | Kết quả |
 |---|---|---|
 | Admin bấm "Sales admin đã tạo SO và DO" trên một lô | `read_zrsd001`: `zrsd001` với Sales Office `1401`, ngày chứng từ là ngày xử lý của lô, Sold-To là khách hàng SAP của sàn, lựa chọn "Complete" | Lưu số SO, nối đơn, báo lệch trên trang lô, giống hệt khi tải file lên |
 | Admin bấm "Xuất file gửi kế toán" (trang lô hoặc trang Gửi kế toán) | Một đợt: với mỗi sàn còn đơn chờ, `read_zrsd004` cho từng ngày goods issue từ ngày cũ nhất của đơn chờ đến hôm nay (tối đa 31 ngày lùi): `zrsd004` với Sales Organization `1000`, Sold-to là khách hàng SAP của sàn, Actual GI là ngày đó | Đơn có DO chuyển "Đã có DO"; file kế toán dựng ở trang **Gửi kế toán**, không còn link tải trên trang Robot SAP hay Báo cáo SAP |
-| Admin dùng form "Ra lệnh cho robot" trên trang Robot SAP | `read_zrsd001` cho một lô đã xác nhận, hoặc `read_zrsd004` cho một sàn và một ngày goods issue | Giống hai dòng trên, kể cả khi việc trước cùng loại đã Xong |
+| Admin bấm "Robot đọc zrsd003" trên trang File Shop Online | `read_zrsd003`: `zrsd003` với Sales Organization `1000` (Enter), Sales Office `1401` (Enter), Billing Date từ ngày đặt sớm nhất của các đơn chờ hóa đơn đến hôm nay; một việc cho mọi sàn | Lưu Tax Invoice Doc. theo DO, chỉ dòng có Bill-to là khách SAP của sàn; dòng khách khác bị bỏ, file gốc bị xóa |
+| Admin dùng form "Ra lệnh cho robot" trên trang Robot SAP | `read_zrsd001` cho một lô đã xác nhận, `read_zrsd004` cho một sàn và một ngày goods issue, hoặc `read_zrsd003` cho một khoảng ngày hóa đơn | Giống các dòng trên, kể cả khi việc trước cùng loại đã Xong |
 | Admin bấm "Đọc lại zrsd001" trên trang lô đã xác nhận | `read_zrsd001` của lô đó | Cập nhật SO đã nối và báo lệch mới; không tạo bản ghi trùng |
 
-Bộ lọc lấy theo bản ghi recorder ngày 2026-11-12 (`docs/sap-recordings/` trên máy phát triển, không đưa vào git vì có dữ liệu khách thật). Robot gõ ngày thẳng vào ô lọc theo định dạng của `AL17016` (`formats.date` trong `config/sap_screens.yaml`), không mở lịch F4 như bản ghi. SAP báo "No data to display" cho `zrsd004` thì việc kết thúc **Xong** với kết quả "SAP chưa có DO": ngày đó chưa có giao hàng là chuyện bình thường. Kết quả này không tăng và không xóa bộ đếm lỗi liên tiếp. Với `zrsd001`, không có dữ liệu vẫn là lỗi.
+Bộ lọc lấy theo bản ghi recorder ngày 2026-11-12 (`docs/sap-recordings/` trên máy phát triển, không đưa vào git vì có dữ liệu khách thật). Robot gõ ngày thẳng vào ô lọc theo định dạng của `AL17016` (`formats.date` trong `config/sap_screens.yaml`), không mở lịch F4 như bản ghi. Màn hình lọc `ZRSD003` theo bản ghi ngày 2026-11-19: màn hình này không lọc được theo khách hàng, nên robot đọc cả Sales Office `1401` và bộ nhập lọc theo Bill-to. Robot không chạm hai nút chọn "Tax Invoice for Billing Status" (mặc định **Exist**) và "Report Type" (mặc định **SD**); nếu ai đó lưu variant cho `AL17016` làm đổi hai mặc định này, kết quả đọc sẽ sai mà robot không biết, nên không lưu variant cho user robot. SAP báo "No data to display" cho `zrsd004` thì việc kết thúc **Xong** với kết quả "SAP chưa có DO"; `zrsd003` cũng vậy ("SAP chưa có hóa đơn"): ngày đó chưa có giao hàng là chuyện bình thường. Kết quả này không tăng và không xóa bộ đếm lỗi liên tiếp. Với `zrsd001`, không có dữ liệu vẫn là lỗi.
 
 Robot lấy dữ liệu bằng chức năng xuất Excel của báo cáo, giống thao tác của admin, chứ không đọc lưới trên màn hình. Lý do: file gửi kế toán được dựng thẳng từ file `zrsd004` và phải khớp từng ô với file admin tự làm (cổng G1); đọc lưới chỉ ra chữ, mất kiểu ngày, kiểu số và dòng tổng. File robot xuất đi qua đúng các hàm nhập file của trang **Báo cáo SAP**. Khi robot dừng, admin vẫn tải hai file báo cáo lên bằng tay như trước.
 
@@ -30,11 +31,11 @@ Việc báo lỗi "Không thấy hộp Save As", "Hộp Save As khác dự kiế
 
 ## Ra lệnh cho robot
 
-Ngoài hai nút tự động, admin bảo robot đọc báo cáo khi cần: form **Ra lệnh cho robot** trên trang **Robot SAP** (đọc `zrsd001` cho một lô đã xác nhận, hoặc `zrsd004` cho một sàn và một ngày goods issue; lệnh tay chỉ nhập dữ liệu, file kế toán lấy ở trang **Gửi kế toán**) và nút **Đọc lại zrsd001** trên trang lô đã xác nhận. Form chỉ hiện với admin khi robot đã có hệ thống đích; nếu kết nối chưa được kiểm tra, form hiện lý do thay cho nút.
+Ngoài hai nút tự động, admin bảo robot đọc báo cáo khi cần: form **Ra lệnh cho robot** trên trang **Robot SAP** (đọc `zrsd001` cho một lô đã xác nhận, `zrsd004` cho một sàn và một ngày goods issue, hoặc `zrsd003` cho một khoảng ngày hóa đơn; lệnh tay chỉ nhập dữ liệu, file kế toán lấy ở trang **Gửi kế toán**) và nút **Đọc lại zrsd001** trên trang lô đã xác nhận. Form chỉ hiện với admin khi robot đã có hệ thống đích; nếu kết nối chưa được kiểm tra, form hiện lý do thay cho nút.
 
 - **Khi nào dùng:** sales admin tạo thêm SO sau lần đọc `zrsd001` đầu; lô được xác nhận lúc kết nối chưa được kiểm tra nên chưa có việc đọc; cần đọc `zrsd004` cho một ngày goods issue hoặc một đơn chờ nằm ngoài cửa sổ 31 ngày của đợt gửi kế toán (đợt cảnh báo các đơn đó).
 - **Việc trùng bị từ chối:** mỗi báo cáo chỉ có một việc mở tại một thời điểm. Nếu việc cũ còn Chờ hoặc Đang chạy, trang báo số việc đó; chờ nó xong rồi ra lệnh lại. Việc đã Xong thì ra lệnh lại được.
-- **Ngày không có dữ liệu:** web chặn ngày goods issue sau hôm nay. Một ngày không có DO (ví dụ ngày nghỉ) với `zrsd004` cho kết quả "SAP chưa có DO" và không tính vào bộ đếm lỗi liên tiếp ([Robot tự dừng](#robot-tự-dừng)); với `zrsd001` đó vẫn là lỗi.
+- **Ngày không có dữ liệu:** web chặn ngày goods issue và ngày hóa đơn sau hôm nay. Một ngày không có DO (ví dụ ngày nghỉ) với `zrsd004` cho kết quả "SAP chưa có DO" và không tính vào bộ đếm lỗi liên tiếp ([Robot tự dừng](#robot-tự-dừng)); với `zrsd001` đó vẫn là lỗi.
 - **Nhật ký:** mỗi lệnh ghi một sự kiện `sap_job_enqueued` kèm tên người ra lệnh.
 
 ## Kiểm tra kết nối SAP
@@ -86,8 +87,8 @@ User `AL17016` mở được cả `VA02`, nên role phía SAP không ngăn robot
 
 | Danh sách | Giá trị | Ghi chú |
 |---|---|---|
-| T-code phiên được phép đứng | `S000`, `SESSION_MANAGER`, `ZRSD001`, `ZRSD004` | Màn hình đăng nhập, menu chính, hai báo cáo (cả màn hình lọc và lưới kết quả). Lấy từ System → Status trên `AEP`/300 ngày 2026-11-12 |
-| T-code robot được tự mở | `ZRSD001`, `ZRSD004` | Chỉ mở qua ô lệnh bằng `/n<T-code>`; không có đường nào khác ghi vào ô lệnh `okcd` |
+| T-code phiên được phép đứng | `S000`, `SESSION_MANAGER`, `ZRSD001`, `ZRSD003`, `ZRSD004` | Màn hình đăng nhập, menu chính, ba báo cáo (cả màn hình lọc và lưới kết quả). Lấy từ System → Status trên `AEP`/300 ngày 2026-11-12; `ZRSD003` thêm theo bản ghi ngày 2026-11-19 |
+| T-code robot được tự mở | `ZRSD001`, `ZRSD003`, `ZRSD004` | Chỉ mở qua ô lệnh bằng `/n<T-code>`; không có đường nào khác ghi vào ô lệnh `okcd` |
 | Phím được gửi | Enter, F8 | Phím lưu (Ctrl+S, `sendVKey 11`) luôn bị cấm |
 | Hàm đọc phần tử | `GetCellValue`, `GetColumnTitles`, `GetDisplayedColumnTitle` | Đọc lưới ALV; robot không bấm đúp vào dòng |
 | Mục menu chuột phải trên lưới | `&XXL` (Spreadsheet...) | Xuất Excel; mục khác (ví dụ Details, gửi email) bị cấm |
@@ -120,6 +121,7 @@ Giới hạn: lớp chặn bảo vệ trước lỗi trong mã robot và trướ
 
 ## Chưa có, chờ bản ghi recorder
 
-Màn hình lọc, lưới kết quả và bước xuất Excel của hai báo cáo đã có trong `config/sap_screens.yaml` và `config/sap_popups.yaml` (bản ghi ngày 2026-11-12). Chưa chạy trên SAP thật. Các mục dưới đây điền sau lần chạy thử:
+Màn hình lọc, lưới kết quả và bước xuất Excel của ba báo cáo đã có trong `config/sap_screens.yaml` và `config/sap_popups.yaml` (bản ghi ngày 2026-11-12, `zrsd003` ngày 2026-11-19). Chưa chạy trên SAP thật. Các mục dưới đây điền sau lần chạy thử:
+- Câu trên thanh trạng thái khi `ZRSD003` không có hóa đơn nào: chưa được chụp, robot đang nhận "No data to display". Nếu `ZRSD003` báo câu khác, việc chuyển **Lỗi** (không nhập sai); chụp ảnh của việc và thêm câu đó vào `NO_DATA_TEXT` trong [report_screen.py](../src/shoponline/saprobot/transactions/report_screen.py).
 - Thời gian một lần đọc báo cáo.
 - Biên bản chạy thử trên Production ngoài giờ cao điểm (50 việc đọc liên tiếp, ngắt mạng, sai hệ thống đích) và 5 ngày so robot với file tải lên.
