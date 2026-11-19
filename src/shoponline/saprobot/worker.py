@@ -23,7 +23,7 @@ from shoponline.config import Settings
 from shoponline.db.models import ImportBatch, OrderBatch, SapJob
 from shoponline.domain import states
 from shoponline.maintenance import retention
-from shoponline.reconcile.report_ingest import ingest_zrsd001, ingest_zrsd004
+from shoponline.reconcile.report_ingest import ingest_zrsd001, ingest_zrsd003, ingest_zrsd004
 from shoponline.sapjobs import queue, sap_settings
 from shoponline.saprobot import credentials, evidence
 from shoponline.saprobot.desktop import SaveDialogs, WindowsDesktop
@@ -136,8 +136,26 @@ def _after_zrsd004(
     }
 
 
+def _after_zrsd003(
+    db: Session, job: SapJob, out: TransactionResult | None, settings: Settings
+) -> dict:
+    """The stored copy goes once the job is DONE (_discard_spent): no keep rule holds zrsd003."""
+    if out is None:  # SAP listed no invoice for the dates: a valid answer, nothing to import
+        return {"kept": 0, "skipped": 0, "no_data": True}
+    record = _stored_report(settings, out, "zrsd003")
+    imported = ingest_zrsd003(db, record, ROBOT)
+    job.import_batch_id = record.id
+    return {
+        "kept": imported.kept,
+        "new": imported.new,
+        "updated": imported.updated,
+        "skipped": imported.skipped_other_customers,
+    }
+
+
 AFTER: dict[str, Callable[[Session, SapJob, TransactionResult, Settings], dict]] = {
     queue.READ_ZRSD001: _after_zrsd001,
+    queue.READ_ZRSD003: _after_zrsd003,
     queue.READ_ZRSD004: _after_zrsd004,
 }
 
@@ -343,8 +361,8 @@ class Worker:
         except UnknownPopup as exc:
             outcome = Outcome(queue.NEED_REVIEW, str(exc), self._capture(gui, job_id))
         except NoReportData as exc:
-            if kind == queue.READ_ZRSD004:
-                # No delivery yet for this customer and day: a result, not a failure.
+            if kind in (queue.READ_ZRSD003, queue.READ_ZRSD004):
+                # No delivery or invoice yet for the filter: a result, not a failure.
                 outcome = Outcome(queue.DONE)
             else:
                 outcome = Outcome(queue.FAILED, f"NoReportData: {exc}", self._capture(gui, job_id))

@@ -10,7 +10,7 @@ from __future__ import annotations
 from datetime import date
 from pathlib import Path
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, Form, HTTPException, Request
 from fastapi.responses import FileResponse
 from sqlalchemy import delete, func, literal, select
 from sqlalchemy.dialects.postgresql import insert
@@ -27,12 +27,25 @@ from shoponline.domain import states
 from shoponline.exports.sales_history_workbook import (
     CUSTOMER,
     REPORT_NAME,
+    TAX_INVOICE,
+    HistoryRows,
     build_history_workbook,
     collect_rows,
     history_file_name,
 )
 from shoponline.maintenance import retention
-from shoponline.web.app import current_user, flash, get_db, redirect, render, require_admin
+from shoponline.sapjobs.queue import DuplicateJob
+from shoponline.sapjobs.report_requests import request_zrsd003
+from shoponline.web.app import (
+    current_user,
+    flash,
+    get_db,
+    redirect,
+    render,
+    require_admin,
+    robot_refusal,
+    sap_config,
+)
 from shoponline.web.uploads import save_generated
 
 router = APIRouter()
@@ -46,7 +59,18 @@ def _fix_link(kind: str, batch_id: int) -> str | None:
         return f"/customers?batch_id={batch_id}"
     if kind == REPORT_NAME:
         return "/report-names?missing=true"
+    if kind == TAX_INVOICE:
+        return "#tax-invoice"
     return None
+
+
+def _invoice_range(result: HistoryRows) -> tuple[date, date] | None:
+    """Billing dates that cover every order waiting for its invoice: an invoice is issued after
+    the DO, which comes after the order, so billing date >= order date."""
+    waiting = [
+        b.ordered_at.date() for b in result.blocked if any(r.kind == TAX_INVOICE for r in b.reasons)
+    ]
+    return (min(waiting), today_vn()) if waiting else None
 
 
 def _recent_files(db: Session) -> list[dict]:
@@ -95,11 +119,16 @@ def sales_history_page(
         dict(order=b, reasons=[(r.text, _fix_link(r.kind, b.order_batch_id)) for r in b.reasons])
         for b in result.blocked
     ]
+    invoice_range = _invoice_range(result)
+    waiting_invoice = sum(any(r.kind == TAX_INVOICE for r in b.reasons) for b in result.blocked)
     return render(
         request,
         "sales_history.html",
         user,
         until=until,
+        invoice_range=invoice_range,
+        waiting_invoice=waiting_invoice,
+        robot_refusal=robot_refusal(sap_config(request, db)) if invoice_range else None,
         orders=len(result.order_ids),
         lines=len(result.rows),
         blocked=blocked,
@@ -139,6 +168,35 @@ def download_history_file(
     )
     db.commit()
     return FileResponse(record.stored_path, filename=file_name, media_type=XLSX)
+
+
+@router.post("/sales-history/read-zrsd003")
+def read_zrsd003(
+    request: Request,
+    until: date = Form(...),
+    db: Session = Depends(get_db),
+    user: AppUser = Depends(require_admin),
+):
+    """Ask the robot to read zrsd003 over the billing dates of the orders waiting for invoices."""
+    back = f"/sales-history?until={until.isoformat()}"
+    invoice_range = _invoice_range(collect_rows(db, until))
+    if invoice_range is None:
+        flash(request, "Không có đơn nào chờ Tax Invoice Doc.", "error")
+        return redirect(back)
+    config = sap_config(request, db)
+    refusal = robot_refusal(config)
+    if refusal:
+        flash(request, refusal, "error")
+        return redirect(back)
+    start, end = invoice_range
+    try:
+        job = request_zrsd003(db, config.target, start, end, user.username)
+    except DuplicateJob as exc:
+        flash(request, str(exc), "error")
+        return redirect(back)
+    db.commit()
+    flash(request, f"Robot sẽ đọc zrsd003 từ {start:%d/%m/%Y} đến {end:%d/%m/%Y} (việc #{job.id}).")
+    return redirect(back)
 
 
 def _history_file(db: Session, file_id: int) -> GeneratedFile:

@@ -22,6 +22,23 @@
   {% endif %}
 </div>
 
+{% if invoice_range %}
+<div class="box" id="tax-invoice">
+  <p><b>{{ waiting_invoice }}</b> đơn đã có DO nhưng chưa có Tax Invoice Doc. Hóa đơn xuất sau DO; khi SAP đã xuất hóa đơn, đọc zrsd003 với ngày hóa đơn từ
+    {{ invoice_range[0].strftime('%d/%m/%Y') }} đến {{ invoice_range[1].strftime('%d/%m/%Y') }}.</p>
+  {% if user.role == 'admin' %}
+  {% if robot_refusal %}
+  <p class="muted">{{ robot_refusal }}</p>
+  {% else %}
+  <form class="inline" method="post" action="/sales-history/read-zrsd003">
+    <input type="hidden" name="until" value="{{ until.isoformat() }}">
+    <button>Robot đọc zrsd003</button></form>
+  {% endif %}
+  <a href="/sap-reports">Hoặc tải file zrsd003 bằng tay</a>
+  {% endif %}
+</div>
+{% endif %}
+
 {% if blocked %}
 <h2 class="bad">Đơn bị chặn ({{ blocked|length }})</h2>
 <table>

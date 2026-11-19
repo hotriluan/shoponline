@@ -10,7 +10,11 @@ from sqlalchemy.orm import Session
 from shoponline.clock import today_vn
 from shoponline.db.models import AppUser, OrderBatch, PlatformSetting, SapJob
 from shoponline.sapjobs import queue, sap_settings
-from shoponline.sapjobs.report_requests import request_zrsd001, request_zrsd004
+from shoponline.sapjobs.report_requests import (
+    request_zrsd001,
+    request_zrsd003,
+    request_zrsd004,
+)
 from shoponline.sapjobs.sap_settings import SapSettingsError
 from shoponline.web.app import (
     current_user,
@@ -97,11 +101,14 @@ def command_robot(
     batch_id: str = Form(""),
     platform: str = Form(""),
     gi_date: str = Form(""),
+    date_from: str = Form(""),
+    date_to: str = Form(""),
     db: Session = Depends(get_db),
     user: AppUser = Depends(require_admin),
 ):
-    """Ask the robot to read zrsd001 for a confirmed batch or zrsd004 for a platform and GI date."""
-    if report not in ("zrsd001", "zrsd004"):
+    """Ask the robot to read zrsd001 for a confirmed batch, zrsd004 for a platform and GI date,
+    or zrsd003 for a billing date range."""
+    if report not in ("zrsd001", "zrsd003", "zrsd004"):
         raise HTTPException(400, "Báo cáo không hợp lệ")
     config = sap_config(request, db)
     refusal = robot_refusal(config)
@@ -117,6 +124,8 @@ def command_robot(
                 raise ValueError("Lô chưa xác nhận nên chưa đọc zrsd001 được.")
             job = request_zrsd001(db, config.target, batch, user.username)
             done = f"Robot sẽ đọc zrsd001 của lô {batch.platform} {batch.processing_date:%d/%m/%Y}"
+        elif report == "zrsd003":
+            job, done = _queue_zrsd003(db, config.target, date_from, date_to, user.username)
         else:
             try:
                 day = date.fromisoformat(gi_date)
@@ -133,6 +142,20 @@ def command_robot(
     db.commit()
     flash(request, f"{done} (việc #{job.id}).")
     return redirect("/robot")
+
+
+def _queue_zrsd003(
+    db: Session, target: queue.SapTarget, date_from: str, date_to: str, actor: str
+) -> tuple[SapJob, str]:
+    """Validate a billing date range typed in the form and queue zrsd003 for it."""
+    try:
+        start, end = date.fromisoformat(date_from), date.fromisoformat(date_to)
+    except ValueError:
+        raise ValueError("Chọn ngày hóa đơn từ và đến để đọc zrsd003.") from None
+    if end > today_vn():
+        raise ValueError("Ngày hóa đơn chưa tới nên SAP chưa có dữ liệu.")
+    job = request_zrsd003(db, target, start, end, actor)
+    return job, f"Robot sẽ đọc zrsd003 từ {start:%d/%m/%Y} đến {end:%d/%m/%Y}"
 
 
 def _job(db: Session, job_id: int) -> SapJob:

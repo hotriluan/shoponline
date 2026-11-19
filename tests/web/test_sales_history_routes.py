@@ -192,3 +192,50 @@ def test_viewer_downloads_but_cannot_confirm(db, login):
     login("admin").post(f"/sales-history/files/{file_id}/confirm")
     viewer.post(f"/sales-history/files/{file_id}/unconfirm")
     assert _count(db, SalesHistoryExported) == 1
+
+
+def test_orders_waiting_for_invoices_offer_a_zrsd003_read(db, login):
+    from shoponline.db.models import SapJob
+    from shoponline.sapjobs import queue
+    from shoponline.sapjobs.queue import SapTarget
+    from tests.sap_setup import configure_sap
+
+    setup.report_name(db)
+    setup.order(db, "HAS-INVOICE", datetime(2026, 11, 9))
+    early = setup.order(db, "EARLY", datetime(2026, 11, 10, 8), invoice=None)
+    setup.order(db, "LATE", datetime(2026, 11, 12, 8), invoice=None)
+    admin = login("admin")
+
+    page = admin.get("/sales-history").text
+    assert f"DO {early.do_number} chưa có Tax Invoice Doc." in page
+    assert 'href="#tax-invoice"' in page and "<b>2</b> đơn đã có DO" in page
+    assert "Robot chưa được bật" in page and 'href="/sap-reports"' in page
+    assert "/sales-history/read-zrsd003" not in page  # no robot configured
+
+    configure_sap(db, SapTarget("QAS", "300"))
+    db.expire_all()
+    page = admin.get("/sales-history").text
+    assert 'action="/sales-history/read-zrsd003"' in page
+    assert "từ\n    10/11/2026 đến 13/11/2026" in page
+
+    viewer = login("viewer")
+    assert "/sales-history/read-zrsd003" not in viewer.get("/sales-history").text
+    viewer.post("/sales-history/read-zrsd003", data={"until": "2026-11-13"})
+    assert _count(db, SapJob) == 0
+
+    resp = admin.post("/sales-history/read-zrsd003", data={"until": "2026-11-13"})
+    assert "Robot sẽ đọc zrsd003 từ 10/11/2026 đến 13/11/2026" in resp.text
+    job = db.scalar(select(SapJob))
+    assert job.kind == queue.READ_ZRSD003
+    assert queue.payload_of(job) == {"date_from": "2026-11-10", "date_to": "2026-11-13"}
+    again = admin.post("/sales-history/read-zrsd003", data={"until": "2026-11-13"}).text
+    assert "Đã có việc" in again and _count(db, SapJob) == 1
+
+
+def test_no_zrsd003_box_when_every_order_has_its_invoice(db, login):
+    setup.report_name(db)
+    setup.order(db, "A-1", datetime(2026, 11, 11))
+    admin = login("admin")
+    assert 'id="tax-invoice"' not in admin.get("/sales-history").text
+    resp = admin.post("/sales-history/read-zrsd003", data={"until": "2026-11-13"})
+    assert "Không có đơn nào chờ Tax Invoice Doc." in resp.text

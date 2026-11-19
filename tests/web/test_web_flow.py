@@ -17,6 +17,7 @@ from shoponline.db.models import (
     ImportBatch,
     OrderBatch,
     SalesOrder,
+    SapTaxInvoice,
     SkuMapping,
 )
 from shoponline.domain import states
@@ -27,6 +28,8 @@ from tests.fixtures.build_fixtures import (
     shopee_row,
     zrsd001_file,
     zrsd001_row,
+    zrsd003_file,
+    zrsd003_row,
     zrsd004_file,
     zrsd004_row,
 )
@@ -249,6 +252,34 @@ def test_rejected_upload_leaves_a_file_it_did_not_write(app, db, tmp_path):
 
     assert "zrsd001" in resp.text and resp.status_code == 200
     assert stored.exists()
+
+
+def test_zrsd003_upload_keeps_platform_invoices_and_deletes_the_file(app, db, tmp_path):
+    z3 = zrsd003_file(
+        tmp_path / "zrsd003.xlsx",
+        [zrsd003_row("1910061168", "7914", "1200001146"), zrsd003_row("1910061300", "1", "42")],
+    )
+    viewer = _client(app, "viewer", "viewer-password")
+    assert _upload(viewer, "/sap-reports/zrsd003", z3).status_code == 303
+    assert db.scalar(select(SapTaxInvoice)) is None
+
+    client = _client(app, "admin", "admin-password")
+    resp = _upload(client, "/sap-reports/zrsd003", z3)
+    assert resp.status_code == 303 and resp.headers["location"] == "/sap-reports"
+    page = client.get("/sap-reports").text
+    assert "zrsd003: 1 hóa đơn của sàn (1 mới, 0 cập nhật), bỏ qua 1 dòng khách khác." in page
+    db.expire_all()
+    assert db.get(SapTaxInvoice, "1910061168").tax_invoice_doc == "7914"
+    assert not _stored(db, "zrsd003").exists()
+
+
+def test_zrsd003_upload_with_a_missing_column_writes_nothing(app, db, tmp_path):
+    client = _client(app, "admin", "admin-password")
+    z4 = zrsd004_file(tmp_path / "z4.xlsx", [zrsd004_row("1900000001", "210000001", "1")])
+    resp = _upload(client, "/sap-reports/zrsd003", z4)
+    assert resp.status_code == 200 and "Tax Invoice Doc." in resp.text
+    assert db.scalar(select(SapTaxInvoice)) is None
+    assert not any(app.state.settings.upload_dir.iterdir())
 
 
 def test_cancel_order(app, db, tmp_path):

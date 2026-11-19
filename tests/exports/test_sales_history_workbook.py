@@ -10,6 +10,7 @@ from shoponline.exports.sales_history_workbook import (
     CUSTOMER,
     DIVISION_MISSING,
     REPORT_NAME,
+    TAX_INVOICE,
     build_history_workbook,
     collect_rows,
     history_file_name,
@@ -41,7 +42,7 @@ def _confirm(db, order):
 def test_money_order_and_layout(db):
     setup.report_name(db)
     setup.report_name(db, "100002000")
-    later = setup.order(db, "B-2", datetime(2026, 11, 12, 9, 30))
+    later = setup.order(db, "B-2", datetime(2026, 11, 12, 9, 30), invoice="0007914")
     first = setup.order(
         db,
         "A-1",
@@ -59,7 +60,7 @@ def test_money_order_and_layout(db):
         (120000, 120000, 1),
     ]
     ws = _sheet(result.rows)
-    assert len(COLUMNS) == 18 and COLUMNS[-2:] == ("variation", "Mã đơn")
+    assert len(COLUMNS) == 19 and COLUMNS[-3:] == ("variation", "Mã đơn", "Tax Invoice Doc.")
     assert [c.value for c in ws[1]] == list(COLUMNS)
     assert ws.max_row == 4
     assert [c.value for c in ws[2]] == [
@@ -81,11 +82,14 @@ def test_money_order_and_layout(db):
         "0.8 lít",
         "Màu sắc:2004 Cánh gián",
         "A-1",
+        "HDA-1",
     ]
     assert ws["H3"].value == '=E3&" "&B3' and ws["I3"].value == "=IF(H3=H2,0,1)"
     assert ws["O3"].value == "Propan - SƠN 100002000"
     assert ws["B4"].value == "2026-11-12 09:30"
     assert ws["J2"].number_format == "#,##0" and ws["K2"].number_format == "#,##0"
+    assert ws["S4"].value == "0007914" and ws["S4"].number_format == "@"  # text, zeros kept
+    assert ws["R4"].number_format == "@"
 
 
 def test_only_pending_delivered_orders_up_to_the_day(db):
@@ -174,6 +178,23 @@ def test_blocked_order_does_not_hold_back_the_others(db):
     result = collect_rows(db, UNTIL)
     assert result.order_ids == [good.id]
     assert [b.platform_order_id for b in result.blocked] == ["BAD"]
+
+
+def test_blocked_until_the_do_has_a_tax_invoice(db):
+    setup.report_name(db)
+    waiting = setup.order(db, "WAIT", datetime(2026, 11, 11), invoice=None)
+    blocked = _blocked(db)
+    assert [(r.kind, r.text) for r in blocked.reasons] == [
+        (TAX_INVOICE, f"DO {waiting.do_number} chưa có Tax Invoice Doc.")
+    ]
+    setup.tax_invoice(db, waiting.do_number, "7914")
+    result = collect_rows(db, UNTIL)
+    assert result.blocked == [] and [r.tax_invoice_doc for r in result.rows] == ["7914"]
+
+
+def test_tax_invoice_reason_adds_to_the_others(db):
+    setup.order(db, "BOTH", datetime(2026, 11, 11), name=None, invoice=None)
+    assert [r.kind for r in _blocked(db).reasons] == [CUSTOMER, REPORT_NAME, TAX_INVOICE]
 
 
 def test_file_name():

@@ -182,6 +182,27 @@ def test_robot_form_reads_a_day_without_batches_but_not_the_future(db, tmp_path)
     assert len(_jobs(db)) == 1
 
 
+def test_robot_form_queues_zrsd003_for_a_billing_date_range(db, tmp_path):
+    app = _app(db, tmp_path, QA)
+    client = _login(app, "admin")
+    assert 'value="zrsd003"' in client.get("/robot").text
+    form = {"report": "zrsd003", "date_from": "2026-11-02", "date_to": "2026-11-13"}
+    page = client.post("/robot/jobs/new", data=form).text
+    assert "Robot sẽ đọc zrsd003 từ 02/11/2026 đến 13/11/2026" in page
+    job = _jobs(db)[0]
+    assert job.kind == queue.READ_ZRSD003
+    assert queue.payload_of(job) == {"date_from": "2026-11-02", "date_to": "2026-11-13"}
+    assert "hóa đơn 2026-11-02 → 2026-11-13" in client.get("/robot").text
+
+    reversed_range = {**form, "date_from": "2026-11-13", "date_to": "2026-11-02"}
+    assert "trước hoặc bằng" in client.post("/robot/jobs/new", data=reversed_range).text
+    future = {**form, "date_to": "2026-11-14"}
+    assert "chưa tới" in client.post("/robot/jobs/new", data=future).text
+    assert "Chọn ngày hóa đơn" in client.post("/robot/jobs/new", data={"report": "zrsd003"}).text
+    _login(app, "viewer").post("/robot/jobs/new", data=form)
+    assert len(_jobs(db)) == 1
+
+
 def test_robot_form_zrsd001_needs_a_confirmed_batch(db, tmp_path, batch):
     client = _login(_app(db, tmp_path, QA), "admin")
     form = {"report": "zrsd001", "batch_id": str(batch.id)}

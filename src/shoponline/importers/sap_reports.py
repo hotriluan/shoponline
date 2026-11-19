@@ -1,4 +1,5 @@
-"""SAP report exports: zrsd001 (sales orders with PO No) and zrsd004 (deliveries)."""
+"""SAP report exports: zrsd001 (sales orders with PO No), zrsd003 (tax invoices) and zrsd004
+(deliveries)."""
 
 from __future__ import annotations
 
@@ -21,6 +22,15 @@ ZRSD001_REQUIRED = (
     "Net Value (Incl)",
 )
 ZRSD004_REQUIRED = ("Delivery", "SO Reference", "Sold-to Party", "Actual GI Date")
+ZRSD003_REQUIRED = (
+    "Billing Type",
+    "Billing Date",
+    "Billing Doc.",
+    "OD Doc.",
+    "Tax Invoice Doc.",
+    "Bill-to",
+)
+ZRSD003_BILLING_TYPE = "ZBA1"  # an ordinary invoice; cancellations and corrections are left out
 DATE_FORMATS = ("%Y-%m-%d", "%d.%m.%Y", "%d/%m/%Y")
 
 
@@ -131,4 +141,42 @@ def read_zrsd004(source: str | Path | BinaryIO) -> list[DeliveryRow]:
         raise FileRejected("File zrsd004 có dòng không đọc được", errors)
     if not rows:
         raise FileRejected("File zrsd004 không có DO nào")
+    return rows
+
+
+@dataclass(frozen=True)
+class TaxInvoiceRow:
+    delivery: str
+    tax_invoice_doc: str
+    billing_doc: str
+    billing_date: date
+    bill_to: str
+
+
+def read_zrsd003(source: str | Path | BinaryIO) -> list[TaxInvoiceRow]:
+    """Every ZBA1 invoice of the file, for all customers. Codes stay text, as SAP shows them."""
+    table = read_table(source, required=ZRSD003_REQUIRED)
+    rows: list[TaxInvoiceRow] = []
+    errors: list[str] = []
+    for row in table.rows:
+        if not row["OD Doc."] or row["Billing Type"] != ZRSD003_BILLING_TYPE:
+            continue
+        try:
+            if not row["Tax Invoice Doc."]:
+                raise ValueError(f"DO {row['OD Doc.']} không có Tax Invoice Doc.")
+            rows.append(
+                TaxInvoiceRow(
+                    delivery=row["OD Doc."],
+                    tax_invoice_doc=row["Tax Invoice Doc."],
+                    billing_doc=row["Billing Doc."],
+                    billing_date=parse_report_date(row["Billing Date"], "Billing Date"),
+                    bill_to=row["Bill-to"],
+                )
+            )
+        except ValueError as exc:
+            errors.append(f"Dòng {row.number}: {exc}")
+    if errors:
+        raise FileRejected("File zrsd003 có dòng không đọc được, không nhập gì", errors)
+    if not rows:
+        raise FileRejected("File zrsd003 không có hóa đơn nào")
     return rows

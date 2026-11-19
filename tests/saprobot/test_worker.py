@@ -15,6 +15,7 @@ from shoponline.db.models import (
     SalesOrder,
     SapJob,
     SapSoRef,
+    SapTaxInvoice,
 )
 from shoponline.domain import states
 from shoponline.domain.sku_mapping import upsert_mapping
@@ -22,7 +23,11 @@ from shoponline.importers.order_import import import_orders
 from shoponline.importers.shopee_orders import read_shopee_orders
 from shoponline.sapjobs import queue
 from shoponline.sapjobs.queue import SapTarget
-from shoponline.sapjobs.report_requests import request_zrsd001, request_zrsd004
+from shoponline.sapjobs.report_requests import (
+    request_zrsd001,
+    request_zrsd003,
+    request_zrsd004,
+)
 from shoponline.saprobot.errors import NoReportData, SapMessageError
 from shoponline.saprobot.screen import Screens
 from shoponline.saprobot.session import LoginConfig
@@ -32,6 +37,8 @@ from tests.fixtures.build_fixtures import (
     shopee_row,
     zrsd001_file,
     zrsd001_row,
+    zrsd003_file,
+    zrsd003_row,
     zrsd004_file,
     zrsd004_row,
 )
@@ -392,6 +399,43 @@ def test_done_job_deletes_its_work_folder_and_the_spent_stored_report(
     assert not (settings.robot_work_dir / f"job-{job.id}").exists()
     record = db.get(ImportBatch, job.import_batch_id)  # the row stays, the file goes
     assert not Path(record.stored_path).exists()
+
+
+def test_zrsd003_read_stores_platform_invoices_and_deletes_the_report(db, settings, tmp_path):
+    report = zrsd003_file(
+        tmp_path / "z3.xlsx",
+        [zrsd003_row("1910061168", "7914", "1200001146"), zrsd003_row("1910061300", "1", "42")],
+    )
+    job = request_zrsd003(db, QA, date(2026, 11, 2), date(2026, 11, 19), "admin")
+    assert job.dedupe_key == "read_zrsd003:2026-11-02:2026-11-19"
+    txn = _export_into_work_dir(report)
+    _worker(db, settings, _qa_session(), {queue.READ_ZRSD003: txn}).run_once()
+
+    job = _job(db, job.id)
+    assert job.status == queue.DONE, job.error
+    assert queue.result_of(job) == {"kept": 1, "new": 1, "updated": 0, "skipped": 1}
+    assert db.get(SapTaxInvoice, "1910061168").import_batch_id == job.import_batch_id
+    assert not Path(db.get(ImportBatch, job.import_batch_id).stored_path).exists()
+    assert not (settings.robot_work_dir / f"job-{job.id}").exists()
+
+
+def test_zrsd003_without_data_is_done_and_neutral(db, settings):
+    job = request_zrsd003(db, QA, date(2026, 11, 19), date(2026, 11, 19), "admin")
+    worker = _worker(
+        db, settings, _qa_session(), {queue.READ_ZRSD003: Transaction(_no_data, False)}
+    )
+    worker.run_once()
+    job = _job(db, job.id)
+    assert job.status == queue.DONE and queue.result_of(job)["no_data"] is True
+    assert _failures(db) == 0
+
+
+def test_zrsd003_request_refuses_a_reversed_range_and_a_duplicate(db):
+    with pytest.raises(ValueError, match="trước hoặc bằng"):
+        request_zrsd003(db, QA, date(2026, 11, 19), date(2026, 11, 2), "admin")
+    request_zrsd003(db, QA, date(2026, 11, 2), date(2026, 11, 19), "admin")
+    with pytest.raises(queue.DuplicateJob):
+        request_zrsd003(db, QA, date(2026, 11, 2), date(2026, 11, 19), "admin")
 
 
 def test_zrsd004_read_for_an_open_run_keeps_its_stored_report(db, settings, batch, tmp_path):

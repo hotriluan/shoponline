@@ -25,12 +25,13 @@ NEED_REVIEW = "NEED_REVIEW"
 ACTIVE_STATUSES = frozenset({PENDING, RUNNING, UNKNOWN, NEED_REVIEW})
 
 READ_ZRSD001 = "read_zrsd001"
+READ_ZRSD003 = "read_zrsd003"
 READ_ZRSD004 = "read_zrsd004"
 # Jobs that only read SAP; they can be retried without risk of creating a second document.
 # Logs on, reads who is logged on, logs off. It sends no T-code, so it also runs while the robot is
 # paused or the configured system has not been verified yet.
 CHECK_CONNECTION = "check_connection"
-READ_KINDS = frozenset({READ_ZRSD001, READ_ZRSD004, CHECK_CONNECTION})
+READ_KINDS = frozenset({READ_ZRSD001, READ_ZRSD003, READ_ZRSD004, CHECK_CONNECTION})
 CHECK_KEY = "check_connection"
 
 LABELS = {

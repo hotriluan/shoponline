@@ -597,6 +597,61 @@ def zrsd004_file(path: Path, rows: list[dict], *, total_rows: bool = True) -> Pa
     return _write(path, "Sheet1", ZRSD004_HEADERS, data)
 
 
+ZRSD003_HEADERS = [
+    "Billing Type",
+    "Sales Office",
+    "Sloc",
+    "Billing Date",
+    "Billing Doc.",
+    "OD Doc.",
+    "Tax Invoice Doc.",
+    "Bill-to",
+    "Name",
+    "VAT Reg. No.",
+    "Tax Classification",
+    "Exch. Rate-Acct.",
+    "Doc. Currency",
+    "Net Value",
+    "Net Value (VND)",
+    "Tax (VND)",
+]
+
+
+def zrsd003_row(
+    delivery: str,
+    tax_invoice: str,
+    bill_to: str = "1200001145",
+    billing_date: date = date(2026, 11, 13),
+    *,
+    billing_type: str = "ZBA1",
+    billing_doc: str = "1930000001",
+    name: str = "Khách thử",
+) -> dict[str, object]:
+    return {
+        "Billing Type": billing_type,
+        "Sales Office": "1401",
+        "Sloc": "0101",
+        "Billing Date": datetime.combine(billing_date, datetime.min.time()),
+        "Billing Doc.": billing_doc,
+        "OD Doc.": delivery,
+        "Tax Invoice Doc.": tax_invoice,
+        "Bill-to": bill_to,
+        "Name": name,
+        "VAT Reg. No.": "0000000000",
+        "Tax Classification": "1",
+        "Exch. Rate-Acct.": 1,
+        "Doc. Currency": "VND",
+        "Net Value": 100000,
+        "Net Value (VND)": 100000,
+        "Tax (VND)": 8000,
+    }
+
+
+def zrsd003_file(path: Path, rows: list[dict], *, headers: list[str] | None = None) -> Path:
+    headers = headers or ZRSD003_HEADERS
+    return _write(path, "Sheet1", headers, [[r.get(h, "") for h in headers] for r in rows])
+
+
 def write_sample_set(folder: Path) -> list[Path]:
     """A small consistent day: Shopee + TikTok files and the matching SAP reports."""
     return [

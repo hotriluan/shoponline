@@ -219,6 +219,22 @@ class SapSoRefItem(Base):
     so_ref: Mapped[SapSoRef] = relationship(back_populates="items")
 
 
+class SapTaxInvoice(Base):
+    """The tax invoice of one platform delivery, as seen in zrsd003 (one invoice per DO)."""
+
+    __tablename__ = "sap_tax_invoice"
+
+    delivery: Mapped[str] = mapped_column(String(20), primary_key=True)
+    tax_invoice_doc: Mapped[str] = mapped_column(String(20))
+    billing_doc: Mapped[str] = mapped_column(String(20))
+    billing_date: Mapped[date] = mapped_column(Date)
+    bill_to: Mapped[str] = mapped_column(String(20))
+    import_batch_id: Mapped[int | None] = mapped_column(ForeignKey("import_batch.id"))
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+
 class SapJob(Base):
     """One unit of SAP work for the robot. The target system is part of every job."""
 

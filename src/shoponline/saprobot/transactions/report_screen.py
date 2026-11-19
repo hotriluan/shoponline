@@ -1,8 +1,8 @@
-"""Steps shared by the two report reads: open the report, run it, export the result to Excel.
+"""Steps shared by the report reads: open the report, run it, export the result to Excel.
 
-Follows the recorder scripts of 2026-11-12, kept outside git because they hold real customer
-data. Dates are typed into the filter field in the SAP user's format instead of picking them in
-the F4 calendar the recording used.
+Follows the recorder scripts of 2026-11-12 (zrsd001, zrsd004) and 2026-11-19 (zrsd003), kept
+outside git because they hold real customer data. Dates are typed into the filter field in the
+SAP user's format instead of picking them in the F4 calendar the recordings used.
 """
 
 from __future__ import annotations
@@ -11,6 +11,7 @@ from datetime import date
 from pathlib import Path
 
 from shoponline.saprobot.errors import NoReportData, RobotError
+from shoponline.saprobot.guard import VKEY_ENTER
 from shoponline.saprobot.worker import JobContext
 
 # Status bar text after F8 when nothing matches; SAP stays on the filter screen.
@@ -26,6 +27,12 @@ def open_report(ctx: JobContext, tcode: str) -> None:
 
 def fill(ctx: JobContext, screen: str, element: str, value: str) -> None:
     ctx.screens.set_text(ctx.gui, screen, element, value)
+
+
+def confirm(ctx: JobContext) -> None:
+    """Press Enter on the filter screen, as the recording does where SAP reloads the screen."""
+    ctx.gui.send_vkey(VKEY_ENTER)
+    ctx.step()
 
 
 def fill_date(ctx: JobContext, screen: str, element: str, iso_day: str) -> None:

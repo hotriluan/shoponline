@@ -13,11 +13,13 @@ from shoponline.db.models import (
     ReportItemName,
     SalesOrder,
     SalesOrderItem,
+    SapTaxInvoice,
 )
 from shoponline.domain import states
 
 MATERIAL = "100001787"
 ADDRESS = "Phường Sài Gòn, Thành phố Hồ Chí Minh, Việt Nam"
+AUTO = "auto"
 
 
 def batch(db: Session, platform: str = "SHOPEE", day: date = date(2026, 11, 10)) -> OrderBatch:
@@ -56,8 +58,10 @@ def order(
     name: str | None = "Nguyễn Văn A",
     address: str | None = ADDRESS,
     customer: bool = True,
+    invoice: str | None = AUTO,
 ) -> SalesOrder:
-    """lines: (material, quantity, unit_price, unit_subsidy) per order line."""
+    """lines: (material, quantity, unit_price, unit_subsidy) per order line. A delivered order
+    gets a tax invoice for its DO ("HD" + order id) unless invoice is None."""
     created = SalesOrder(
         platform=platform,
         platform_order_id=order_id,
@@ -86,5 +90,20 @@ def order(
                 platform=platform, platform_order_id=order_id, customer_name=name, address=address
             )
         )
+    if created.do_number and invoice is not None:
+        tax_invoice(db, created.do_number, f"HD{order_id}" if invoice == AUTO else invoice)
     db.flush()
     return created
+
+
+def tax_invoice(db: Session, delivery: str, number: str) -> SapTaxInvoice:
+    row = SapTaxInvoice(
+        delivery=delivery,
+        tax_invoice_doc=number,
+        billing_doc="1930000001",
+        billing_date=date(2026, 11, 13),
+        bill_to="1200001145",
+    )
+    db.add(row)
+    db.flush()
+    return row

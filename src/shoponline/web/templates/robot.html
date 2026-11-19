@@ -50,6 +50,12 @@
     <label>Ngày GI <input type="date" name="gi_date" value="{{ today.isoformat() }}" max="{{ today.isoformat() }}" required></label>
     <button class="secondary">Đọc zrsd004</button>
   </form>
+  <form method="post" action="/robot/jobs/new" class="row">
+    <input type="hidden" name="report" value="zrsd003">
+    <label>Ngày hóa đơn từ <input type="date" name="date_from" value="{{ today.isoformat() }}" max="{{ today.isoformat() }}" required></label>
+    <label>đến <input type="date" name="date_to" value="{{ today.isoformat() }}" max="{{ today.isoformat() }}" required></label>
+    <button class="secondary">Đọc zrsd003</button>
+  </form>
   {% endif %}
 </div>
 {% endif %}
@@ -67,13 +73,13 @@
     <td>{{ j.id }}</td>
     <td>{{ j.kind }}</td>
     <td>{{ j.target_system }}/{{ j.target_client }}</td>
-    <td>{% if p.batch_id %}<a href="/batches/{{ p.batch_id }}">lô {{ p.platform }} {{ p.date_from }}</a>{% elif p.gi_date %}ngày GI {{ p.gi_date }}{% endif %}</td>
+    <td>{% if p.batch_id %}<a href="/batches/{{ p.batch_id }}">lô {{ p.platform }} {{ p.date_from }}</a>{% elif p.gi_date %}ngày GI {{ p.gi_date }}{% elif p.date_from %}hóa đơn {{ p.date_from }} → {{ p.date_to }}{% endif %}</td>
     <td><span class="tag j-{{ j.status }}">{{ JOB_LABELS[j.status] }}</span></td>
     <td class="num">{{ j.attempts }}</td>
     <td>{{ j.created_at|localtime('%d/%m %H:%M') }} {{ j.created_by }}</td>
     <td>{{ j.finished_at|localtime('%d/%m %H:%M') }}</td>
     <td>{% if j.error %}<span class="bad">{{ j.error }}</span>{% elif j.result %}{% set r = result_of(j) %}
-        {% if r.no_data %}SAP chưa có DO{% else %}
+        {% if r.no_data %}SAP chưa có {{ 'hóa đơn' if j.kind == 'read_zrsd003' else 'DO' }}{% else %}
         {% for k, v in r.items() if k != 'warnings' %}{{ k }}: {{ v }}{% if not loop.last %}, {% endif %}{% endfor %}{% endif %}
         {% if r.warnings %}<br><span class="bad">{{ r.warnings|join('; ') }}</span>{% endif %}
         {% if j.kind == 'read_zrsd004' and j.import_batch_id %}<br><a href="/accounting">Gửi kế toán</a>{% endif %}

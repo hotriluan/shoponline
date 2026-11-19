@@ -1,10 +1,13 @@
-"""Rows to append to the accountants' `Shop Online 2022-2026` history file (sheet1's 17 columns plus a trailing order id column).
+"""Rows to append to the accountants' `Shop Online 2022-2026` history file: sheet1's 17
+columns, then the order id and the tax invoice number of the order's DO (19 columns).
 
 Every DELIVERED order not yet confirmed as pasted into that file (sales_history_exported) and
 ordered on or before a given day goes in, one row per order line. An order missing a value the
-file needs (customer name, a province in its address, the report name of a material) is
-reported as blocked instead of guessed. Columns H and I are the file's own relative formulas,
-so the rows can be pasted below the last row of sheet1 as they are.
+file needs (customer name, a province in its address, the report name of a material, the tax
+invoice of its DO read from zrsd003) is reported as blocked instead of guessed. The invoice is
+issued after the DO, so an order waiting for it is the normal state between the two. Columns H
+and I are the file's own relative formulas, so the rows can be pasted below the last row of
+sheet1 as they are.
 """
 
 from __future__ import annotations
@@ -23,6 +26,7 @@ from shoponline.db.models import (
     ReportItemName,
     SalesHistoryExported,
     SalesOrder,
+    SapTaxInvoice,
 )
 from shoponline.domain import states
 from shoponline.domain.report_names import province_of
@@ -48,6 +52,7 @@ COLUMNS = (
     "Product Classification SKU",
     "variation",
     "Mã đơn",
+    "Tax Invoice Doc.",
 )
 DIVISION = {
     "SHOPEE": "Shopee Bình Dương",
@@ -57,11 +62,13 @@ DIVISION = {
 HIDDEN_PHONE = "******"
 MONEY_FORMAT = "#,##0"
 MONEY_COLUMNS = ("J", "K")
+TEXT_COLUMNS = ("R", "S")
 
 # Why an order is blocked; the kind tells the page where it is fixed.
 CUSTOMER = "customer"
 REPORT_NAME = "report_name"
 DIVISION_MISSING = "division"
+TAX_INVOICE = "tax_invoice"
 
 
 @dataclass(frozen=True)
@@ -92,6 +99,7 @@ class HistoryRow:
     size: str
     variation: str
     platform_order_id: str
+    tax_invoice_doc: str
 
 
 @dataclass
@@ -147,6 +155,14 @@ def collect_rows(session: Session, until: date) -> HistoryRows:
             select(ReportItemName).where(ReportItemName.material_number.in_(materials))
         )
     }
+    deliveries = {o.do_number for o in orders if o.do_number}
+    invoices = dict(
+        session.execute(
+            select(SapTaxInvoice.delivery, SapTaxInvoice.tax_invoice_doc).where(
+                SapTaxInvoice.delivery.in_(deliveries)
+            )
+        ).all()
+    )
 
     for order in orders:
         reasons: list[Reason] = []
@@ -167,6 +183,9 @@ def collect_rows(session: Session, until: date) -> HistoryRows:
                 reasons.append(
                     Reason(REPORT_NAME, f"Mã {item.material_number} chưa có tên báo cáo")
                 )
+        invoice = invoices.get(order.do_number or "")
+        if invoice is None:
+            reasons.append(Reason(TAX_INVOICE, f"DO {order.do_number} chưa có Tax Invoice Doc."))
         if reasons:
             result.blocked.append(
                 BlockedOrder(
@@ -194,6 +213,7 @@ def collect_rows(session: Session, until: date) -> HistoryRows:
                     size=report.size,
                     variation=report.variation,
                     platform_order_id=order.platform_order_id,
+                    tax_invoice_doc=invoice,
                 )
             )
     return result
@@ -226,9 +246,12 @@ def build_history_workbook(rows: Sequence[HistoryRow]) -> Workbook:
             row.size,
             row.variation,
             row.platform_order_id,
+            row.tax_invoice_doc,
         )
         for col, value in enumerate(values, start=1):
             ws.cell(r, col, value)
         for letter in MONEY_COLUMNS:
             ws[f"{letter}{r}"].number_format = MONEY_FORMAT
+        for letter in TEXT_COLUMNS:  # ids made of digits stay text when pasted
+            ws[f"{letter}{r}"].number_format = "@"
     return wb

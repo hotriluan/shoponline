@@ -5,7 +5,7 @@ from sqlalchemy.orm import Session
 from shoponline.db.models import AppUser, ImportBatch, OrderBatch
 from shoponline.importers.excel_table import FileRejected
 from shoponline.maintenance import retention
-from shoponline.reconcile.report_ingest import ingest_zrsd001, ingest_zrsd004
+from shoponline.reconcile.report_ingest import ingest_zrsd001, ingest_zrsd003, ingest_zrsd004
 from shoponline.web.app import current_user, flash, get_db, redirect, render, require_admin
 from shoponline.web.uploads import UploadRejected, save_upload
 
@@ -20,7 +20,7 @@ def _page(request, db, user, **extra):
     ).all()
     recent = db.scalars(
         select(ImportBatch)
-        .where(ImportBatch.kind.in_(("zrsd001", "zrsd004")))
+        .where(ImportBatch.kind.in_(("zrsd001", "zrsd003", "zrsd004")))
         .order_by(ImportBatch.imported_at.desc())
         .limit(10)
     ).all()
@@ -69,6 +69,36 @@ async def upload_zrsd001(
     for warning in result.warnings:
         flash(request, warning, "error")
     return redirect(f"/batches/{batch.id}" if batch else "/sap-reports")
+
+
+@router.post("/sap-reports/zrsd003")
+async def upload_zrsd003(
+    request: Request,
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    user: AppUser = Depends(require_admin),
+):
+    settings = request.app.state.settings
+    new_file = None
+    try:
+        record, created = await save_upload(
+            settings, file, kind="zrsd003", platform=None, actor=user.username
+        )
+        new_file = record.stored_path if created else None
+        result = ingest_zrsd003(db, record, user.username)
+    except (UploadRejected, FileRejected) as exc:
+        db.rollback()
+        retention.discard_unused(db, settings, [new_file])
+        return _page(request, db, user, error=str(exc))
+    db.commit()
+    # Read once, at import: the file also holds business customers' names and tax codes.
+    retention.discard_unused(db, settings, [record.stored_path])
+    flash(
+        request,
+        f"zrsd003: {result.kept} hóa đơn của sàn ({result.new} mới, {result.updated} cập nhật), "
+        f"bỏ qua {result.skipped_other_customers} dòng khách khác.",
+    )
+    return redirect("/sap-reports")
 
 
 @router.post("/sap-reports/zrsd004")

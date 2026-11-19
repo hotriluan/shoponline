@@ -1,4 +1,4 @@
-"""The T-code guard: the robot stays inside ZRSD001 and ZRSD004 and never saves."""
+"""The T-code guard: the robot stays inside ZRSD001, ZRSD003 and ZRSD004 and never saves."""
 
 import re
 from pathlib import Path
@@ -31,8 +31,9 @@ def _go_to(gui: FakeSession, tcode: str):
 
 def test_allowed_lists_are_pinned_in_code():
     # Widening either list must be a deliberate code change that also edits this test.
-    assert {"S000", "SESSION_MANAGER", "ZRSD001", "ZRSD004"} == guard.ALLOWED_TRANSACTIONS
-    assert {"ZRSD001", "ZRSD004"} == guard.OPENABLE_TRANSACTIONS
+    allowed = {"S000", "SESSION_MANAGER", "ZRSD001", "ZRSD003", "ZRSD004"}
+    assert allowed == guard.ALLOWED_TRANSACTIONS
+    assert {"ZRSD001", "ZRSD003", "ZRSD004"} == guard.OPENABLE_TRANSACTIONS
     assert {VKEY_ENTER, VKEY_F8_EXECUTE} == guard.ALLOWED_VKEYS
     assert VKEY_SAVE not in guard.ALLOWED_VKEYS
 

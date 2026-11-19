@@ -1,4 +1,5 @@
-"""zrsd001 and zrsd004 reads against the fake SAP GUI, using the repo's screen and popup config."""
+"""zrsd001, zrsd003 and zrsd004 reads against the fake SAP GUI, with the repo's screen and
+popup config."""
 
 import shutil
 from pathlib import Path
@@ -11,7 +12,7 @@ from shoponline.saprobot.errors import NoReportData, RobotError
 from shoponline.saprobot.guard import GuardedSession
 from shoponline.saprobot.popups import load_rules
 from shoponline.saprobot.screen import Screens
-from shoponline.saprobot.transactions import read_zrsd001, read_zrsd004
+from shoponline.saprobot.transactions import read_zrsd001, read_zrsd003, read_zrsd004
 from shoponline.saprobot.worker import TRANSACTIONS, JobContext
 from tests.saprobot.fake_sap import FakeSession, Info
 
@@ -28,6 +29,7 @@ ZRSD001_PAYLOAD = {
     "selection": "complete",
 }
 ZRSD004_PAYLOAD = {"platform": "SHOPEE", "sold_to": "1200001145", "gi_date": "2026-11-12"}
+ZRSD003_PAYLOAD = {"date_from": "2026-11-02", "date_to": "2026-11-19"}
 
 
 class FakeSave:
@@ -105,7 +107,12 @@ def _filled(raw: FakeSession, screen: str) -> dict[str, str]:
 
 
 def test_every_registered_step_is_read_only():
-    assert set(TRANSACTIONS) == {queue.READ_ZRSD001, queue.READ_ZRSD004, queue.CHECK_CONNECTION}
+    assert set(TRANSACTIONS) == {
+        queue.READ_ZRSD001,
+        queue.READ_ZRSD003,
+        queue.READ_ZRSD004,
+        queue.CHECK_CONNECTION,
+    }
     assert not any(t.writes for t in TRANSACTIONS.values())
 
 
@@ -169,9 +176,43 @@ def test_zrsd004_fills_the_filter_and_exports_the_result(tmp_path):
     assert ("cell", GRID, 0, "VGBEL") in raw.actions
 
 
+def test_zrsd003_confirms_org_and_office_then_exports_the_tax_invoice_column(tmp_path):
+    raw = _sap()
+    open_report, filled_at_enter = raw.on_vkey, []
+
+    def on_vkey(key: int) -> None:
+        filled_at_enter.append(set(_filled(raw, "zrsd003")))
+        open_report(key)
+
+    raw.on_vkey = on_vkey
+    out = read_zrsd003.run(_ctx(raw, ZRSD003_PAYLOAD, tmp_path, FakeDesktop(_export(tmp_path))))
+
+    assert out.file == tmp_path / "zrsd003-job-7.xlsx"
+    assert raw.Info.Transaction == "ZRSD003"
+    assert _filled(raw, "zrsd003") == {
+        "sales_org": "1000",
+        "sales_office": "1401",
+        "billing_date_from": "02.11.2026",
+        "billing_date_to": "19.11.2026",
+    }
+    # Enter opens the report, then confirms Sales Organization, then Sales Office.
+    assert filled_at_enter == [set(), {"sales_org"}, {"sales_org", "sales_office"}]
+    assert not any(a[0] == "select" for a in raw.actions)  # Exist / SD stay as SAP sets them
+    assert raw.actions[-5:-1] == [
+        ("press", EXECUTE),
+        ("cell", GRID, 0, "TAXSR"),
+        ("menu", GRID),
+        ("menu_item", GRID, "&XXL"),
+    ]
+
+
 @pytest.mark.parametrize(
     ("module", "payload"),
-    [(read_zrsd001, ZRSD001_PAYLOAD), (read_zrsd004, ZRSD004_PAYLOAD)],
+    [
+        (read_zrsd001, ZRSD001_PAYLOAD),
+        (read_zrsd003, ZRSD003_PAYLOAD),
+        (read_zrsd004, ZRSD004_PAYLOAD),
+    ],
 )
 def test_no_data_ends_the_read_before_any_export(tmp_path, module, payload):
     desktop = FakeDesktop(_export(tmp_path))

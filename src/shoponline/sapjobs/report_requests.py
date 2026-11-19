@@ -1,4 +1,5 @@
-"""Queue the robot's report reads: zrsd001 after batch confirmation, zrsd004 on goods issue day."""
+"""Queue the robot's report reads: zrsd001 after batch confirmation, zrsd004 on goods issue
+day, zrsd003 once the invoices of delivered orders are out."""
 
 from __future__ import annotations
 
@@ -54,5 +55,29 @@ def request_zrsd004(
         target,
         zrsd004_key(platform, gi_date),
         {"platform": platform, "sold_to": setting.sap_customer, "gi_date": day},
+        actor,
+    )
+
+
+def zrsd003_key(date_from: date, date_to: date) -> str:
+    return f"{queue.READ_ZRSD003}:{date_from.isoformat()}:{date_to.isoformat()}"
+
+
+def request_zrsd003(
+    session: Session, target: SapTarget, date_from: date, date_to: date, actor: str
+) -> SapJob:
+    """zrsd003 for every invoice of the sales office billed in [date_from, date_to].
+
+    The report cannot filter by customer, so one read serves every platform; the import keeps
+    only the platforms' rows.
+    """
+    if date_from > date_to:
+        raise ValueError("Ngày bắt đầu phải trước hoặc bằng ngày kết thúc.")
+    return queue.enqueue(
+        session,
+        queue.READ_ZRSD003,
+        target,
+        zrsd003_key(date_from, date_to),
+        {"date_from": date_from.isoformat(), "date_to": date_to.isoformat()},
         actor,
     )

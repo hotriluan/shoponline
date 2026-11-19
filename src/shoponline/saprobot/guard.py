@@ -1,4 +1,4 @@
-"""The only door between the robot and SAP GUI: a wrapper that keeps the robot inside two reports.
+"""The only door between the robot and SAP GUI: a wrapper that keeps the robot inside its reports.
 
 Every action (type text, select, press, send a key, open a T-code) reads Info.Transaction before
 and after it runs. A T-code outside ALLOWED_TRANSACTIONS trips the guard: it raises
@@ -17,10 +17,11 @@ from collections.abc import Callable
 from shoponline.saprobot.errors import GuardViolation
 
 # Info.Transaction values seen on AEP/300 with user AL17016 (System → Status, 2026-11-12):
-# login screen, main menu, and the two reports (filter screen and ALV result screen).
-ALLOWED_TRANSACTIONS = frozenset({"S000", "SESSION_MANAGER", "ZRSD001", "ZRSD004"})
+# login screen, main menu, and the reports (filter screen and ALV result screen). ZRSD003 was
+# recorded on 2026-11-19.
+ALLOWED_TRANSACTIONS = frozenset({"S000", "SESSION_MANAGER", "ZRSD001", "ZRSD003", "ZRSD004"})
 # T-codes the robot may open itself through the command field.
-OPENABLE_TRANSACTIONS = frozenset({"ZRSD001", "ZRSD004"})
+OPENABLE_TRANSACTIONS = frozenset({"ZRSD001", "ZRSD003", "ZRSD004"})
 
 # SAP GUI virtual keys.
 VKEY_ENTER = 0

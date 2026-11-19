@@ -18,6 +18,12 @@
   <label>File zrsd004 xuất từ SAP<input type="file" name="file" accept=".xlsx,.XLSX" required></label>
   <button>Tải lên và xem trước</button>
 </form>
+<h2>zrsd003 – số hóa đơn (Tax Invoice)</h2>
+<form class="box row" method="post" action="/sap-reports/zrsd003" enctype="multipart/form-data">
+  <label>File zrsd003 xuất từ SAP<input type="file" name="file" accept=".xlsx,.XLSX" required></label>
+  <button>Tải lên</button>
+</form>
+<p class="muted">Dùng khi robot không đọc được zrsd003. Hóa đơn xuất sau DO; trên SAP chọn Sales Organization 1000, Sales Office 1401 và Billing Date bao trùm các đơn đang chờ hóa đơn. Chỉ giữ hóa đơn của khách SAP các sàn; file gốc bị xóa ngay sau khi nhập.</p>
 {% endif %}
 <h2>Lần tải gần đây</h2>
 <table>

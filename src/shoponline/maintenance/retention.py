@@ -6,7 +6,7 @@ removes whatever is left over:
 
 - uploads/: the zrsd004 files of a run that is still open (attached by hand, or read by the
   robot), and zrsd004 files uploaded by hand that still wait to be attached to a run, for at most
-  retention_days. Platform files, mapping tables and zrsd001 are read once, at import.
+  retention_days. Platform files, mapping tables, zrsd001 and zrsd003 are read once, at import.
 - exports/: an accounting file a run points to, and a Shop Online history file that still holds
   an order not yet confirmed as pasted. Order files are deleted as soon as they are sent.
 - robot-work/job-N: kept only while the job is not DONE, for at most evidence_keep_days.

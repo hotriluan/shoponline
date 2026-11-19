@@ -36,3 +36,17 @@ screens:
     # ALV result and right-clicked column (SO Reference), from the export recording.
     result_grid: wnd[0]/usr/cntlGRID1/shellcont/shell/shellcont[1]/shell
     result_column: VGBEL
+
+  # zrsd003 "Report Of Monitoring Tax Invoice" filter screen, from the recording of 2026-11-19
+  # (same machine, user and language). SAP reloads the screen after Enter on Sales Organization
+  # and on Sales Office, so both are confirmed with Enter. The radio buttons "Exist" and "SD"
+  # are the defaults and are not touched. There is no Bill-to field.
+  zrsd003:
+    sales_org: wnd[0]/usr/ctxtP_VKORG
+    sales_office: wnd[0]/usr/ctxtP_VKBUR-LOW
+    billing_date_from: wnd[0]/usr/ctxtP_FKDAT-LOW
+    billing_date_to: wnd[0]/usr/ctxtP_FKDAT-HIGH
+    execute: wnd[0]/tbar[1]/btn[8]
+    # ALV result and right-clicked column (Tax Invoice Doc.), from the recording.
+    result_grid: wnd[0]/usr/cntlGRID1/shellcont/shell/shellcont[1]/shell
+    result_column: TAXSR
