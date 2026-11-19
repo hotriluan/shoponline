@@ -10,7 +10,9 @@ from shoponline.exports.sales_history_workbook import (
     CUSTOMER,
     DIVISION_MISSING,
     REPORT_NAME,
+    SETTLEMENT,
     TAX_INVOICE,
+    Reason,
     build_history_workbook,
     collect_rows,
     history_file_name,
@@ -60,7 +62,7 @@ def test_money_order_and_layout(db):
         (120000, 120000, 1),
     ]
     ws = _sheet(result.rows)
-    assert len(COLUMNS) == 19 and COLUMNS[-3:] == ("variation", "Mã đơn", "Tax Invoice Doc.")
+    assert len(COLUMNS) == 20 and COLUMNS[-3:] == ("Mã đơn", "Tax Invoice Doc.", "Tiền Vô")
     assert [c.value for c in ws[1]] == list(COLUMNS)
     assert ws.max_row == 4
     assert [c.value for c in ws[2]] == [
@@ -83,13 +85,16 @@ def test_money_order_and_layout(db):
         "Màu sắc:2004 Cánh gián",
         "A-1",
         "HDA-1",
+        setup.SETTLED,
     ]
+    assert ws["T3"].value is None  # only the first line of an order carries the money
     assert ws["H3"].value == '=E3&" "&B3' and ws["I3"].value == "=IF(H3=H2,0,1)"
     assert ws["O3"].value == "Propan - SƠN 100002000"
     assert ws["B4"].value == "2026-11-12 09:30"
     assert ws["J2"].number_format == "#,##0" and ws["K2"].number_format == "#,##0"
     assert ws["S4"].value == "0007914" and ws["S4"].number_format == "@"  # text, zeros kept
     assert ws["R4"].number_format == "@"
+    assert ws["T2"].number_format == "#,##0" and ws["T4"].value == setup.SETTLED
 
 
 def test_only_pending_delivered_orders_up_to_the_day(db):
@@ -199,3 +204,63 @@ def test_tax_invoice_reason_adds_to_the_others(db):
 
 def test_file_name():
     assert history_file_name(date(2026, 11, 16)) == "SHOP ONLINE LỊCH SỬ 161126.xlsx"
+
+
+def test_settlement_is_the_sum_of_the_order_rows_including_zero_and_negative(db):
+    setup.report_name(db)
+    setup.order(db, "TT-1", datetime(2026, 11, 11), platform="TIKTOK", settlement=None)
+    setup.paid(db, "TIKTOK", "TT-1", 100000, key="a")
+    setup.paid(db, "TIKTOK", "TT-1", -2700, key="b")
+    setup.order(db, "TT-ZERO", datetime(2026, 11, 11, 1), platform="TIKTOK", settlement=0)
+    setup.order(db, "SP-OUT", datetime(2026, 11, 11, 2), settlement=-2700)
+
+    result = collect_rows(db, UNTIL)
+
+    assert result.blocked == []
+    assert [(r.platform_order_id, r.settlement) for r in result.rows] == [
+        ("TT-1", 97300),
+        ("TT-ZERO", 0),
+        ("SP-OUT", -2700),
+    ]
+
+
+def test_only_the_first_line_of_an_order_carries_the_settlement(db):
+    setup.report_name(db)
+    setup.order(db, "A-1", datetime(2026, 11, 11), lines=((setup.MATERIAL, 1, 1, 0),) * 3)
+
+    rows = collect_rows(db, UNTIL).rows
+
+    assert [r.settlement for r in rows] == [setup.SETTLED, None, None]
+
+
+def test_shopee_and_tiktok_wait_for_settlement_but_lazada_does_not(db):
+    setup.report_name(db)
+    setup.order(db, "SP-1", datetime(2026, 11, 11), settlement=None)
+    setup.order(db, "TT-1", datetime(2026, 11, 11, 1), platform="TIKTOK", settlement=None)
+    setup.order(db, "LZ-1", datetime(2026, 11, 11, 2), platform="LAZADA")
+
+    result = collect_rows(db, UNTIL)
+
+    assert [r.platform_order_id for r in result.rows] == ["LZ-1"]
+    assert result.rows[0].settlement is None
+    assert [b.platform_order_id for b in result.blocked] == ["SP-1", "TT-1"]
+    assert all(b.reasons == (Reason(SETTLEMENT, "Chưa có tiền vô"),) for b in result.blocked)
+
+
+def test_a_settlement_of_another_platform_does_not_count(db):
+    setup.report_name(db)
+    setup.order(db, "SAME-ID", datetime(2026, 11, 11), platform="SHOPEE", settlement=None)
+    setup.paid(db, "TIKTOK", "SAME-ID", 5)
+
+    result = collect_rows(db, UNTIL)
+
+    assert result.rows == [] and len(result.blocked) == 1
+
+
+def test_settlement_reason_adds_to_the_others(db):
+    setup.report_name(db)
+    setup.order(db, "X", datetime(2026, 11, 11), name=None, settlement=None)
+
+    (blocked,) = collect_rows(db, UNTIL).blocked
+
+    assert {r.kind for r in blocked.reasons} == {CUSTOMER, SETTLEMENT}

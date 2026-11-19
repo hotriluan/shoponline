@@ -1,4 +1,4 @@
-"""Take a stored zrsd001, zrsd003 or zrsd004 file into the database.
+"""Take a stored zrsd001, zrsd003, zrsd004 or platform settlement file into the database.
 
 The web upload and the robot both go through these functions, so a report read by the robot
 gives exactly the result of the same file uploaded by the admin.
@@ -13,7 +13,13 @@ from sqlalchemy import func, select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import Session
 
-from shoponline.db.models import ImportBatch, OrderBatch, PlatformSetting, SapTaxInvoice
+from shoponline.db.models import (
+    ImportBatch,
+    OrderBatch,
+    PlatformSetting,
+    PlatformSettlement,
+    SapTaxInvoice,
+)
 from shoponline.exports.accounting_workbook import (
     AccountingFile,
     build_accounting_workbook,
@@ -25,6 +31,7 @@ from shoponline.importers.sap_reports import (
     read_zrsd003,
     read_zrsd004,
 )
+from shoponline.importers.settlement_files import read_settlement_file
 from shoponline.reconcile.so_link import SoImportResult, mark_delivered, store_so_reports
 
 
@@ -113,4 +120,81 @@ def ingest_zrsd003(session: Session, record: ImportBatch, actor: str) -> TaxInvo
         skipped_other_customers=len(rows) - len(kept),
         new=record.new_count,
         updated=record.updated_count,
+    )
+
+
+@dataclass
+class SettlementImport:
+    platform: str
+    kept: int
+    skipped: list[str]
+    orders: int
+    new: int
+    updated: int
+    unchanged: int
+
+
+def ingest_settlement(session: Session, record: ImportBatch, actor: str) -> SettlementImport:
+    """Store one row per settlement transaction, keyed by (platform, line_key), so reading a
+    file again, or one covering an overlapping period, never counts a transaction twice."""
+    parsed = read_settlement_file(Path(record.stored_path))
+    record.platform = parsed.platform
+    session.add(record)
+    session.flush()
+    keys = [row.line_key for row in parsed.rows]
+    existing = {
+        key: (amount, settled_at)
+        for key, amount, settled_at in session.execute(
+            select(
+                PlatformSettlement.line_key,
+                PlatformSettlement.amount,
+                PlatformSettlement.settled_at,
+            ).where(
+                PlatformSettlement.platform == parsed.platform,
+                PlatformSettlement.line_key.in_(keys),
+            )
+        )
+    }
+    new = updated = 0
+    for row in parsed.rows:
+        before = existing.get(row.line_key)
+        if before is None:
+            new += 1
+        elif before != (row.amount, row.settled_at):
+            updated += 1
+    stmt = insert(PlatformSettlement)
+    session.execute(
+        stmt.on_conflict_do_update(
+            index_elements=[PlatformSettlement.platform, PlatformSettlement.line_key],
+            set_={
+                "platform_order_id": stmt.excluded.platform_order_id,
+                "amount": stmt.excluded.amount,
+                "settled_at": stmt.excluded.settled_at,
+                "import_batch_id": stmt.excluded.import_batch_id,
+                "updated_at": func.now(),
+            },
+        ),
+        [
+            {
+                "platform": parsed.platform,
+                "platform_order_id": row.platform_order_id,
+                "line_key": row.line_key,
+                "amount": row.amount,
+                "settled_at": row.settled_at,
+                "import_batch_id": record.id,
+            }
+            for row in parsed.rows
+        ],
+    )
+    record.new_count = new
+    record.updated_count = updated
+    record.unchanged_count = len(parsed.rows) - new - updated
+    return SettlementImport(
+        platform=parsed.platform,
+        kept=len(parsed.rows),
+        skipped=parsed.skipped,
+        orders=len({row.platform_order_id for row in parsed.rows}),
+        new=new,
+        updated=updated,
+        unchanged=record.unchanged_count,
     )

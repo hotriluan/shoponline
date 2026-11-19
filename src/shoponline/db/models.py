@@ -11,6 +11,7 @@ from sqlalchemy import (
     Date,
     DateTime,
     ForeignKey,
+    Index,
     Integer,
     Numeric,
     String,
@@ -230,6 +231,27 @@ class SapTaxInvoice(Base):
     billing_date: Mapped[date] = mapped_column(Date)
     bill_to: Mapped[str] = mapped_column(String(20))
     import_batch_id: Mapped[int | None] = mapped_column(ForeignKey("import_batch.id"))
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+
+class PlatformSettlement(Base):
+    """One settlement transaction of a platform order (money the platform paid out, signed)."""
+
+    __tablename__ = "platform_settlement"
+    __table_args__ = (
+        UniqueConstraint("platform", "line_key"),
+        Index("ix_platform_settlement_order", "platform", "platform_order_id"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    platform: Mapped[str] = mapped_column(String(20))
+    platform_order_id: Mapped[str] = mapped_column(String(40))
+    line_key: Mapped[str] = mapped_column(String(200))
+    amount: Mapped[int] = mapped_column(BigInteger)
+    settled_at: Mapped[datetime] = mapped_column(DateTime)
+    import_batch_id: Mapped[int] = mapped_column(ForeignKey("import_batch.id"))
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
     )

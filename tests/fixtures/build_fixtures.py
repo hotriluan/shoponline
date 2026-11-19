@@ -652,6 +652,86 @@ def zrsd003_file(path: Path, rows: list[dict], *, headers: list[str] | None = No
     return _write(path, "Sheet1", headers, [[r.get(h, "") for h in headers] for r in rows])
 
 
+SHOPEE_SETTLEMENT_HEADERS = [
+    "Ngày",
+    "Loại giao dịch",
+    "Chi tiết",
+    "Mã đơn hàng",
+    "Dòng tiền",
+    "Số tiền",
+    "Trạng thái",
+    "Số dư Ví sau giao dịch",
+]
+
+
+def shopee_settlement_row(
+    order_id: str,
+    amount: object,
+    when: str = "2026-11-18 10:00:00",
+    *,
+    kind: str = "Doanh Thu Đơn Hàng",
+    status: str = "Giao dịch thành công",
+) -> list[object]:
+    flow = "Tiền ra" if isinstance(amount, (int, float)) and amount < 0 else "Tiền vào"
+    return [when, kind, f"{kind} #{order_id}", order_id, flow, amount, status, 1000000.0]
+
+
+def shopee_settlement_file(path: Path, rows: list[list[object]], *, summary_rows: int = 16) -> Path:
+    """Shopee 'Transaction Report': a summary block above the table, header after it."""
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Transaction Report"
+    for n in range(summary_rows):
+        ws.append(["Chi tiết giao dịch" if n == 0 else None])
+    ws.append(SHOPEE_SETTLEMENT_HEADERS)
+    for row in rows:
+        ws.append(row)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    wb.save(path)
+    return path
+
+
+TIKTOK_SETTLEMENT_HEADERS = [
+    "ID đơn hàng/điều chỉnh",
+    "Loại giao dịch",
+    "Thời gian tạo đơn hàng",
+    "Thời gian quyết toán đơn hàng",
+    "Tiền tệ",
+    "Tổng số tiền quyết toán",
+    "ID đơn hàng liên quan",
+]
+
+
+def tiktok_settlement_row(
+    order_id: str,
+    amount: object,
+    *,
+    kind: str = "Đơn hàng",
+    settled: str = "2026/11/18",
+    transaction: str | None = None,
+    related: str | None = None,
+) -> list[object]:
+    return [
+        transaction or order_id,
+        kind,
+        "2026/11/10",
+        settled,
+        "VND",
+        amount,
+        order_id if related is None else related,
+    ]
+
+
+def tiktok_settlement_file(path: Path, rows: list[list[object]]) -> Path:
+    return _write(path, "Chi tiết đơn hàng", TIKTOK_SETTLEMENT_HEADERS, rows)
+
+
+def lazada_settlement_file(path: Path) -> Path:
+    return _write(
+        path, "Balance Transactions", ["Transaction Date", "Amount"], [["2026-11-18", "1000"]]
+    )
+
+
 def write_sample_set(folder: Path) -> list[Path]:
     """A small consistent day: Shopee + TikTok files and the matching SAP reports."""
     return [

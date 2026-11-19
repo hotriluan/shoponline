@@ -10,7 +10,7 @@ from __future__ import annotations
 from datetime import date
 from pathlib import Path
 
-from fastapi import APIRouter, Depends, Form, HTTPException, Request
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse
 from sqlalchemy import delete, func, literal, select
 from sqlalchemy.dialects.postgresql import insert
@@ -27,13 +27,16 @@ from shoponline.domain import states
 from shoponline.exports.sales_history_workbook import (
     CUSTOMER,
     REPORT_NAME,
+    SETTLEMENT,
     TAX_INVOICE,
     HistoryRows,
     build_history_workbook,
     collect_rows,
     history_file_name,
 )
+from shoponline.importers.excel_table import FileRejected
 from shoponline.maintenance import retention
+from shoponline.reconcile.report_ingest import ingest_settlement
 from shoponline.sapjobs.queue import DuplicateJob
 from shoponline.sapjobs.report_requests import request_zrsd003
 from shoponline.web.app import (
@@ -46,7 +49,7 @@ from shoponline.web.app import (
     robot_refusal,
     sap_config,
 )
-from shoponline.web.uploads import save_generated
+from shoponline.web.uploads import UploadRejected, save_generated, save_upload
 
 router = APIRouter()
 KIND = "sales_history"
@@ -61,6 +64,8 @@ def _fix_link(kind: str, batch_id: int) -> str | None:
         return "/report-names?missing=true"
     if kind == TAX_INVOICE:
         return "#tax-invoice"
+    if kind == SETTLEMENT:
+        return "#settlement"
     return None
 
 
@@ -71,6 +76,18 @@ def _invoice_range(result: HistoryRows) -> tuple[date, date] | None:
         b.ordered_at.date() for b in result.blocked if any(r.kind == TAX_INVOICE for r in b.reasons)
     ]
     return (min(waiting), today_vn()) if waiting else None
+
+
+def _settlement_range(result: HistoryRows) -> tuple[date, date] | None:
+    """Order dates to export from the platforms: settlement comes after the order."""
+    waiting = [
+        b.ordered_at.date() for b in result.blocked if any(r.kind == SETTLEMENT for r in b.reasons)
+    ]
+    return (min(waiting), today_vn()) if waiting else None
+
+
+def _only_settlement(blocked) -> bool:
+    return all(r.kind == SETTLEMENT for r in blocked.reasons)
 
 
 def _recent_files(db: Session) -> list[dict]:
@@ -115,10 +132,13 @@ def sales_history_page(
 ):
     until = until or today_vn()
     result = collect_rows(db, until)
-    blocked = [
+    rows = [
         dict(order=b, reasons=[(r.text, _fix_link(r.kind, b.order_batch_id)) for r in b.reasons])
         for b in result.blocked
     ]
+    blocked = [row for row in rows if not _only_settlement(row["order"])]
+    waiting_settlement = [row for row in rows if _only_settlement(row["order"])]
+    settlement_count = sum(any(r.kind == SETTLEMENT for r in b.reasons) for b in result.blocked)
     invoice_range = _invoice_range(result)
     waiting_invoice = sum(any(r.kind == TAX_INVOICE for r in b.reasons) for b in result.blocked)
     return render(
@@ -132,6 +152,9 @@ def sales_history_page(
         orders=len(result.order_ids),
         lines=len(result.rows),
         blocked=blocked,
+        waiting_settlement=waiting_settlement,
+        settlement_count=settlement_count,
+        settlement_range=_settlement_range(result),
         files=_recent_files(db),
     )
 
@@ -151,7 +174,11 @@ def download_history_file(
     back = f"/sales-history?until={until.isoformat()}"
     result = collect_rows(db, until)
     if not result.rows:
-        flash(request, "Không có đơn nào chờ xuất.", "error")
+        if result.blocked:
+            message = "Chưa có đơn nào sẵn sàng xuất: các đơn còn lại đang chờ hoặc bị chặn."
+        else:
+            message = "Không có đơn nào chờ xuất."
+        flash(request, message, "error")
         return redirect(back)
     file_name = history_file_name(today_vn())
     record = save_generated(
@@ -196,6 +223,51 @@ def read_zrsd003(
         return redirect(back)
     db.commit()
     flash(request, f"Robot sẽ đọc zrsd003 từ {start:%d/%m/%Y} đến {end:%d/%m/%Y} (việc #{job.id}).")
+    return redirect(back)
+
+
+@router.post("/sales-history/settlement")
+async def upload_settlement(
+    request: Request,
+    until: date = Form(...),
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    user: AppUser = Depends(require_admin),
+):
+    """Read a Shopee or TikTok settlement file once: it holds the seller's login and, for TikTok,
+    withdrawal history, so only order ids, amounts and dates are kept."""
+    settings = request.app.state.settings
+    back = f"/sales-history?until={until.isoformat()}"
+    new_file = None
+    try:
+        record, created = await save_upload(
+            settings, file, kind="settlement", platform=None, actor=user.username
+        )
+        new_file = record.stored_path if created else None
+        result = ingest_settlement(db, record, user.username)
+    except (UploadRejected, FileRejected) as exc:
+        db.rollback()
+        retention.discard_unused(db, settings, [new_file])
+        flash(request, str(exc), "error")
+        return redirect(back)
+    except Exception:
+        db.rollback()
+        retention.discard_unused(db, settings, [new_file])
+        raise
+    db.commit()
+    retention.discard_unused(db, settings, [record.stored_path])
+    name = {"SHOPEE": "Shopee", "TIKTOK": "TikTok"}[result.platform]
+    flash(
+        request,
+        f"Tiền vô {name}: {result.kept} giao dịch của {result.orders} đơn "
+        f"({result.new} mới, {result.updated} đổi, {result.unchanged} không đổi), "
+        f"bỏ qua {len(result.skipped)} dòng.",
+    )
+    if result.skipped:
+        shown = result.skipped[:10]
+        more = len(result.skipped) - len(shown)
+        detail = "; ".join(shown) + (f"; … và {more} dòng khác" if more > 0 else "")
+        flash(request, f"Dòng bị bỏ qua: {detail}", "error")
     return redirect(back)
 
 

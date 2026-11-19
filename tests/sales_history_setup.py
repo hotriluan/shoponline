@@ -9,7 +9,9 @@ from sqlalchemy.orm import Session
 
 from shoponline.db.models import (
     CustomerInfo,
+    ImportBatch,
     OrderBatch,
+    PlatformSettlement,
     ReportItemName,
     SalesOrder,
     SalesOrderItem,
@@ -20,6 +22,7 @@ from shoponline.domain import states
 MATERIAL = "100001787"
 ADDRESS = "Phường Sài Gòn, Thành phố Hồ Chí Minh, Việt Nam"
 AUTO = "auto"
+SETTLED = 99000
 
 
 def batch(db: Session, platform: str = "SHOPEE", day: date = date(2026, 11, 10)) -> OrderBatch:
@@ -59,9 +62,11 @@ def order(
     address: str | None = ADDRESS,
     customer: bool = True,
     invoice: str | None = AUTO,
+    settlement: int | str | None = AUTO,
 ) -> SalesOrder:
     """lines: (material, quantity, unit_price, unit_subsidy) per order line. A delivered order
-    gets a tax invoice for its DO ("HD" + order id) unless invoice is None."""
+    gets a tax invoice for its DO ("HD" + order id) unless invoice is None. A Shopee or TikTok
+    order gets one settlement row of SETTLED unless settlement is None (or another amount)."""
     created = SalesOrder(
         platform=platform,
         platform_order_id=order_id,
@@ -92,8 +97,36 @@ def order(
         )
     if created.do_number and invoice is not None:
         tax_invoice(db, created.do_number, f"HD{order_id}" if invoice == AUTO else invoice)
+    if platform in ("SHOPEE", "TIKTOK") and settlement is not None:
+        paid(db, platform, order_id, SETTLED if settlement == AUTO else settlement)
     db.flush()
     return created
+
+
+def paid(
+    db: Session, platform: str, order_id: str, amount: int, key: str | None = None
+) -> PlatformSettlement:
+    record = ImportBatch(
+        kind="settlement",
+        platform=platform,
+        file_name="s.xlsx",
+        sha256="0" * 64,
+        stored_path="s.xlsx",
+        imported_by="t",
+    )
+    db.add(record)
+    db.flush()
+    row = PlatformSettlement(
+        platform=platform,
+        platform_order_id=order_id,
+        line_key=key or f"{order_id}|{amount}",
+        amount=amount,
+        settled_at=datetime(2026, 11, 14),
+        import_batch_id=record.id,
+    )
+    db.add(row)
+    db.flush()
+    return row
 
 
 def tax_invoice(db: Session, delivery: str, number: str) -> SapTaxInvoice:

@@ -12,13 +12,13 @@
 </form>
 
 <div class="box">
-  <p><b>{{ orders }}</b> đơn, <b>{{ lines }}</b> dòng sẵn sàng xuất{% if blocked %}; <b class="bad">{{ blocked|length }}</b> đơn bị chặn{% endif %}.</p>
+  <p><b>{{ orders }}</b> đơn, <b>{{ lines }}</b> dòng sẵn sàng xuất{% if blocked %}; <b class="bad">{{ blocked|length }}</b> đơn bị chặn{% endif %}{% if settlement_count %}; <b>{{ settlement_count }}</b> đơn chờ tiền vô{% endif %}.</p>
   {% if lines %}
   <p><a class="button" href="/sales-history/file?until={{ until.isoformat() }}">Tải file</a></p>
   {% if blocked %}
   <p class="bad">{{ blocked|length }} đơn bị chặn chưa có trong file này; sửa xong thì đơn sẽ vào lần tải sau.</p>
   {% endif %}
-  {% elif not blocked %}
+  {% elif not blocked and not settlement_count %}
   <p class="muted">Không có đơn nào chờ xuất.</p>
   {% endif %}
 </div>
@@ -39,6 +39,37 @@
   {% endif %}
 </div>
 {% endif %}
+
+<div class="box" id="settlement">
+  <h2>Đơn chờ tiền vô ({{ settlement_count }})</h2>
+  <p class="muted">Sàn quyết toán vài ngày sau khi giao; đơn tự vào lần tải sau khi đã upload file của sàn.
+    Lazada không cần: cột Tiền Vô để trống.</p>
+  {% if settlement_range %}
+  <p><b>{{ settlement_count }}</b> đơn Shopee/TikTok chưa có tiền vô. Export file quyết toán của sàn phủ ngày đặt từ
+    {{ settlement_range[0].strftime('%d/%m/%Y') }} đến {{ settlement_range[1].strftime('%d/%m/%Y') }}.</p>
+  {% endif %}
+  {% if user.role == 'admin' %}
+  <form class="row" method="post" action="/sales-history/settlement" enctype="multipart/form-data">
+    <input type="hidden" name="until" value="{{ until.isoformat() }}">
+    <label>File quyết toán Shopee hoặc TikTok (.xlsx)<input type="file" name="file" accept=".xlsx" required></label>
+    <button>Nhập tiền vô</button>
+  </form>
+  <p class="muted">Shopee: Số dư TK Shopee → Báo cáo giao dịch (sheet Transaction Report). TikTok: Tài chính → quyết toán
+    (sheet "Chi tiết đơn hàng"). File Lazada Balance Transactions không dùng được.</p>
+  {% endif %}
+  {% if waiting_settlement %}
+  <table>
+    <tr><th>Sàn</th><th>Mã đơn</th><th>Ngày đặt</th></tr>
+    {% for b in waiting_settlement %}
+    <tr>
+      <td>{{ b.order.platform }}</td>
+      <td>{{ b.order.platform_order_id }}</td>
+      <td>{{ b.order.ordered_at.strftime('%d/%m/%Y %H:%M') }}</td>
+    </tr>
+    {% endfor %}
+  </table>
+  {% endif %}
+</div>
 
 {% if blocked %}
 <h2 class="bad">Đơn bị chặn ({{ blocked|length }})</h2>

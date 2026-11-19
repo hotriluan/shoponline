@@ -1,13 +1,15 @@
 """Rows to append to the accountants' `Shop Online 2022-2026` history file: sheet1's 17
-columns, then the order id and the tax invoice number of the order's DO (19 columns).
+columns, then the order id, the tax invoice number of the order's DO and the money the platform
+paid for the order (20 columns).
 
 Every DELIVERED order not yet confirmed as pasted into that file (sales_history_exported) and
 ordered on or before a given day goes in, one row per order line. An order missing a value the
 file needs (customer name, a province in its address, the report name of a material, the tax
-invoice of its DO read from zrsd003) is reported as blocked instead of guessed. The invoice is
-issued after the DO, so an order waiting for it is the normal state between the two. Columns H
-and I are the file's own relative formulas, so the rows can be pasted below the last row of
-sheet1 as they are.
+invoice of its DO read from zrsd003, for Shopee and TikTok the settlement paid by the platform)
+is reported as blocked instead of guessed. The invoice is issued after the DO and the platform
+settles days after delivery, so an order waiting for either is the normal state in between.
+Columns H and I are the file's own relative formulas, so the rows can be pasted below the last
+row of sheet1 as they are.
 """
 
 from __future__ import annotations
@@ -18,11 +20,12 @@ from datetime import date, datetime, time, timedelta
 
 from openpyxl import Workbook
 from openpyxl.styles import Font
-from sqlalchemy import exists, select
+from sqlalchemy import exists, func, select
 from sqlalchemy.orm import Session, selectinload
 
 from shoponline.db.models import (
     CustomerInfo,
+    PlatformSettlement,
     ReportItemName,
     SalesHistoryExported,
     SalesOrder,
@@ -53,6 +56,7 @@ COLUMNS = (
     "variation",
     "Mã đơn",
     "Tax Invoice Doc.",
+    "Tiền Vô",
 )
 DIVISION = {
     "SHOPEE": "Shopee Bình Dương",
@@ -61,7 +65,7 @@ DIVISION = {
 }
 HIDDEN_PHONE = "******"
 MONEY_FORMAT = "#,##0"
-MONEY_COLUMNS = ("J", "K")
+MONEY_COLUMNS = ("J", "K", "T")
 TEXT_COLUMNS = ("R", "S")
 
 # Why an order is blocked; the kind tells the page where it is fixed.
@@ -69,6 +73,9 @@ CUSTOMER = "customer"
 REPORT_NAME = "report_name"
 DIVISION_MISSING = "division"
 TAX_INVOICE = "tax_invoice"
+SETTLEMENT = "settlement"
+# Platforms whose settlement files give money per order. Lazada's does not: its column stays empty.
+SETTLED_PLATFORMS = ("SHOPEE", "TIKTOK")
 
 
 @dataclass(frozen=True)
@@ -100,6 +107,7 @@ class HistoryRow:
     variation: str
     platform_order_id: str
     tax_invoice_doc: str
+    settlement: int | None = None  # the order's total, on its first line only
 
 
 @dataclass
@@ -164,6 +172,23 @@ def collect_rows(session: Session, until: date) -> HistoryRows:
         ).all()
     )
 
+    settled_ids = {oid for platform, oid in wanted if platform in SETTLED_PLATFORMS}
+    settlements = {
+        (platform, order_id): total
+        for platform, order_id, total in session.execute(
+            select(
+                PlatformSettlement.platform,
+                PlatformSettlement.platform_order_id,
+                func.sum(PlatformSettlement.amount),
+            )
+            .where(
+                PlatformSettlement.platform.in_(SETTLED_PLATFORMS),
+                PlatformSettlement.platform_order_id.in_(settled_ids),
+            )
+            .group_by(PlatformSettlement.platform, PlatformSettlement.platform_order_id)
+        )
+    }
+
     for order in orders:
         reasons: list[Reason] = []
         division = DIVISION.get(order.platform)
@@ -186,6 +211,9 @@ def collect_rows(session: Session, until: date) -> HistoryRows:
         invoice = invoices.get(order.do_number or "")
         if invoice is None:
             reasons.append(Reason(TAX_INVOICE, f"DO {order.do_number} chưa có Tax Invoice Doc."))
+        total = settlements.get((order.platform, order.platform_order_id))
+        if order.platform in SETTLED_PLATFORMS and total is None:
+            reasons.append(Reason(SETTLEMENT, "Chưa có tiền vô"))
         if reasons:
             result.blocked.append(
                 BlockedOrder(
@@ -198,7 +226,7 @@ def collect_rows(session: Session, until: date) -> HistoryRows:
             )
             continue
         result.order_ids.append(order.id)
-        for item in order.items:  # ordered by line_no
+        for index, item in enumerate(order.items):  # ordered by line_no
             report = names[item.material_number]
             result.rows.append(
                 HistoryRow(
@@ -214,6 +242,7 @@ def collect_rows(session: Session, until: date) -> HistoryRows:
                     variation=report.variation,
                     platform_order_id=order.platform_order_id,
                     tax_invoice_doc=invoice,
+                    settlement=int(total) if total is not None and index == 0 else None,
                 )
             )
     return result
@@ -247,6 +276,7 @@ def build_history_workbook(rows: Sequence[HistoryRow]) -> Workbook:
             row.variation,
             row.platform_order_id,
             row.tax_invoice_doc,
+            row.settlement,
         )
         for col, value in enumerate(values, start=1):
             ws.cell(r, col, value)

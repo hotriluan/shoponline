@@ -10,10 +10,16 @@ from sqlalchemy import func, select
 from shoponline.db.models import (
     EventLog,
     GeneratedFile,
+    PlatformSettlement,
     SalesHistoryExported,
     SalesHistoryFileOrder,
 )
 from tests import sales_history_setup as setup
+from tests.fixtures.build_fixtures import (
+    lazada_settlement_file,
+    shopee_settlement_file,
+    shopee_settlement_row,
+)
 
 pytestmark = pytest.mark.usefixtures("frozen_today")  # today is 2026-11-13
 
@@ -268,3 +274,99 @@ def test_no_zrsd003_box_when_every_order_has_its_invoice(db, login):
     assert 'id="tax-invoice"' not in admin.get("/sales-history").text
     resp = admin.post("/sales-history/read-zrsd003", data={"until": "2026-11-13"})
     assert "Không có đơn nào chờ Tax Invoice Doc." in resp.text
+
+
+def _upload(client, path):
+    with path.open("rb") as handle:
+        return client.post(
+            "/sales-history/settlement",
+            data={"until": "2026-11-13"},
+            files={"file": (path.name, handle, "application/octet-stream")},
+        )
+
+
+def _uploads(app):
+    folder = app.state.settings.upload_dir
+    return list(folder.glob("*")) if folder.exists() else []
+
+
+def test_orders_waiting_for_settlement_have_their_own_box_and_enter_after_the_upload(
+    db, login, app, tmp_path
+):
+    setup.report_name(db)
+    setup.order(db, "GOOD", datetime(2026, 11, 11, 8))
+    setup.order(db, "WAIT-1", datetime(2026, 11, 10, 9), settlement=None)
+    setup.order(db, "NO-NAME", datetime(2026, 11, 11, 9), name=None, settlement=None)
+    admin = login("admin")
+
+    page = admin.get("/sales-history").text
+    assert 'id="settlement"' in page and "Đơn chờ tiền vô (2)" in page
+    assert "<b>2</b> đơn chờ tiền vô" in page
+    assert "10/11/2026 đến 13/11/2026" in page
+    assert ">1</b> đơn bị chặn" in page  # NO-NAME also waits for money but is fixed elsewhere
+    assert 'href="#settlement"' in page and 'action="/sales-history/settlement"' in page
+    ws = load_workbook(BytesIO(_download(admin).content))["sheet1"]
+    assert [ws.cell(r, 18).value for r in range(2, ws.max_row + 1)] == ["GOOD"]
+
+    path = shopee_settlement_file(tmp_path / "s.xlsx", [shopee_settlement_row("WAIT-1", 55000.0)])
+    resp = _upload(admin, path)
+    assert "Tiền vô Shopee: 1 giao dịch của 1 đơn (1 mới, 0 đổi, 0 không đổi)" in resp.text
+    assert _uploads(app) == []  # read once, then deleted
+
+    assert "Đơn chờ tiền vô (1)" in admin.get("/sales-history").text
+    ws = load_workbook(BytesIO(_download(admin).content))["sheet1"]
+    assert [(ws.cell(r, 18).value, ws.cell(r, 20).value) for r in range(2, ws.max_row + 1)] == [
+        ("WAIT-1", 55000),
+        ("GOOD", setup.SETTLED),
+    ]
+
+
+def test_a_page_with_only_waiting_orders_is_not_empty(db, login):
+    setup.report_name(db)
+    setup.order(db, "WAIT-1", datetime(2026, 11, 10, 9), settlement=None)
+    admin = login("admin")
+
+    page = admin.get("/sales-history").text
+
+    assert "Không có đơn nào chờ xuất" not in page
+    assert "/sales-history/file" not in page
+    resp = admin.get("/sales-history/file", follow_redirects=True)
+    assert "Không có đơn nào chờ xuất" not in resp.text
+    assert "đang chờ hoặc bị chặn" in resp.text
+
+
+def test_the_settlement_upload_is_for_admins_only(db, login, app, tmp_path):
+    setup.order(db, "WAIT-1", datetime(2026, 11, 10, 9), settlement=None)
+    path = shopee_settlement_file(tmp_path / "s.xlsx", [shopee_settlement_row("WAIT-1", 1.0)])
+    viewer = login("viewer")
+
+    assert 'action="/sales-history/settlement"' not in viewer.get("/sales-history").text
+    _upload(viewer, path)
+    assert _count(db, PlatformSettlement) == 0
+    assert _uploads(app) == []
+
+
+def test_a_lazada_or_broken_file_is_refused_and_not_kept(db, login, app, tmp_path):
+    admin = login("admin")
+
+    resp = _upload(admin, lazada_settlement_file(tmp_path / "l.xlsx"))
+    assert "Lazada Balance Transactions không có mã đơn" in resp.text
+    bad = shopee_settlement_file(tmp_path / "b.xlsx", [shopee_settlement_row("A", "")])
+    assert "không nhập gì" in _upload(admin, bad).text
+
+    assert _count(db, PlatformSettlement) == 0
+    assert _uploads(app) == []
+
+
+def test_an_unexpected_error_still_deletes_the_uploaded_file(db, login, app, tmp_path, monkeypatch):
+    def boom(*args, **kwargs):
+        raise RuntimeError("boom")
+
+    monkeypatch.setattr("shoponline.web.routes.sales_history.ingest_settlement", boom)
+    path = shopee_settlement_file(tmp_path / "s.xlsx", [shopee_settlement_row("A", 1.0)])
+    admin = login("admin")
+
+    with pytest.raises(RuntimeError):
+        _upload(admin, path)
+
+    assert _uploads(app) == []

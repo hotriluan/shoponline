@@ -12,6 +12,9 @@ docs/*.XLSX
 docs/*.xls
 docs/*.pdf
 docs/*.png
+docs/**/*.xlsx
+docs/**/*.XLSX
+docs/**/*.xls
 
 # Runtime data: uploads, exports, robot screenshots, backups
 # (exports anchored to the root: src/shoponline/exports is source code)
