@@ -9,7 +9,9 @@
   2. Stop the shoponline-robot task (the robot holds pywin32 files that uv sync replaces) and
      the shoponline-web task, and wait until the web port is free.
   3. Back up the database (backup-db.ps1) before any schema change.
-  4. Fast-forward to the commit, uv sync without dev tools, migrate.
+  4. Disable and stop the backup and restore tasks (their Python processes hold files of the
+     venv that uv sync replaces), fast-forward to the commit, uv sync without dev tools,
+     migrate. The tasks are enabled again when the deploy ends, also when it fails.
   5. Register the Task Scheduler jobs that are still missing, and update the command of those
      that run differently from what register-tasks.ps1 now registers, for the account running
      this script (register-tasks.ps1 -AtLogOn -OnlyMissing): web, backup, retention, robot; and
@@ -93,6 +95,35 @@ function Stop-Robot {
     }
 }
 
+# The backup and restore tasks run the venv's Python, which uv sync replaces. Stop them for the
+# update and enable them again afterwards. A task that is not registered yet is skipped.
+$script:BackupTaskNames = @("shoponline-backup", "shoponline-restore")
+$backupPattern = 'shoponline(\.exe)?"?\s+backup(\s|$)'
+
+function Suspend-BackupTasks {
+    foreach ($name in $script:BackupTaskNames) {
+        if (Get-ScheduledTask -TaskName $name -ErrorAction SilentlyContinue) {
+            Disable-ScheduledTask -TaskName $name | Out-Null
+            Stop-ScheduledTask -TaskName $name -ErrorAction SilentlyContinue
+        }
+    }
+    $deadline = (Get-Date).AddSeconds($WaitSeconds)
+    while ($running = Get-CimInstance Win32_Process -Filter "Name = 'python.exe' OR Name = 'uv.exe'" |
+            Where-Object { $_.CommandLine -match $backupPattern }) {
+        if ((Get-Date) -gt $deadline) { throw "Tiến trình sao lưu vẫn chạy sau $WaitSeconds giây (PID $($running.ProcessId -join ', '))" }
+        $running | ForEach-Object { Stop-Process -Id $_.ProcessId -ErrorAction SilentlyContinue }
+        Start-Sleep -Seconds 1
+    }
+}
+
+function Resume-BackupTasks {
+    foreach ($name in $script:BackupTaskNames) {
+        if (Get-ScheduledTask -TaskName $name -ErrorAction SilentlyContinue) {
+            Enable-ScheduledTask -TaskName $name | Out-Null
+        }
+    }
+}
+
 function Register-MissingTasks {
     $register = Join-Path $PSScriptRoot "register-tasks.ps1"
     & pwsh -NoProfile -ExecutionPolicy Bypass -File $register -User $me -AtLogOn -OnlyMissing -WebPort $port
@@ -118,6 +149,7 @@ function Start-Robot {
 
 function Complete-Deploy {
     Register-MissingTasks
+    Resume-BackupTasks
     if (-not (Test-WebUp)) { Start-Web }
     if (-not (Start-Robot)) { throw "Robot không khởi động được" }
 }
@@ -143,7 +175,9 @@ try {
     Stop-Web
     & pwsh -NoProfile -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot "backup-db.ps1")
     # Exit code 2: the backup reached some but not all folders; still a usable backup.
+    # Exit code 3: another backup held the lock for 20 minutes, so none was made.
     if ($LASTEXITCODE -ne 0 -and $LASTEXITCODE -ne 2) { throw "Sao lưu lỗi (mã $LASTEXITCODE)" }
+    Suspend-BackupTasks
     git merge --ff-only --quiet $target; Invoke-Native "git merge"
     uv sync --frozen --no-dev --extra robot; Invoke-Native "uv sync"
     uv run --no-dev shoponline migrate; Invoke-Native "migrate"
@@ -152,6 +186,7 @@ try {
 }
 catch {
     Write-Warning "Triển khai lỗi: $_"
+    try { Resume-BackupTasks } catch { Write-Warning "Không bật lại được tác vụ sao lưu: $_" }
     Write-Warning "Bản trước: $previous. Lùi lại: git reset --hard $previous; uv sync --frozen --no-dev --extra robot; khôi phục bản sao lưu nếu schema đã đổi."
     if (-not (Test-WebUp)) {
         try { Start-Web } catch { Write-Warning "Không khởi động lại được web: $_" }

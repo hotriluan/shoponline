@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import date, datetime
+from datetime import date, datetime, time
 
 from sqlalchemy import (
     BigInteger,
@@ -16,9 +16,11 @@ from sqlalchemy import (
     Numeric,
     String,
     Text,
+    Time,
     UniqueConstraint,
     func,
 )
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
 
@@ -36,7 +38,10 @@ class PlatformSetting(Base):
 
 
 class AppUser(Base):
+    """Web accounts live in schema ops: a restore of the business data never rolls them back."""
+
     __tablename__ = "app_user"
+    __table_args__ = {"schema": "ops"}
 
     id: Mapped[int] = mapped_column(primary_key=True)
     username: Mapped[str] = mapped_column(String(50), unique=True)
@@ -44,6 +49,7 @@ class AppUser(Base):
     role: Mapped[str] = mapped_column(String(10))
     active: Mapped[bool] = mapped_column(default=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    last_seen_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 
 class ImportBatch(Base):
@@ -435,3 +441,94 @@ class SalesHistoryExported(Base):
     confirmed_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )
+
+
+# Schema ops: operational records that must survive a restore of schema public on the same
+# machine. Migrations touching these tables are idempotent (see migrations/versions/0010_backup.py).
+
+
+class SystemState(Base):
+    """Single row (id=1). session_epoch goes up after each restore so everybody logs in again."""
+
+    __tablename__ = "system_state"
+    __table_args__ = {"schema": "ops"}
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    session_epoch: Mapped[int] = mapped_column(Integer, default=0)
+
+
+class BackupSettings(Base):
+    """Single row (id=1): backup schedule and how many backups each place keeps.
+
+    full_weekday follows Python's date.weekday(): Monday is 0, Friday is 4.
+    """
+
+    __tablename__ = "backup_settings"
+    __table_args__ = {"schema": "ops"}
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    db_time: Mapped[time] = mapped_column(Time, default=time(16, 30))
+    full_weekday: Mapped[int] = mapped_column(Integer, default=4)
+    full_time: Mapped[time] = mapped_column(Time, default=time(16, 30))
+    keep_db: Mapped[int] = mapped_column(Integer, default=15)
+    keep_app: Mapped[int] = mapped_column(Integer, default=15)
+    full_max_days: Mapped[int] = mapped_column(Integer, default=30)
+    drive_on_schedule: Mapped[bool] = mapped_column(Boolean, default=True)
+    changed_by: Mapped[str | None] = mapped_column(String(50))
+    changed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class BackupRun(Base):
+    """One backup attempt (failed ones too), so the list doubles as the backup log."""
+
+    __tablename__ = "backup_run"
+    __table_args__ = {"schema": "ops"}
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    kind: Mapped[str] = mapped_column(String(10))
+    # schedule | manual | deploy | safety | migration | upload | drive_found
+    source: Mapped[str] = mapped_column(String(20))
+    actor: Mapped[str] = mapped_column(String(50))
+    file_name: Mapped[str] = mapped_column(String(200))
+    size_bytes: Mapped[int | None] = mapped_column(BigInteger)
+    sha256: Mapped[str | None] = mapped_column(String(64))
+    manifest: Mapped[dict | None] = mapped_column(JSONB)
+    started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # running | ok | partial | failed | interrupted | rotated | deleted
+    local_status: Mapped[str] = mapped_column(String(20), default="running")
+    local_error: Mapped[str | None] = mapped_column(Text)
+    drive_requested: Mapped[bool] = mapped_column(Boolean, default=False)
+    # None (not asked) | uploading | ok | failed | not_connected | rotated | deleted
+    drive_status: Mapped[str | None] = mapped_column(String(20))
+    drive_file_id: Mapped[str | None] = mapped_column(String(200))
+    drive_error: Mapped[str | None] = mapped_column(Text)
+    verified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    verify_result: Mapped[str | None] = mapped_column(Text)
+    deleted_by: Mapped[str | None] = mapped_column(String(50))
+    deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class BackupRequest(Base):
+    """The one queue for every background backup action asked for on the web."""
+
+    __tablename__ = "backup_request"
+    __table_args__ = {"schema": "ops"}
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    # backup | retry_drive | drill | verify | restore
+    action: Mapped[str] = mapped_column(String(20))
+    kind: Mapped[str | None] = mapped_column(String(10))
+    target_run_id: Mapped[int | None] = mapped_column(ForeignKey("ops.backup_run.id"))
+    to_drive: Mapped[bool] = mapped_column(Boolean, default=False)
+    requested_by: Mapped[str] = mapped_column(String(50))
+    requested_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+    # pending | running | done | failed | rolled_back | expired | interrupted
+    status: Mapped[str] = mapped_column(String(20), default="pending")
+    started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    message: Mapped[str | None] = mapped_column(Text)
+    result: Mapped[dict | None] = mapped_column(JSONB)
+    safety_run_id: Mapped[int | None] = mapped_column(ForeignKey("ops.backup_run.id"))

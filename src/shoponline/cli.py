@@ -47,12 +47,16 @@ def _cmd_create_user(args: argparse.Namespace) -> int:
 
 
 def _setup_logging(settings: Settings, file_name: str) -> None:
-    """Log to the console and to <data>/logs/<file_name>, rotated at 5 MB, ten files kept."""
+    """Log to the console and to <data>/logs/<file_name>, rotated at 5 MB, ten files kept.
+    Every record is scrubbed of the backup password."""
+    from shoponline.backup.sevenzip import RedactFilter
+
     log_dir = settings.data_dir / "logs"
     log_dir.mkdir(parents=True, exist_ok=True)
     formatter = logging.Formatter("%(asctime)s %(levelname)s %(name)s: %(message)s")
     root = logging.getLogger()
     root.setLevel(logging.INFO)
+    redact = RedactFilter(settings.backup_password)
     for handler in (
         logging.StreamHandler(),
         RotatingFileHandler(
@@ -60,7 +64,69 @@ def _setup_logging(settings: Settings, file_name: str) -> None:
         ),
     ):
         handler.setFormatter(formatter)
+        # On the handler, not the logger: records propagated from child loggers skip
+        # the root logger's own filters.
+        handler.addFilter(redact)
         root.addHandler(handler)
+
+
+def _backup_context(args: argparse.Namespace, settings: Settings):
+    from shoponline.backup import pgtools
+    from shoponline.backup.runner import Context
+    from shoponline.backup.sevenzip import find_exe
+    from shoponline.db.session import get_engine, session_factory
+
+    try:
+        pg_bin = pgtools.find_bin(getattr(args, "pg_bin", None))
+    except pgtools.PgToolError:
+        if getattr(args, "pg_bin", None):
+            raise
+        pg_bin = None  # only an application backup can do without it
+    seven = getattr(args, "seven_zip", None)
+    return Context(
+        settings=settings,
+        session_factory=session_factory(settings.database_url),
+        engine=get_engine(settings.database_url),
+        repo_root=REPO_ROOT,
+        pg_bin=pg_bin,
+        seven_zip=find_exe(seven) if seven else None,
+        drive=_drive_place(settings),
+    )
+
+
+def _drive_place(_settings: Settings):
+    return None
+
+
+def _cmd_backup(args: argparse.Namespace) -> int:
+    from shoponline.backup import runner
+
+    settings = load_settings()
+    _setup_logging(settings, "backup.log")
+    ctx = _backup_context(args, settings)
+    if args.action == "process-queue":
+        with runner.backup_lock(ctx.engine) as lock:
+            if lock is None:
+                print("Đang có tiến trình sao lưu khác chạy.", file=sys.stderr)
+                return runner.EXIT_LOCKED
+            with ctx.session_factory() as db:
+                runner.mark_interrupted(db)
+            return runner.worst(runner.process_requests(ctx))
+    if args.action == "verify":
+        from shoponline.backup import verify
+
+        ok, message = verify.verify(ctx, verify.locate(ctx, args.target))
+        print(("Hợp lệ: " if ok else "Không hợp lệ: ") + message)
+        return 0 if ok else 1
+    if args.if_due:
+        return runner.if_due(ctx)
+    reason = args.reason
+    actor = getpass.getuser() if reason == "manual" else runner.SYSTEM
+    # Backups before a deploy stay on this machine only (the owner's decision).
+    to_drive = reason != "deploy" and not args.no_drive
+    outcome = runner.run_now(ctx, args.kind, reason, actor, to_drive)
+    print(outcome.message, file=sys.stderr if outcome.exit_code else sys.stdout)
+    return outcome.exit_code
 
 
 def _cmd_web(_args: argparse.Namespace) -> int:
@@ -304,6 +370,27 @@ def main(argv: list[str] | None = None) -> int:
     revoke.add_argument("run_id", type=int)
     revoke.add_argument("--yes", action="store_true", help="Gỡ thật thay vì chỉ xem")
     run.set_defaults(func=_cmd_accounting_run)
+
+    backup = sub.add_parser("backup", help="Sao lưu mã hóa (database, ứng dụng, toàn bộ)")
+    backup_actions = backup.add_subparsers(dest="action", required=True)
+    backup_run = backup_actions.add_parser("run", help="Tạo một bản sao lưu")
+    backup_run.add_argument("--kind", choices=("db", "app", "full"), default="db")
+    backup_run.add_argument(
+        "--reason", choices=("manual", "deploy", "migration"), default="manual"
+    )
+    backup_run.add_argument(
+        "--if-due",
+        action="store_true",
+        help="Tác vụ 15 phút: xử lý yêu cầu đang chờ rồi chạy bản theo lịch nếu tới hạn",
+    )
+    backup_run.add_argument("--no-drive", action="store_true", help="Không tải lên Google Drive")
+    backup_verify = backup_actions.add_parser("verify", help="Kiểm tra một bản sao lưu")
+    backup_verify.add_argument("target", help="Số bản (#id), tên file hoặc đường dẫn")
+    backup_actions.add_parser("process-queue", help="Xử lý các yêu cầu sao lưu đang chờ")
+    for action in (backup_run, backup_verify):
+        action.add_argument("--pg-bin", default=None, help="Thư mục PostgreSQL bin")
+        action.add_argument("--seven-zip", default=None, help="Đường dẫn 7z.exe")
+    backup.set_defaults(func=_cmd_backup)
 
     args = parser.parse_args(argv)
     try:

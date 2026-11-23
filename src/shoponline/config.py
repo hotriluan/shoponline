@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import os
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 REQUIRED_VARS = (
@@ -26,6 +26,10 @@ class Settings:
     web_port: int = 8750
     # Customer names, addresses and stored workbooks are deleted after this many days.
     retention_days: int = 90
+    # Backups: optional, so the web still starts on a machine that does not back up.
+    backup_password: str = field(default="", repr=False)
+    backup_dirs: tuple[Path, ...] = ()
+    restore_database_url: str = field(default="", repr=False)
 
     @property
     def upload_dir(self) -> Path:
@@ -38,6 +42,11 @@ class Settings:
     @property
     def backup_marker(self) -> Path:
         return self.data_dir / "last-backup.txt"
+
+    @property
+    def backup_work_dir(self) -> Path:
+        """Decrypted backup contents are staged here, never in %TEMP%."""
+        return self.data_dir / "backup-work"
 
     @property
     def evidence_dir(self) -> Path:
@@ -82,6 +91,13 @@ def load_settings(env: dict[str, str] | None = None) -> Settings:
         web_host=env.get("SHOPONLINE_WEB_HOST") or "127.0.0.1",
         web_port=int(port_text),
         retention_days=_positive_int(env, "SHOPONLINE_RETENTION_DAYS", 90),
+        backup_password=env.get("SHOPONLINE_BACKUP_PASSWORD") or "",
+        backup_dirs=tuple(
+            Path(part.strip())
+            for part in (env.get("SHOPONLINE_BACKUP_DIRS") or "").split(";")
+            if part.strip()
+        ),
+        restore_database_url=env.get("SHOPONLINE_RESTORE_DATABASE_URL") or "",
     )
 
 

@@ -1,18 +1,18 @@
 <#
 .SYNOPSIS
-  Encrypted daily backup of the shoponline database to one or more folders outside the machine.
+  Database backup before a deploy: a thin wrapper over `shoponline backup run --kind db`.
 
 .DESCRIPTION
-  1. pg_dump (custom format) of the database in SHOPONLINE_DATABASE_URL.
-  2. Encrypt with 7-Zip AES-256 (file names hidden too) using SHOPONLINE_BACKUP_PASSWORD.
-  3. Copy to every folder in SHOPONLINE_BACKUP_DIRS (separated by ';'), e.g. the company
-     network share and the Google Drive for desktop folder.
-  4. In each folder the new backup reached: keep every backup of today and the newest backup of
-     each of the SHOPONLINE_BACKUP_KEEP_DAYS (default 14) days before; delete the rest
-     (backup-rotation.ps1). Nothing is deleted from a folder the copy did not reach.
-  5. Write the time to <SHOPONLINE_DATA_DIR>\last-backup.txt; the web warns after 36 hours.
-  Settings come from environment variables, or from the repo-root env file when not set.
-  The encryption password must live in the secret store, never next to the backups.
+  update-production.ps1 runs the copy of this file that is on disk, so it keeps its contract:
+  it calls this script and goes on only when the exit code is 0 or 2.
+    0  every place got the backup
+    2  some places got it (still a usable backup)
+    1  no place got it
+    3  another backup held the lock for 20 minutes, so none was made
+  The work is done by the Python module (shoponline.backup): pg_dump, 7-Zip AES-256 with hidden
+  names, copy to every folder in SHOPONLINE_BACKUP_DIRS, rotation, the record in the database.
+  A backup before a deploy stays on this machine and does not go to Google Drive.
+  Settings come from environment variables or the repo-root env file.
 
 .EXAMPLE
   pwsh -ExecutionPolicy Bypass -File scripts\windows\backup-db.ps1
@@ -24,60 +24,7 @@ param(
 
 $ErrorActionPreference = "Stop"
 . (Join-Path $PSScriptRoot "settings.ps1")
-. (Join-Path $PSScriptRoot "backup-rotation.ps1")
+Set-Location $script:RepoRoot
 
-$dbUrl = Get-Setting "SHOPONLINE_DATABASE_URL"
-$password = Get-Setting "SHOPONLINE_BACKUP_PASSWORD"
-$targets = (Get-Setting "SHOPONLINE_BACKUP_DIRS").Split(";") | Where-Object { $_.Trim() } | ForEach-Object { $_.Trim() }
-$keepDays = [int](Get-Setting "SHOPONLINE_BACKUP_KEEP_DAYS" "14")
-$dataDir = Get-Setting "SHOPONLINE_DATA_DIR"
-
-if (-not $dbUrl) { throw "Thiếu SHOPONLINE_DATABASE_URL" }
-if (-not $password) { throw "Thiếu SHOPONLINE_BACKUP_PASSWORD" }
-if (-not $targets) { throw "Thiếu SHOPONLINE_BACKUP_DIRS" }
-if (-not $dataDir) { throw "Thiếu SHOPONLINE_DATA_DIR" }
-if (-not (Test-Path $SevenZip)) { throw "Không thấy 7-Zip tại $SevenZip" }
-
-$db = ConvertFrom-DatabaseUrl $dbUrl
-$pgUser = $db.User; $pgHost = $db.Host; $pgPort = $db.Port; $pgDb = $db.Database
-$env:PGPASSWORD = $db.Password
-
-$stamp = Get-Date -Format "yyyyMMdd-HHmmss"
-$work = Join-Path ([IO.Path]::GetTempPath()) "shoponline-backup-$stamp"
-New-Item -ItemType Directory -Path $work | Out-Null
-try {
-    $dump = Join-Path $work "$pgDb-$stamp.dump"
-    & (Join-Path $PgBin "pg_dump.exe") -h $pgHost -p $pgPort -U $pgUser -d $pgDb -Fc -f $dump
-    if ($LASTEXITCODE -ne 0) { throw "pg_dump lỗi" }
-
-    $archive = Join-Path $work "shoponline-$pgDb-$stamp.7z"
-    & $SevenZip a -t7z -mhe=on "-p$password" $archive $dump | Out-Null
-    if ($LASTEXITCODE -ne 0) { throw "7-Zip lỗi khi mã hóa" }
-    & $SevenZip t "-p$password" $archive | Out-Null
-    if ($LASTEXITCODE -ne 0) { throw "Kiểm tra bản mã hóa thất bại" }
-
-    $copied = 0
-    foreach ($target in $targets) {
-        try {
-            New-Item -ItemType Directory -Force -Path $target | Out-Null
-            Copy-Item $archive $target
-            Remove-OldBackups -Folder $target -Database $pgDb -KeepDays $keepDays
-            Write-Host "Đã chép tới $target"
-            $copied++
-        } catch {
-            Write-Warning "Không chép được tới ${target}: $_"
-        }
-    }
-    if ($copied -eq 0) { throw "Không chép được bản sao lưu tới nơi nào" }
-    if ($copied -lt $targets.Count) {
-        Write-Warning "Chỉ chép được tới $copied/$($targets.Count) nơi; không ghi mốc sao lưu"
-        exit 2
-    }
-    New-Item -ItemType Directory -Force -Path $dataDir | Out-Null
-    Set-Content -Path (Join-Path $dataDir "last-backup.txt") -Value ((Get-Date).ToUniversalTime().ToString("o")) -Encoding UTF8
-    Write-Host "Sao lưu xong: $(Split-Path $archive -Leaf)"
-}
-finally {
-    Remove-Item -Recurse -Force $work -ErrorAction SilentlyContinue
-    Remove-Item Env:PGPASSWORD -ErrorAction SilentlyContinue
-}
+uv run --no-dev --extra robot shoponline backup run --kind db --reason deploy --pg-bin $PgBin --seven-zip $SevenZip
+exit $LASTEXITCODE

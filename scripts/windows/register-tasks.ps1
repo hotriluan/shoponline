@@ -1,7 +1,8 @@
 <#
 .SYNOPSIS
-  Register the Task Scheduler jobs on the production machine: web at startup, daily backup,
-  daily data retention (list-only unless -RetentionApply).
+  Register the Task Scheduler jobs on the production machine: web at startup, the backup task
+  (every 15 minutes, runs what the schedule on the web page Sao lưu says is due), daily data
+  retention (list-only unless -RetentionApply).
 
 .DESCRIPTION
   Run from an elevated PowerShell 7 on the production machine, inside the repo folder.
@@ -16,11 +17,13 @@
 
   With -OnlyMissing it registers the tasks that do not exist yet, and updates the command and
   battery settings of existing tasks that differ from what this script would register. Their
-  triggers, account and the retention --apply choice are kept. It starts nothing.
+  triggers, account and the retention --apply choice are kept, with one narrow exception: the
+  trigger of shoponline-backup is replaced when it is not the 15-minute repetition (a machine
+  that still has the old daily trigger). It starts nothing.
   update-production.ps1 calls it this way on every deploy.
 
 .EXAMPLE
-  pwsh -ExecutionPolicy Bypass -File scripts\windows\register-tasks.ps1 -User MAYCHU\shoponline -BackupTime 23:00
+  pwsh -ExecutionPolicy Bypass -File scripts\windows\register-tasks.ps1 -User MAYCHU\shoponline
 
 .EXAMPLE
   pwsh -ExecutionPolicy Bypass -File scripts\windows\register-tasks.ps1 -User $env:USERDOMAIN\$env:USERNAME -AtLogOn
@@ -31,7 +34,9 @@
 param(
     [string]$User,
     [string]$RobotUser,
-    [string]$BackupTime = "23:00",
+    # No longer used: the backup times are set on the web page Sao lưu. Still accepted so an old
+    # command line keeps working.
+    [string]$BackupTime = "",
     # Run web and backup in -User's session when that user logs on (no stored password, no
     # admin rights needed when -User is the current user). For a machine one person logs on to.
     [switch]$AtLogOn,
@@ -93,6 +98,7 @@ if ($RobotUser) {
     return
 }
 if (-not $User) { throw "Truyền -User (web và sao lưu) hoặc -RobotUser (robot SAP)" }
+if ($BackupTime) { Write-Warning "-BackupTime không còn tác dụng: giờ sao lưu nay đặt trên trang Sao lưu của web." }
 if ($OnlyMissing -and -not $AtLogOn) { throw "-OnlyMissing chỉ dùng cùng -AtLogOn (không hỏi mật khẩu)" }
 
 # On a deploy, keep whichever retention mode someone chose; never switch real deletion on or off here.
@@ -105,14 +111,15 @@ $retentionArgs = if ($applyRetention) { "retention --apply" } else { "retention"
 
 $settings = New-TaskSettings -StartWhenAvailable -RestartCount 3 -RestartInterval (New-TimeSpan -Minutes 1) -ExecutionTimeLimit ([TimeSpan]::Zero)
 $dailySettings = New-TaskSettings -StartWhenAvailable -ExecutionTimeLimit (New-TimeSpan -Hours 1)
+# One run at a time (a second start while a backup runs is ignored); a full backup can be long.
+$backupSettings = New-TaskSettings -StartWhenAvailable -MultipleInstances IgnoreNew -ExecutionTimeLimit (New-TimeSpan -Hours 3)
 $webAction = New-HiddenTaskAction -Execute $Uv -Argument "run --no-dev shoponline web" -WorkingDirectory $repoRoot
-$backupAction = New-HiddenTaskAction -Execute (Get-Command pwsh).Source `
-    -Argument "-NoProfile -ExecutionPolicy Bypass -File `"$repoRoot\scripts\windows\backup-db.ps1`"" -WorkingDirectory $repoRoot
+$backupAction = New-HiddenTaskAction -Execute $Uv -Argument "run --no-dev --extra robot shoponline backup run --if-due" -WorkingDirectory $repoRoot
 $retentionAction = New-HiddenTaskAction -Execute $Uv -Argument "run --no-dev shoponline $retentionArgs" -WorkingDirectory $repoRoot
 
 $tasks = @(
     @{ Name = "shoponline-web"; Action = $webAction; Settings = $settings },
-    @{ Name = "shoponline-backup"; Action = $backupAction; Settings = $dailySettings },
+    @{ Name = "shoponline-backup"; Action = $backupAction; Settings = $backupSettings },
     @{ Name = "shoponline-retention"; Action = $retentionAction; Settings = $dailySettings }
 )
 foreach ($task in $tasks) {
@@ -121,6 +128,21 @@ foreach ($task in $tasks) {
 }
 $isNew = @{}
 foreach ($task in $tasks) { $isNew[$task.Name] = $task.Change -eq "new" }
+
+# The backup task wakes every 15 minutes and asks the database what is due, so changing a time
+# on the web needs no re-registration. An older machine still has the daily trigger.
+function New-BackupTrigger {
+    New-ScheduledTaskTrigger -Once -At (Get-Date).Date -RepetitionInterval (New-TimeSpan -Minutes 15) `
+        -RepetitionDuration (New-TimeSpan -Days 3650)
+}
+if ($OnlyMissing -and -not $isNew["shoponline-backup"]) {
+    $backupTask = Get-ScheduledTask -TaskName "shoponline-backup"
+    $repeat = $backupTask.Triggers | Where-Object { $_.Repetition.Interval -eq "PT15M" }
+    if (-not $repeat) {
+        Set-ScheduledTask -TaskName "shoponline-backup" -Trigger (New-BackupTrigger) | Out-Null
+        Write-Host "shoponline-backup nay chạy mỗi 15 phút (giờ sao lưu đặt trên trang Sao lưu)"
+    }
+}
 if (-not ($isNew.Values -contains $true)) { return }
 
 $listening = Get-NetTCPConnection -LocalPort $WebPort -State Listen -ErrorAction SilentlyContinue
@@ -149,9 +171,9 @@ if ($isNew["shoponline-web"]) {
 }
 
 if ($isNew["shoponline-backup"]) {
-    Register-ScheduledTask -TaskName "shoponline-backup" -Action $backupAction -Trigger (New-ScheduledTaskTrigger -Daily -At $BackupTime) `
-        -Settings $dailySettings @account -Force | Out-Null
-    Write-Host "Đã đăng ký shoponline-backup (hằng ngày lúc $BackupTime)"
+    Register-ScheduledTask -TaskName "shoponline-backup" -Action $backupAction -Trigger (New-BackupTrigger) `
+        -Settings $backupSettings @account -Force | Out-Null
+    Write-Host "Đã đăng ký shoponline-backup (mỗi 15 phút; giờ sao lưu đặt trên trang Sao lưu)"
 }
 
 if ($isNew["shoponline-retention"]) {
