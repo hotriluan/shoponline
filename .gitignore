@@ -48,3 +48,6 @@ docs/sap-recordings/
 
 # Personal local notes
 startserver.txt
+
+# Google OAuth client secrets
+client_secret_*.json
