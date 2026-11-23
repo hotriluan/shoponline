@@ -1,7 +1,7 @@
 ---
 title: "Gộp 3 sàn thành một file gửi kế toán, có sổ DO đã gửi"
 description: "Một đợt xuất đọc zrsd004 cho từng sàn và từng ngày goods issue, gộp thành một file SHOP ONLINE, loại DO đã chốt, đối chiếu để không sót đơn."
-status: pending
+status: in-progress
 priority: P1
 effort: 4d
 branch: main
@@ -83,12 +83,12 @@ Một giao dịch: lưu file, ghi DO vào sổ, đóng đợt, ghi nhật ký s�
 
 | # | Phase | Trạng thái | Phụ thuộc |
 |---|---|---|---|
-| 1 | [Sổ DO, đợt xuất, retention và lưu file](phase-01-ledger-and-runs.md) | pending | — |
-| 2 | [Dựng file gộp nhiều nguồn](phase-02-merged-workbook.md) | pending | — |
-| 3 | [Robot: không có dữ liệu là kết quả hợp lệ](phase-03-robot-no-data-result.md) | pending | — |
-| 4 | [Dịch vụ đợt xuất, đối chiếu và chốt](phase-04-run-service.md) | pending | 1, 2, 3 |
-| 5 | [Giao diện web](phase-05-web-ui.md) | pending | 4 |
-| 6 | [Tài liệu và chạy thử Production](phase-06-docs-and-live-check.md) | pending | 5 |
+| 1 | [Sổ DO, đợt xuất, retention và lưu file](phase-01-ledger-and-runs.md) | completed | — |
+| 2 | [Dựng file gộp nhiều nguồn](phase-02-merged-workbook.md) | completed | — |
+| 3 | [Robot: không có dữ liệu là kết quả hợp lệ](phase-03-robot-no-data-result.md) | completed | — |
+| 4 | [Dịch vụ đợt xuất, đối chiếu và chốt](phase-04-run-service.md) | completed | 1, 2, 3 |
+| 5 | [Giao diện web](phase-05-web-ui.md) | completed | 4 |
+| 6 | [Tài liệu và chạy thử Production](phase-06-docs-and-live-check.md) | in-progress (tài liệu xong; chưa có biên bản chạy thử Production) | 5 |
 
 Phase 1, 2 và 3 sửa các file khác nhau (phase 2 giữ nguyên `build_accounting_workbook`, nên không đụng `report_ingest.py` hay worker) và làm song song được.
 

@@ -15,6 +15,8 @@ created: 2026-11-16
 
 ## Overview
 
+> **Cập nhật 2026-11-23** (sửa chữ lệch mã, không đổi hợp đồng gốc): file thực tế có 20 cột, không phải 17 (cột 18 `Mã đơn`, 19 `Tax Invoice Doc.`, 20 `Tiền Vô`, thêm bởi các plan sau). Trang chọn theo **tháng đặt hàng**, mặc định tháng trước, thay cho ô "đến ngày" mặc định hôm nay. Đơn còn bị chặn thêm vì thiếu Tax Invoice Doc. và (Shopee, TikTok) Tiền Vô. Tiêu chí 1 (24 đơn tại 2026-11-16) và tiêu chí 6 là số liệu và mô tả của lúc viết plan.
+
 Kế toán giữ file `Shop Online 2022-2026_10.xlsx` (sheet1, 17 cột, 3.010 dòng tới 10/2026). Hiện admin gõ tay từng dòng. Database production đã có đủ dữ liệu cho mọi cột của các đơn đã có DO, trừ tên báo cáo của sản phẩm (itemName, kích cỡ, variation). Kế hoạch này thêm bảng tên báo cáo theo mã vật tư, hàm tách tỉnh/thành từ địa chỉ, sổ ghi đơn đã vào file lịch sử, bộ dựng file và một trang web để xuất và xác nhận.
 
 Nguồn quyết định: [brainstorm-261116-1319-shop-online-history-export.md](../reports/brainstorm-261116-1319-shop-online-history-export.md).
@@ -153,3 +155,29 @@ Phase 2 và 3 sửa các file khác nhau và làm song song được sau phase 1
 - Decision deltas checked: 5 (sổ đã xuất, bỏ "từ ngày", retention, quyền tải, phụ thuộc phase 4).
 - Reconciled stale references: 7 (số địa chỉ production 55 sửa thành 62; tên migration `0007_report_item_name`; `date_from` trong phase 3 và 4; tên file có khoảng ngày; tiêu chí "xuất 11–16/11"; phụ thuộc phase 4; câu "Phase 2 và 3 song song" giữ nguyên, thêm ghi chú phase 4).
 - Unresolved contradictions: 0.
+
+## Red Team Review
+
+### Session — 2026-11-23 (rà soát đối chiếu mã, plan đã được làm)
+
+**Phương pháp:** ba lens (bảo mật, giả định, thất bại) cộng lens trùng/sót dữ liệu do một người thực hiện trên mã hiện có; không có reviewer riêng. Chi tiết: [báo cáo](../reports/data-integrity-audit-261123-1320-history-file.md). Số liệu lấy từ dev DB, 2026-11-23 (`sales_history_exported` có 0 dòng, nên luồng xác nhận chỉ kiểm được bằng mã và test).
+**Findings:** 7 accepted (đề xuất), 7 bác có nguồn kiểm chứng. **Severity:** 3 Medium, 4 Low.
+
+| # | Finding | Severity | Disposition | Applied To |
+|---|---|---|---|---|
+| 1 | Hai file chưa xác nhận chồng đơn lên nhau: tải lần hai (kể cả bấm đúp, vì `GET` ghi file và sổ, `sales_history.py:204-239`) hoặc thêm đơn mới rồi tải lại ra file B chứa cả đơn của file A. Xác nhận A xong, B vẫn còn trên đĩa (`retention.py:158-166`, B còn đơn chưa xác nhận) và vẫn chứa dòng của đơn A; trang không báo chồng lấn. Dán cả hai thì file lịch sử bị lặp dòng; xác nhận B chỉ báo "bỏ qua" sau khi đã dán (`sales_history.py:380-388`) | Medium | Accept (chủ dự án duyệt 2026-11-23) | Rủi ro chính; đề xuất `/ak-fix` |
+| 2 | `Tiền Vô` và `Tax Invoice Doc.` chốt lúc tải, không kiểm lại. Tiền vô là tổng các dòng đang có (`sales_history_workbook.py:192-207`), một dòng đã đủ để coi là "đã có tiền vô"; dòng giao dịch đến sau, hoặc hóa đơn đọc lại bị ghi đè (`report_ingest.py:93-103`), không phản ánh vào file đã dán. Dev chưa có đơn nào nhiều dòng tiền vô nên chưa đo được; cần SQL trên production | Medium | Accept (chủ dự án duyệt 2026-11-23) | Rủi ro chính; SQL ở phase 7 |
+| 3 | Tên khách bắt đầu bằng `=`, `+`, `-` hoặc `@` được openpyxl ghi thành công thức (`data_type` = `f`, đã thử với `=`), không ghi thành chuỗi (`sales_history_workbook.py:287`). Lazada nhập tên từ file sàn (`lazada_orders.py:123`) nên người mua đặt được nội dung ô trong file kế toán mở bằng Excel | Medium | Accept (chủ dự án duyệt 2026-11-23) | Phase 3; đề xuất `/ak-fix` |
+| 4 | Đơn bị chặn hoặc chưa xác nhận lâu không có cảnh báo tuổi: chỉ hiện khi có người mở trang và chọn tháng đủ muộn (`sales_history.py:164-201`); `retention.py:102-108` giữ `customer_info` vô thời hạn cho đơn không bao giờ vào sổ | Low | Accept (chủ dự án duyệt 2026-11-23) | Rủi ro chính; SQL ở phase 7 |
+| 5 | Giả định `ordered_at` là giờ Việt Nam cho cả ba sàn nhưng importer không đổi múi giờ (`shopee_orders.py:36-45`, `tiktok_orders.py:44-50`); ranh giới tháng và cột `month`/`year` dựa trên giả định đó (`sales_history_workbook.py:153,285-286`). Chưa kiểm được bằng dữ liệu | Low | Accept (chủ dự án duyệt 2026-11-23) | Rủi ro chính; đối chiếu một đơn cuối tháng với màn hình sàn |
+| 6 | Plan lệch mã: hợp đồng và tiêu chí 1 nói 17 cột và "ô đến ngày đặt hàng mặc định hôm nay", mã có 20 cột (`sales_history_workbook.py:55-76`), chọn theo tháng, mặc định tháng trước (`sales_history.py:76-86`), và chặn thêm vì thiếu hóa đơn hoặc tiền vô (tiêu chí 6 không nêu) | Low | Accept (chủ dự án duyệt 2026-11-23) | Hợp đồng; tiêu chí 1, 6 |
+| 7 | `Transaction` coi hai đơn cùng tên khách và cùng phút là một giao dịch, vì `createTime` bỏ giây (`sales_history_workbook.py:284,291`). Dev có 1 cặp như vậy | Low | Accept (chủ dự án duyệt 2026-11-23) | Ghi chú hợp đồng; hỏi kế toán |
+| 8 | Hai lần xác nhận cho hai file chứa cùng đơn ghi trùng | n/a | Reject: khóa chính `models.py:433-438`, `on_conflict_do_nothing` `sales_history.py:384`, `tests/web/test_sales_history_routes.py:206` | — |
+| 9 | Xóa file làm đơn đã xác nhận trở lại hàng chờ hoặc mất ghi nhận | n/a | Reject: `sales_history.py:447-454` chặn khi đã xác nhận; xóa file chưa xác nhận trả đơn về hàng chờ (`:455-468`); `test_sales_history_routes.py:225,249` | — |
+| 10 | Đơn đặt 23:30 ngày cuối tháng rơi sang tháng sau | n/a | Reject: so sánh `ordered_at < 00:00 ngày kế` (`sales_history_workbook.py:153`); cột `month` lấy từ chính `ordered_at`; còn giả định múi giờ ở mục 5 | — |
+| 11 | Số dòng xuất khác số dòng sản phẩm | n/a | Reject: một `HistoryRow` mỗi `item` (`sales_history_workbook.py:251-274`); dev: 0 đơn DELIVERED không có dòng, 3 đơn nhiều dòng, 0 dòng thiếu mã vật tư | — |
+| 12 | Đơn tồn tháng trước bị bỏ khi xuất tháng sau | n/a | Reject: không có cận dưới ngày đặt (`sales_history_workbook.py:141-157`), cận trên là cuối tháng chọn | — |
+| 13 | Retention xóa tên khách trước khi đơn vào file | n/a | Reject: chỉ xóa khi DO đã gửi kế toán và đã có trong `sales_history_exported` (`retention.py:102-108`) | — |
+| 14 | Viewer xác nhận, gỡ xác nhận hay xóa file | n/a | Reject: `require_admin` ở `sales_history.py:370,419,441`; `test_sales_history_routes.py:263,285` | — |
+
+Quyết định thuộc chủ dự án: có sửa các mục 1-3 ngay bằng `/ak-fix` hay chấp nhận rủi ro; đóng phase 5 của plan này khi nào (còn chờ biên bản chạy thử). Không sửa mã hay phase file trong đợt này. Tiêu chí hoàn thành 1 và 6 đã lỗi thời so với mã (mục 6), chưa sửa văn bản.

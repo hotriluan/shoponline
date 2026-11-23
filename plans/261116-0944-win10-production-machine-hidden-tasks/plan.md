@@ -111,3 +111,41 @@ Phase 1 push riêng được và sửa ngay `Alkana_IT`.
 - **`conhost --headless` trên bản Windows 10 cũ.** Có bài kiểm tra và đường quay về cách cũ (phase 1). Script dựng máy báo rõ kết quả kiểm tra.
 - **Runner đang chạy job không tự đổi cách khởi chạy.** Định nghĩa tác vụ runner được cập nhật, nhưng runner đang chạy giữ cửa sổ tới lần đăng nhập hoặc khởi động lại kế tiếp.
 - **Windows 10 không có bản vá.** Chủ dự án đã chấp nhận rủi ro; tài liệu ghi các biện pháp bù.
+
+## Red Team Review
+
+Red team nhẹ: chỉ mất/trùng dữ liệu (quyết định 2026-11-23). Một người soi, lens trùng/sót dữ liệu, chỉ hai câu: hai bản chạy cùng lúc (robot, quét, sao lưu) và chuyển máy có đủ dữ liệu không. Số đếm là dev DB, 2026-11-23. Chi tiết: [báo cáo](../reports/data-integrity-audit-261123-1320-deletion-machine.md).
+
+| # | Phát hiện | Mức | Bằng chứng trong mã | Disposition | Hướng xử lý |
+|---|-----------|-----|---------------------|-------------|-------------|
+| 1 | Khóa robot nằm trong từng DB (rủi ro đã ghi trong plan) và chỉ giữ bằng một kết nối không kiểm tra lại; kết nối rụng thì robot chạy tiếp mà không còn khóa | Low | `saprobot/worker.py:484-495`, `:504-526`; `scripts/windows/register-tasks.ps1:81` (`IgnoreNew` chặn bản thứ hai cùng máy khi robot còn sống) | Accept (chủ dự án duyệt 2026-11-23) | Kiểm kết nối khóa trong vòng lặp; thủ tục tắt robot cũ trước khi bật robot mới đã đủ cho chuyển máy |
+| 2 | Thư mục dữ liệu chuyển bằng `robocopy /E /COPY:DAT`, không có bước so số file hoặc hash như 21 bảng DB; file mất khi chép sẽ không ai biết | Low | `plans/261116-0944-win10-production-machine-hidden-tasks/phase-03-cutover-and-docs.md:36,63-65`. Đã qua; từ 2026-11-23 luồng máy mới đi theo bản `full` có manifest (`backup/archive.py:33-41`) | Reject (đã qua cho lần chuyển này; chỉ ghi lại: lần sau dùng bản `full` có manifest) | Không đổi |
+| 3 | Database cũ `shoponline` trên `Alkana_IT` giữ nguyên không thời hạn (quyết định 8), nên tên và địa chỉ khách của giai đoạn trước 2026-11-16 nằm ngoài tác vụ retention (tác vụ ở trạng thái Disabled) | Low | Plan quyết định 8; kiểm 2026-11-23: `pg_database` có `shoponline` (9 MB), PostgreSQL nghe `0.0.0.0:5432`, 5 tác vụ `shoponline-*` Disabled | Accept (chủ dự án duyệt 2026-11-23) | Đặt ngày xóa DB cũ và thư mục `C:\shoponline-data` cũ sau khi hết thời gian lùi lại |
+| 4 | Hai máy cùng ghi một DB | Low | Hai DB riêng; máy cũ không web, không runner, 5 tác vụ Disabled; GitHub chỉ có runner `ALKANADUONGPC-shoponline` nhãn `shoponline-prod` (đã kiểm bằng `gh api`) | Reject (đã kiểm: không có DB dùng chung; rủi ro còn lại là phân kỳ nếu ai bật lại tác vụ cũ) | Không đổi |
+| 5 | Tác vụ retention không bị tạm dừng khi deploy, chạy cùng `uv sync` (cả hai dùng venv) | Low | `scripts/windows/update-production.ps1:63-70` chỉ tạm dừng `shoponline-backup` và `shoponline-restore`. Không gây mất dữ liệu: deploy lỗi thì chạy lại | Reject (đã kiểm: chỉ làm deploy lỗi, không đụng dữ liệu) | Không đổi |
+
+## Validation Log
+
+Validate nhẹ ngày 2026-11-23: chỉ các tiêu chí liên quan hai bản chạy cùng lúc và chuyển máy. Không hỏi chủ dự án trong lượt này. Không đổi trạng thái tác vụ nào.
+
+### Tiêu chí hoàn thành (phạm vi rút gọn)
+
+| # | Tiêu chí | Kết quả | Bằng chứng |
+|---|----------|---------|------------|
+| 6 | GitHub chỉ còn runner của máy mới mang nhãn `shoponline-prod`; trên `Alkana_IT` các tác vụ `shoponline-*` Disabled | VERIFIED | `gh api repos/.../actions/runners`: một runner `ALKANADUONGPC-shoponline`, online, nhãn `shoponline-prod`. Trên `Alkana_IT` (kiểm 2026-11-23): `shoponline-backup`, `-deploy-runner`, `-retention`, `-robot`, `-web` đều Disabled; không dịch vụ `actions.runner`; không ai nghe cổng 8750 |
+| 8 | Số lô, số đơn, bảng ánh xạ khớp với `Alkana_IT` trước khi chuyển | UNVERIFIED | Plan ghi "21 bảng khớp số dòng" ngày 2026-11-16; không còn bản chụp trước để so. Dev DB hiện có 85 lô nhập, 129 đơn, 549 dòng ánh xạ (dev DB, 2026-11-23) |
+| 9 | Trang Kết nối SAP báo robot chạy trên máy mới | VERIFIED (dev DB) | `robot_control.robot_host = AlkanaDuongPC`, `last_seen_at` 2026-11-23 08:56, không tạm dừng, 0 lỗi liên tiếp |
+| 10 | Chạy tay `shoponline-backup` tạo `.7z`; diễn tập khôi phục thành công trên máy mới | UNVERIFIED | Phần còn lại của phase 3 của plan này; việc khôi phục thuộc plan 261123-0312 và `plans/reports/live-check-261123-1210-backup-restore.md` |
+| - | Dữ liệu của schema `ops` và thư mục dữ liệu đi đủ sang máy mới | VERIFIED một phần | Lần chuyển 2026-11-16 chưa có `ops`; 21 bảng khớp. Từ 2026-11-23 luồng máy mới dùng `copy_ops_from_bundle` (`backup/restore.py:312`) và `backup/archive.py:33-41`; thư mục dữ liệu 2026-11-16 chép bằng robocopy không có so file (phát hiện 2) |
+
+### Giả định đang dùng
+
+| # | Giả định | Kết quả | Bằng chứng |
+|---|----------|---------|------------|
+| 1 | Khóa robot nằm trong DB của từng máy nên hai robot không chặn nhau | VERIFIED | `saprobot/worker.py:484-495` (khóa tư vấn Postgres theo DB) |
+| 2 | Tại mỗi thời điểm chỉ có một robot dùng `AL17016` | VERIFIED một phần | Máy cũ không chạy robot (tác vụ Disabled, không web); máy mới đang chạy. Chưa có cơ chế mã chặn nếu ai bật lại tác vụ cũ |
+| 3 | `Alkana_IT` giữ DB cũ để lùi lại | VERIFIED | `pg_database` có `shoponline` (9 MB); PostgreSQL chạy dịch vụ `postgresql-x64-16` |
+
+### Câu hỏi cho chủ dự án
+
+1. Phát hiện 3: đặt ngày xóa database cũ `shoponline` và thư mục dữ liệu cũ trên `Alkana_IT` là bao giờ (hiện giữ không thời hạn, chứa tên và địa chỉ khách quá 90 ngày sẽ không bị retention dọn)?

@@ -73,3 +73,40 @@ Các phase làm tuần tự: phase 2 và 3 cùng sửa `sapjobs/queue.py` và c�
 - **Phân loại lỗi đăng nhập dựa vào thông báo SAP.** Mã thông báo cho "sai mật khẩu" và "user bị khóa" phải đối chiếu trên `AEP` ở phase 4; nếu không khớp thì vẫn hiện nguyên văn thông báo SAP.
 - **Credential Manager theo từng tài khoản Windows.** Lệnh `sap-password set` phải chạy dưới đúng tài khoản chạy robot (`luanh` trên máy hiện tại, `saprobot` trên máy riêng).
 - **Việc kiểm tra phải chờ việc đang chạy.** Robot làm từng việc một; nếu đang đọc báo cáo thì trang hiện "đang chờ robot xong việc #N".
+
+## Red Team Review
+
+Red team nhẹ: chỉ mất/trùng dữ liệu (quyết định 2026-11-23). Một người soi, lens trùng/sót dữ liệu, chỉ hai câu: hai bản chạy cùng lúc, và chuyển máy có đủ dữ liệu cấu hình không. Số đếm là dev DB, 2026-11-23. Chi tiết: [báo cáo](../reports/data-integrity-audit-261123-1320-deletion-machine.md).
+
+| # | Phát hiện | Mức | Bằng chứng trong mã | Disposition | Hướng xử lý |
+|---|-----------|-----|---------------------|-------------|-------------|
+| 1 | Chỉ đổi `system`/`client` mới xóa trạng thái đã kiểm tra. Đổi user SAP không buộc kiểm tra lại, nên robot có thể đọc zrsd001/zrsd004 bằng user kém quyền (SAP trả ít dòng, không báo lỗi) và file kế toán thiếu DO. Chưa tái hiện (cần SAP thật) | Low | `sapjobs/sap_settings.py:225-227`; `saprobot/worker.py:303` | Accept (chủ dự án duyệt 2026-11-23) | Xóa trạng thái đã kiểm tra cả khi `sap_user` đổi, hoặc ghi vào docs rằng đổi user phải bấm Kiểm tra |
+| 2 | Việc đã xếp cho hệ thống cũ sau khi đổi `system`/`client`: robot không chạy mà đánh FAILED, đơn không mất, người dùng xếp lại | Low | `saprobot/worker.py:305-318` | Reject (đã kiểm: không mất hay trùng dữ liệu; lỗi hiện rõ trên trang việc) | Không đổi |
+| 3 | `check_connection` bị cắt ngang giữ khóa chống trùng và chặn nút Kiểm tra | Low | `sapjobs/queue.py:34,231-232`: `CHECK_CONNECTION` nằm trong `READ_KINDS` nên về PENDING khi robot khởi động | Reject (đã kiểm: tự chạy lại, không treo) | Không đổi |
+| 4 | Hai robot cùng một DB: khóa tư vấn Postgres giữ bằng một kết nối không kiểm tra lại (xem phát hiện 9 của báo cáo) | Low | `saprobot/worker.py:484-495`, `:504-526`; `sapjobs/queue.py:119` (`SKIP LOCKED`) cho phép hai robot nhận việc khác nhau, không trùng việc | Accept (chủ dự án duyệt 2026-11-23) | Kiểm kết nối khóa trong vòng lặp robot |
+| 5 | Cấu hình SAP đi theo bản sao lưu (cùng `sap_settings`); mật khẩu ở lại máy robot nên máy mới phải đặt lại, không trùng và không sót dữ liệu | Low | `sapjobs/sap_settings.py:105-127`, `:141-150`; dev: 1 dòng `sap_settings`, `password_present` do robot báo | Reject (đã kiểm: thiết kế đã chốt, quyết định 1) | Không đổi |
+
+## Validation Log
+
+Validate nhẹ ngày 2026-11-23: chỉ các tiêu chí liên quan hai câu hai bản chạy và chuyển máy. Không hỏi chủ dự án trong lượt này.
+
+### Tiêu chí hoàn thành (phạm vi rút gọn)
+
+| # | Tiêu chí | Kết quả | Bằng chứng |
+|---|----------|---------|------------|
+| 4 | Robot tạm dừng vẫn chạy `check_connection`; việc đọc báo cáo nằm chờ | VERIFIED (mã) | `saprobot/worker.py:303-304` (`CHECK_ONLY` khi tạm dừng hoặc chưa kiểm tra) |
+| 5 | Đổi `SYSTEM`/`CLIENT` thì khóa việc đọc cho tới khi kiểm tra thành công đúng hệ thống mới | VERIFIED (mã) | `sapjobs/sap_settings.py:225-227`, `:234-243` (`mark_verified` chỉ nhận đúng mục tiêu hiện tại); `worker.py:305-318` |
+| 7 | Máy đang chạy với `.env` cũ vẫn chạy tiếp sau deploy | VERIFIED một phần | `sap_settings.py:105-127` chép biến môi trường vào DB và coi là đã kiểm tra; không kiểm được trên production |
+| 8 | Chạy thử trên `AEP`/300 thành công một lần và thất bại có chủ đích một lần | VERIFIED (dev) | Dev: 4 việc `check_connection` DONE và 1 FAILED (2026-11-13 tới 2026-11-16) |
+| - | Chỉ một robot chạm SAP tại một thời điểm | VERIFIED với một rủi ro | Khóa tư vấn mỗi DB (`worker.py:484-495`); máy cũ `Alkana_IT` có 5 tác vụ `shoponline-*` ở trạng thái Disabled (kiểm 2026-11-23); `robot_control.robot_host = AlkanaDuongPC` (dev DB). Rủi ro: phát hiện 4 |
+
+### Giả định đang dùng
+
+| # | Giả định | Kết quả | Bằng chứng |
+|---|----------|---------|------------|
+| 1 | Mật khẩu không vào DB, nhật ký hay ảnh chụp, nên bản sao lưu không mang mật khẩu | VERIFIED (mã) | `sap_settings.py` không có cột mật khẩu; `RobotControl.password_present` chỉ là cờ (`db/models.py:305-306`) |
+| 2 | Việc đọc báo cáo chạy lại sau khi robot bị cắt ngang không làm trùng dữ liệu | UNVERIFIED | `sapjobs/queue.py:222-239` đưa việc đọc về PENDING; tính chống trùng của lần nhập lại thuộc kiểm tra phase 2 và 4 của đợt rà soát |
+
+### Câu hỏi cho chủ dự án
+
+1. Phát hiện 1: đổi user SAP có cần buộc kiểm tra lại như đổi hệ thống/client không?

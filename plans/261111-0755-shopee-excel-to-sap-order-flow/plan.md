@@ -113,4 +113,62 @@ Cổng G2 (robot ghi SO) và G3 (robot ghi DO) đã bỏ cùng phase 6–8.
 - `zrsd004` được lọc theo Sold-to Party và Actual GI (ngày goods issue). Production là `AEP`, client 300.
 - Danh sách T-code được phép là `S000` (đăng nhập, client hiện `000`), `SESSION_MANAGER`, `ZRSD001`, `ZRSD004`. Đã kiểm bằng `AL17016`; user không có start transaction. Scripting đọc được màn hình đăng nhập, nên robot tự đăng nhập lại bằng scripting được.
 
+## Red Team Review
+
+Ngày 2026-11-23. Bốn lens (Security Adversary, Failure Mode Analyst, Assumption Destroyer, Scope & Complexity Critic) cộng lens trùng/sót, chạy bằng cách soi mã và test thật; một người soi, tự phân xử. Số đếm là dev DB, 2026-11-23, không phải production. Chi tiết, SQL và test tái hiện: [báo cáo phase 2](../reports/data-integrity-audit-261123-1320-orders-sap.md). Lens Scope & Complexity và Security không có phát hiện vượt phạm vi toàn vẹn dữ liệu (phạm vi là yêu cầu của chủ dự án).
+
+| # | Phát hiện | Mức | Bằng chứng trong mã | Disposition | Hướng xử lý |
+|---|-----------|-----|---------------------|-------------|-------------|
+| 1 | Đơn đã hủy mà SO còn trong SAP: không cảnh báo; DO của SO đó vẫn vào file kế toán kèm mã đơn đã hủy | High | `reconcile/so_link.py:143-146`, `:252-261`, `:269`, `:313`; `exports/accounting_workbook.py:54-58`. Dev: 2 đơn CANCELLED, 1 có SO nối, 1 SO không nối với đơn nào | Accept (chủ dự án duyệt 2026-11-23) | `/ak-fix`: mục "SO của đơn đã hủy" trong `batch_report`; cảnh báo ở file kế toán |
+| 2 | 17/117 đơn đã nối (14,5%) có giá trị SO khác giá trị tính từ file sàn mà vẫn giao và gửi kế toán; chỉ có danh sách báo cáo, không có cổng | High | `so_link.py:268-296`, `:303-318`; `accounting/runs.py:99-110`. Dev: Lazada 8, TikTok 5, Shopee 4 (4 đơn Shopee lệch ±1 đồng) | Accept (chủ dự án duyệt 2026-11-23) | Xác nhận Giả định 1 và 2; sau đó cổng chặn hoặc ghi nhận chấp nhận lệch, dung sai làm tròn |
+| 3 | Một SO nhiều DO: chỉ DO đầu được lưu, DO thứ hai không vào hóa đơn và tiến độ theo đơn | Medium | `so_link.py:304-306`, `:314`; `db/models.py:118`; `exports/sales_history_workbook.py:183,228`; `reconcile/order_progress.py:33,67`. Dev: 0 trường hợp | Accept (chủ dự án duyệt 2026-11-23) | SQL #6 trên production; nếu có thì bảng DO riêng, tạm cảnh báo |
+| 4 | Đơn đã có ở lô D1 mà nhập lại cho D2 vẫn ở D1, đếm `unchanged`, lô D2 thiếu đơn không báo | Medium | `importers/order_import.py:151-155`, `:178-179` | Accept (chủ dự án duyệt 2026-11-23) | Hiện "đã có ở lô khác" trên trang kết quả nhập |
+| 5 | Sàn đổi số lượng/giá sau khi đơn đã có SO: bỏ qua im lặng, báo cáo lệch so với dữ liệu cũ nên không thấy | Medium | `order_import.py:178-179`; `so_link.py:274-296` | Accept (chủ dự án duyệt 2026-11-23) | Ghi sự kiện và hiện trên trang lô, không ghi đè |
+| 6 | TikTok: dòng có mã đơn rỗng hoặc không phải chữ số bị bỏ im lặng (đã tái hiện) | Medium | `importers/tiktok_orders.py:58-60`; `importers/excel_table.py:142-143` (ô số mất chữ số) | Accept (chủ dự án duyệt 2026-11-23) | Chỉ bỏ dòng mô tả và dòng trống; dòng có dữ liệu mà mã sai thì từ chối cả file |
+| 7 | Đơn MAPPING_ERROR/NEED_REVIEW không vào file đơn hàng và không nằm trong "READY chưa có SO" sau khi xác nhận lô | Medium | `exports/order_workbook.py:63-64`; `so_link.py:247-250`; `web/routes/batches.py:90-92` | Accept (chủ dự án duyệt 2026-11-23) | `missing_so` lấy mọi đơn mở chưa có SO; cảnh báo ở nút xác nhận |
+| 8 | `so_number`, `do_number` không UNIQUE ở DB | Low | `db/models.py:117-118`; `migrations/versions/0002_core_schema.py:125` | Accept (chủ dự án duyệt 2026-11-23) | UNIQUE từng phần khi có plan sửa; chấp nhận trước mắt |
+| 9 | Nhập chồng đồng thời (hai người, hoặc web và robot) gây `IntegrityError`, rollback sạch, không hỏng dữ liệu | Low | `order_import.py:41-52,151-176`; `so_link.py:80-85` | Reject (chấp nhận rủi ro; khóa UNIQUE chặn trùng, kiểm bằng `db/models.py:107` và khóa chính `sap_so_ref`) | Ghi vào sổ tay vận hành |
+| 10 | Tải file đơn hàng hai lần trước khi đọc zrsd001 có thể làm sales admin tạo SO hai lần; chỉ bắt được sau đó bằng `duplicate_po` | Low | `exports/order_workbook.py:63`; `so_link.py:262-266` | Reject (chấp nhận rủi ro; `duplicate_po` đã bắt, dev 0 PO trùng) | Nhắc trong sổ tay |
+| 11 | zrsd001 "No data" tính vào bộ đếm lỗi liên tiếp, có thể tự dừng robot | Low | `saprobot/worker.py:363-368`, `:462`; `sapjobs/queue.py:287-299`. Dev: việc #35 | Accept (chủ dự án duyệt 2026-11-23) | Coi là trung tính khi lô chưa có SO, hoặc chấp nhận |
+| 12 | `sap_so_ref` không bao giờ bị xóa; SO hủy rồi tạo lại cùng PO No làm đơn không tự nối được | Low | `so_link.py:71-100`, `:150` | Reject (chấp nhận rủi ro; `duplicate_po` đã báo, nối tay là đường xử lý đã có tại `so_link.py:164-188`) | Không đổi |
+
+## Validation Log
+
+Ngày 2026-11-23. Chỉ đối chiếu mã, test và dev DB (production không mở được); không hỏi chủ dự án trong lượt này, câu hỏi nằm ở cuối.
+
+### Tiêu chí hoàn thành
+
+| # | Tiêu chí | Kết quả | Bằng chứng |
+|---|----------|---------|------------|
+| 1 | Từ file sàn tới file gửi kế toán, không còn chép tay hay VLOOKUP, trừ tên khách | VERIFIED (mã) | `exports/order_workbook.py` sinh file đơn; `exports/accounting_workbook.py:147-177` điền mã đơn, tên, địa chỉ; Lazada lấy tên từ file (`importers/lazada_orders.py:92`). Dev: 5 đợt kế toán đã chốt |
+| 2 | Robot đọc zrsd001/zrsd004 giống hệt file tải lên trong 5 ngày làm việc | UNVERIFIED | Mã dùng chung hàm nhập (`reconcile/report_ingest.py:1-5`, `saprobot/worker.py:110-135`); dev có 21 việc zrsd001 DONE, 23 zrsd004 DONE, nhưng không có bản ghi so sánh với file tải tay. Cần production |
+| 3 | Robot không vào T-code nào ngoài ZRSD001/ZRSD004; gặp lạ thì dừng và tự tạm dừng | VERIFIED (test) | `tests/saprobot/test_guard.py` (danh sách cứng, T-code lạ bị từ chối, popup mở T-code lạ bị bắt); `saprobot/worker.py:354-361` tạm dừng khi vi phạm. Không kiểm trên SAP thật |
+| 4 | Mã đơn có hai SO, hoặc SO lệch giá trị so với file sàn, đều được hệ thống chỉ ra | VERIFIED một phần | `so_link.py:262-296` chỉ ra cả hai, nhưng chỉ khi lô đã xác nhận và chỉ là danh sách; không chặn. 17/117 đơn dev lệch giá (phát hiện 2). Điểm mù: phát hiện 1, 5 |
+| 5 | Nhập lại cùng file không đổi dữ liệu; file thiếu cột bắt buộc bị từ chối toàn bộ | VERIFIED | `tests/importers/test_order_import.py:51` (`test_import_twice_changes_nothing`); dev có 3 lần nhập lại, `new=0, updated=0`; `importers/excel_table.py:207-209` từ chối thiếu cột. Ngoại lệ TikTok: phát hiện 6 |
+| 6 | Diễn tập dựng lại máy và khôi phục database từ bản sao lưu thành công | UNVERIFIED (ngoài phạm vi phase này) | Thuộc plan `261123-0312-backup-restore-server-migration` và `live-check-261123-1210-backup-restore.md`; không kiểm lại ở đây |
+
+### Giả định đang dùng
+
+| # | Giả định | Kết quả | Bằng chứng |
+|---|----------|---------|------------|
+| 1 | Trợ giá ghi vào cột `Sale` của file đơn hàng, theo một đơn vị sản phẩm | FAILED một phần | Cột `Sale` ghi `unit_subsidy` (`exports/order_workbook.py:29,102`), nhưng dev: 13 đơn có trợ giá có SO cao hơn giá trị kỳ vọng 300 đến 99.999 đồng (Lazada 8, TikTok 5), tức SO trong SAP có vẻ không áp trợ giá như file. Chưa biết nguyên nhân: sales admin bỏ trợ giá, hay `ZDI1` làm tròn khác. Cần chủ dự án |
+| 2 | TikTok: trợ giá = Seller Discount + Platform Discount, chia số lượng | UNVERIFIED | Mã đúng như giả định (`importers/tiktok_orders.py:62-71`) và có test chia không hết; 5 đơn TikTok dev lệch giá (cùng bằng chứng giả định 1), chưa tách được nguyên nhân |
+| 3 | Lô xác nhận trong ngày D, file kế toán xuất vào ngày goods issue | VERIFIED với một rủi ro | `web/routes/batches.py:168-197` (xác nhận), `accounting/runs.py:125-153` (đọc theo ngày dự kiến tới hôm nay, có cửa sổ lùi). Dev: SO nối đều có ngày chứng từ đúng ngày lô (0 lệch, SQL #3). Rủi ro: SO tạo ngày sau D không được đọc (zrsd001 lọc đúng một ngày, `saprobot/transactions/read_zrsd001.py:25-26`) nhưng bị báo "READY chưa có SO" (`so_link.py:247-250`) |
+| 4 | Lazada: điền mã đơn từ zrsd001, tên và địa chỉ từ file Lazada | VERIFIED | `importers/order_import.py:226-247` (chỉ điền chỗ trống, không ghi đè sửa tay); `tests/importers/test_order_import.py:179,194`; `accounting_workbook.py:54-71` |
+| 5 | `Created Time` của TikTok có dạng ngày/tháng/năm | VERIFIED (mã và dev) | `importers/tiktok_orders.py:40-41`; test `test_tiktok_day_first_dates`; `_check_dates` chặn đọc nhầm (`order_import.py:118-129`). Dev: 0 đơn lệch quá 3 ngày so với ngày lô (SQL #8) |
+
+### Câu hỏi cho chủ dự án
+
+1. Giả định 1 và 2: 17 trên 117 đơn đã giao có SO khác giá trị tính từ file sàn (13 đơn có trợ giá, SO cao hơn 300 đến 99.999 đồng; 4 đơn Shopee lệch 1 đồng). Đây là chủ ý (sales admin nhập giá khác file, hoặc `ZDI1` làm tròn) hay lỗi dữ liệu cần sửa, và có nên chặn hoặc bắt xác nhận trước khi gửi kế toán?
+2. Đơn bị admin hủy mà SO đã tồn tại trong SAP (dev có 2): quy trình mong muốn là gì (ai hủy SO bên SAP, và hệ thống có cần báo để tránh DO của đơn hủy vào file kế toán)?
+3. Có từng gặp một SO chia thành hai DO (giao một phần) trên production không? Nếu có, DO thứ hai cần vào hóa đơn và file lịch sử theo đơn không?
+4. SO có thể được tạo sau ngày xử lý D (qua đêm hoặc cuối tuần) trên production không? Nếu có, robot cần đọc zrsd001 theo khoảng ngày thay vì một ngày.
+5. Chủ dự án chấp nhận coi zrsd001 "No data" là trung tính (không tính vào bộ đếm tự dừng robot) hay giữ như hiện nay?
+6. Việc chạy song song 5 ngày robot so với file tải tay (tiêu chí 2) đã làm chưa, và có biên bản không?
+
 <!-- slug: shopee-excel-to-sap-order-flow -->
+
+### Cập nhật 2026-11-23: chủ dự án trả lời
+
+- **Chênh lệch giá trị SO (phát hiện 2) là cố ý.** Khi nhập SO trong SAP, chủ dự án bỏ qua trợ giá và chỉ nhập giá gốc, nên SO cao hơn giá trị tính từ file sàn đúng bằng trợ giá (13/17 đơn). 4 đơn Shopee còn lại lệch ±1 VND là sai số làm tròn. Phát hiện này hạ xuống Low (nhiễu trong báo cáo lô); giả định "trợ giá nằm ở cột Sale" chỉ cần ghi lại rằng SAP nhập giá gốc, không trừ trợ giá. Đề xuất còn lại: báo cáo lô nên cộng lại trợ giá trước khi so để khỏi báo nhầm.
+- Bằng chứng production (2026-11-23, kết nối chỉ đọc): hàng đợi `sap_job` có "read_zrsd001" chạy lặp cho cùng một lô (lô 1 và 3 chạy 3 lần, lô 9 và 12 chạy 2 lần), nên việc đọc lại zrsd001 đã được dùng trên production. Không phân biệt được lần nào do nút "Đọc lại" và lần nào do luồng tự động.
