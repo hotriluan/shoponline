@@ -56,7 +56,11 @@ from shoponline.importers.excel_table import FileRejected
 from shoponline.maintenance import retention
 from shoponline.reconcile.report_ingest import ingest_settlement
 from shoponline.sapjobs.queue import DuplicateJob
-from shoponline.sapjobs.report_requests import request_zrsd003
+from shoponline.sapjobs.report_requests import (
+    MAX_READ_DAYS,
+    request_zrsd003,
+    split_range,
+)
 from shoponline.web.app import (
     current_user,
     flash,
@@ -297,13 +301,29 @@ def read_zrsd003(
         flash(request, refusal, "error")
         return redirect(back)
     start, end = invoice_range
-    try:
-        job = request_zrsd003(db, config.target, start, end, user.username)
-    except DuplicateJob as exc:
-        flash(request, str(exc), "error")
+    pieces = split_range(start, end)
+    jobs = []
+    for piece_start, piece_end in pieces:
+        try:
+            jobs.append(request_zrsd003(db, config.target, piece_start, piece_end, user.username))
+        except DuplicateJob as exc:
+            flash(request, str(exc), "error")
+    if not jobs:
         return redirect(back)
     db.commit()
-    flash(request, f"Robot sẽ đọc zrsd003 từ {start:%d/%m/%Y} đến {end:%d/%m/%Y} (việc #{job.id}).")
+    if len(pieces) > 1:
+        flash(
+            request,
+            f"Khoảng đọc {start:%d/%m/%Y} đến {end:%d/%m/%Y} dài hơn {MAX_READ_DAYS} ngày vì có "
+            f"đơn rất cũ còn chờ hóa đơn: robot đọc thành {len(jobs)} việc, mỗi việc tối đa "
+            "31 ngày. Đơn không bao giờ có hóa đơn sẽ kéo khoảng này dài mãi: xem sổ tay.",
+            "error",
+        )
+    else:
+        flash(
+            request,
+            f"Robot sẽ đọc zrsd003 từ {start:%d/%m/%Y} đến {end:%d/%m/%Y} (việc #{jobs[0].id}).",
+        )
     return redirect(back)
 
 

@@ -76,8 +76,8 @@ class TaxInvoiceImport:
 def ingest_zrsd003(session: Session, record: ImportBatch, actor: str) -> TaxInvoiceImport:
     """Store the invoices billed to a platform's SAP customer, keyed by DO. Other customers' rows
     (business customers, with names and tax codes) are dropped, never stored."""
-    rows = read_zrsd003(Path(record.stored_path))
     customers = set(session.scalars(select(PlatformSetting.sap_customer)))
+    rows = read_zrsd003(Path(record.stored_path), customers)
     kept = {row.delivery: row for row in rows if row.bill_to in customers}
     session.add(record)
     session.flush()

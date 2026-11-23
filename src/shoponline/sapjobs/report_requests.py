@@ -3,7 +3,7 @@ day, zrsd003 once the invoices of delivered orders are out."""
 
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, timedelta
 
 from sqlalchemy.orm import Session
 
@@ -61,6 +61,24 @@ def request_zrsd004(
 
 def zrsd003_key(date_from: date, date_to: date) -> str:
     return f"{queue.READ_ZRSD003}:{date_from.isoformat()}:{date_to.isoformat()}"
+
+
+MAX_READ_DAYS = 62  # a longer range is read in pieces, so one job never runs for too long
+CHUNK_DAYS = 31
+
+
+def split_range(date_from: date, date_to: date) -> list[tuple[date, date]]:
+    """[date_from, date_to] as one range, or consecutive pieces of at most CHUNK_DAYS days when
+    it is longer than MAX_READ_DAYS. No day is left out or read twice."""
+    if (date_to - date_from).days + 1 <= MAX_READ_DAYS:
+        return [(date_from, date_to)]
+    pieces = []
+    start = date_from
+    while start <= date_to:
+        end = min(start + timedelta(days=CHUNK_DAYS - 1), date_to)
+        pieces.append((start, end))
+        start = end + timedelta(days=1)
+    return pieces
 
 
 def request_zrsd003(

@@ -91,3 +91,31 @@ def test_ingest_writes_nothing_when_the_file_is_rejected(db, tmp_path):
     with pytest.raises(FileRejected):
         ingest_zrsd003(db, _record(path), "t")
     assert db.scalar(select(func.count()).select_from(SapTaxInvoice)) == 0
+
+
+def test_a_broken_row_of_a_customer_outside_the_platforms_does_not_reject_the_file(db, tmp_path):
+    path = zrsd003_file(
+        tmp_path / "mixed.xlsx",
+        [
+            zrsd003_row("1910000001", "INV-1"),
+            zrsd003_row("1910000002", "", bill_to=OTHER_CUSTOMER),  # no invoice number
+            zrsd003_row("1910000003", "INV-3", bill_to=OTHER_CUSTOMER),
+        ],
+    )
+
+    result = ingest_zrsd003(db, _record(path), "t")
+
+    assert result.kept == 1 and result.skipped_other_customers == 1
+    assert db.scalar(select(SapTaxInvoice.delivery)) == "1910000001"
+
+
+def test_a_broken_row_of_a_platform_customer_still_rejects_the_file(db, tmp_path):
+    path = zrsd003_file(
+        tmp_path / "bad.xlsx",
+        [zrsd003_row("1910000001", "INV-1"), zrsd003_row("1910000002", "")],
+    )
+
+    with pytest.raises(FileRejected, match="không nhập gì"):
+        ingest_zrsd003(db, _record(path), "t")
+
+    assert db.scalar(select(func.count()).select_from(SapTaxInvoice)) == 0

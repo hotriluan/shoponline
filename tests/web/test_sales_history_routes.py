@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import date, datetime, timedelta
 from io import BytesIO
 from pathlib import Path
 from urllib.parse import unquote
@@ -575,3 +575,30 @@ def test_downloading_while_an_unconfirmed_file_holds_the_same_orders_warns(db, l
     page = admin.get(PAGE).text
 
     assert "Đã có 1 file chưa xác nhận chứa cùng đơn" in page
+
+
+def test_a_very_old_waiting_order_splits_the_zrsd003_read_into_month_sized_jobs(db, login):
+    from shoponline.db.models import SapJob
+    from shoponline.sapjobs import queue
+    from shoponline.sapjobs.queue import SapTarget
+    from tests.sap_setup import configure_sap
+
+    setup.report_name(db)
+    configure_sap(db, SapTarget("QAS", "300"))
+    setup.order(db, "ANCIENT", datetime(2026, 5, 1, 8), invoice=None)  # today is 2026-11-13
+    admin = login("admin")
+
+    resp = admin.post("/sales-history/read-zrsd003", data={"month": "2026-11"})
+
+    jobs = [queue.payload_of(j) for j in db.scalars(select(SapJob).order_by(SapJob.id))]
+    assert len(jobs) == 7
+    assert jobs[0]["date_from"] == "2026-05-01" and jobs[-1]["date_to"] == "2026-11-13"
+    for earlier, later in zip(jobs, jobs[1:], strict=False):
+        assert date.fromisoformat(later["date_from"]) == date.fromisoformat(
+            earlier["date_to"]
+        ) + timedelta(days=1)
+    assert all(
+        (date.fromisoformat(j["date_to"]) - date.fromisoformat(j["date_from"])).days < 31
+        for j in jobs
+    )
+    assert "dài hơn 62 ngày" in resp.text and "7 việc" in resp.text

@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Collection
 from dataclasses import dataclass, field
 from datetime import date, datetime
 from decimal import Decimal, InvalidOperation
@@ -153,8 +154,14 @@ class TaxInvoiceRow:
     bill_to: str
 
 
-def read_zrsd003(source: str | Path | BinaryIO) -> list[TaxInvoiceRow]:
-    """Every ZBA1 invoice of the file, for all customers. Codes stay text, as SAP shows them."""
+def read_zrsd003(
+    source: str | Path | BinaryIO, platform_customers: Collection[str] | None = None
+) -> list[TaxInvoiceRow]:
+    """Every ZBA1 invoice of the file, for all customers. Codes stay text, as SAP shows them.
+
+    With platform_customers, a row that cannot be read is refused only when it is billed to one
+    of them: a broken row of any other customer is none of this file's business and is skipped,
+    so it cannot keep the platforms' invoices out."""
     table = read_table(source, required=ZRSD003_REQUIRED)
     rows: list[TaxInvoiceRow] = []
     errors: list[str] = []
@@ -174,6 +181,8 @@ def read_zrsd003(source: str | Path | BinaryIO) -> list[TaxInvoiceRow]:
                 )
             )
         except ValueError as exc:
+            if platform_customers is not None and row["Bill-to"] not in platform_customers:
+                continue
             errors.append(f"Dòng {row.number}: {exc}")
     if errors:
         raise FileRejected("File zrsd003 có dòng không đọc được, không nhập gì", errors)
