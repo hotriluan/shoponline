@@ -33,6 +33,12 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v6
+      # Production runs PostgreSQL 16; a newer pg_dump writes settings a 16 server rejects on restore.
+      - name: Install PostgreSQL 16 client tools
+        run: |
+          sudo /usr/share/postgresql-common/pgdg/apt.postgresql.org.sh -y
+          sudo apt-get install -y postgresql-client-16
+          echo /usr/lib/postgresql/16/bin >> "$GITHUB_PATH"
       - run: uv sync --frozen
       - run: uv run pytest -q
 
