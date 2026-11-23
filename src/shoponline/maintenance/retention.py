@@ -7,13 +7,16 @@ removes whatever is left over:
 - uploads/: the zrsd004 files of a run that is still open (attached by hand, or read by the
   robot), and zrsd004 files uploaded by hand that still wait to be attached to a run, for at most
   retention_days. Platform files, mapping tables, zrsd001 and zrsd003 are read once, at import.
-- exports/: an accounting file a run points to, and a Shop Online history file that still holds
-  an order not yet confirmed as pasted. Order files are deleted as soon as they are sent.
+- exports/: every accounting file (the copy sent to accounting, including those from before runs
+  existed), and a Shop Online history file that still holds an order not yet confirmed as
+  pasted. Order files are deleted as soon as they are sent.
 - robot-work/job-N: kept only while the job is not DONE, for at most evidence_keep_days.
 - robot-evidence/: screenshots, for evidence_keep_days (saprobot.evidence.prune).
 
 The sweep leaves files younger than an hour alone: a file may be written before the row that
 keeps it is committed. A file that cannot be deleted is logged and left for the next sweep.
+The sweep refuses to run when a stored path points outside the data folder (a database restored
+onto a machine with another data folder would otherwise match no file and lose them all).
 
 Customer data. Orders themselves stay (platform order id, SKU lines, SO and DO numbers): they
 hold no personal data and keep re-imports idempotent. customer_info rows (name, address)
@@ -34,7 +37,7 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
-from sqlalchemy import and_, delete, select
+from sqlalchemy import and_, delete, or_, select
 from sqlalchemy.orm import Session
 
 from shoponline.accounting import runs
@@ -60,6 +63,10 @@ log = logging.getLogger(__name__)
 
 GRACE = timedelta(hours=1)
 JOB_DIR = re.compile(r"job-(\d+)")
+
+
+class ForeignStoredPaths(RuntimeError):
+    """Stored file paths lie outside the data folder, so the keep rules cannot be trusted."""
 
 
 # ---------------------------------------------------------------- customer data
@@ -152,8 +159,15 @@ def kept_files(session: Session, settings: Settings, now: datetime | None = None
         .where(ImportBatch.imported_at >= now - timedelta(days=settings.retention_days))
         .with_only_columns(ImportBatch.stored_path)
     )
-    accounting = select(GeneratedFile.stored_path).join(
-        AccountingRun, AccountingRun.generated_file_id == GeneratedFile.id
+    accounting = select(GeneratedFile.stored_path).where(
+        or_(
+            GeneratedFile.kind == "accounting_file",
+            GeneratedFile.id.in_(
+                select(AccountingRun.generated_file_id).where(
+                    AccountingRun.generated_file_id.is_not(None)
+                )
+            ),
+        )
     )
     unconfirmed = (
         select(GeneratedFile.stored_path)
@@ -168,6 +182,16 @@ def kept_files(session: Session, settings: Settings, now: datetime | None = None
     for stmt in (attached, read, waiting, accounting, unconfirmed):
         paths.update(Path(p).resolve() for p in session.scalars(stmt))
     return paths
+
+
+def foreign_paths(session: Session, settings: Settings) -> list[str]:
+    """Stored paths (uploads and generated files) that are not inside the data folder."""
+    root = settings.data_dir.resolve()
+    stored = [
+        *session.scalars(select(ImportBatch.stored_path)),
+        *session.scalars(select(GeneratedFile.stored_path)),
+    ]
+    return sorted({p for p in stored if p and not Path(p).resolve().is_relative_to(root)})
 
 
 def remove(path: Path) -> bool:
@@ -218,20 +242,26 @@ def sweep_files(
     actor: str,
     now: datetime | None = None,
 ) -> SweepResult:
-    """Delete every stored file no keep rule holds and log the count. The caller commits."""
+    """Delete every stored file no keep rule holds and log the count. The caller commits.
+    Raises ForeignStoredPaths, deleting nothing, when a stored path is outside the data folder."""
     now = now or datetime.now(UTC)
+    foreign = foreign_paths(session, settings)
+    if foreign:
+        raise ForeignStoredPaths(
+            f"{len(foreign)} đường dẫn lưu trong CSDL nằm ngoài thư mục dữ liệu "
+            f"{settings.data_dir} (ví dụ {foreign[0]}); không xóa file nào"
+        )
     fresh = (now - GRACE).timestamp()
     kept = kept_files(session, settings, now)
     result = SweepResult()
     for root in (settings.upload_dir, settings.export_dir):
         if root.is_dir():
             for path in sorted(root.rglob("*")):
-                if (
-                    path.is_file()
-                    and path.stat().st_mtime < fresh
-                    and path.resolve() not in kept
-                    and remove(path)
-                ):
+                try:
+                    old = path.is_file() and path.stat().st_mtime < fresh
+                except OSError:  # gone between the listing and the stat
+                    continue
+                if old and path.resolve() not in kept and remove(path):
                     result.files.append(path)
     result.files.extend(_sweep_robot_work(session, settings, keep_days, now))
     result.screenshots = evidence.prune(settings.evidence_dir, keep_days, now.timestamp())
@@ -260,7 +290,10 @@ def _sweep_robot_work(
     )
     removed = []
     for path in entries:
-        mtime = path.stat().st_mtime
+        try:
+            mtime = path.stat().st_mtime
+        except OSError:  # gone since the listing
+            continue
         if mtime >= fresh:
             continue
         match = JOB_DIR.fullmatch(path.name) if path.is_dir() else None

@@ -380,3 +380,42 @@ def test_drill_compares_rows_and_refuses_the_running_database(backup_ctx):
     assert restore.compare_counts(settings.database_url, prep.manifest.tables) == {
         "platform_setting": (4, 3)
     }
+
+
+def test_db_backup_carries_the_accounting_files_and_a_restore_puts_back_the_missing_ones(
+    backup_ctx, services, tmp_path
+):
+    settings = backup_ctx.settings
+    settings.export_dir.mkdir(parents=True, exist_ok=True)
+    lost = settings.export_dir / "20261120-101010-accounting_file-aaaa1111.xlsx"
+    kept = settings.export_dir / "20261121-101010-accounting_file-bbbb2222.xlsx"
+    other = settings.export_dir / "20261121-111111-order_file-cccc3333.xlsx"
+    for path, body in ((lost, b"lost"), (kept, b"kept"), (other, b"order")):
+        path.write_bytes(body)
+    kinds = {lost: "accounting_file", kept: "accounting_file", other: "order_file"}
+    with backup_ctx.engine.begin() as conn:
+        for path, kind in kinds.items():
+            conn.execute(
+                text(
+                    "INSERT INTO generated_file (kind, file_name, stored_path, sha256, created_by)"
+                    " VALUES (:kind, :name, :path, :sha, 't')"
+                ),
+                {"kind": kind, "name": path.name, "path": str(path), "sha": "0" * 64},
+            )
+    try:
+        outcome = _make_backup(backup_ctx, "db")
+        out = tmp_path / "out"
+        SevenZip(backup_ctx.seven_zip, PASSWORD).extract(outcome.archive_path, out)
+        packed = {p.name for p in (out / archive.ACCOUNTING).iterdir()}
+        assert packed == {lost.name, kept.name}
+
+        lost.unlink()
+        kept.write_bytes(b"kept, edited after the backup")
+        result = _production(backup_ctx, outcome.file_name)
+
+        assert result.status == "done"
+        assert lost.read_bytes() == b"lost"
+        assert kept.read_bytes() == b"kept, edited after the backup"
+    finally:
+        with backup_ctx.engine.begin() as conn:
+            conn.execute(text("DELETE FROM generated_file WHERE created_by = 't'"))

@@ -24,7 +24,7 @@ Một bộ quy tắc giữ (`kept_files` trong [retention.py](../src/shoponline/
 | Thư mục | Giữ khi |
 |---|---|
 | `uploads/` | File `zrsd004` của đợt gửi kế toán đang mở (gắn tay hoặc robot đọc). File `zrsd004` upload tay đang chờ gắn vào đợt (danh sách "thêm được" trên trang đợt), tối đa `SHOPONLINE_RETENTION_DAYS` ngày |
-| `exports/` | File kế toán mà một đợt trỏ tới (`accounting_run.generated_file_id`). File Shop Online còn ít nhất một đơn chưa được xác nhận đã dán |
+| `exports/` | Mọi file kế toán (`generated_file.kind = accounting_file`, kể cả file sinh trước khi có đợt và file của đợt đã hủy hoặc gỡ chốt: bản đã gửi kế toán không bao giờ bị dọn). File Shop Online còn ít nhất một đơn chưa được xác nhận đã dán |
 | `robot-work/job-<n>/` | Việc chưa `DONE`, tối đa số ngày giữ ảnh màn hình robot |
 | `robot-evidence/` | Tối đa số ngày giữ ảnh màn hình robot (mặc định 30, đặt ở trang Kết nối SAP) |
 
@@ -34,6 +34,13 @@ Xóa ngay, sau khi ghi database:
 - `zrsd004`: khi đợt chốt hoặc hủy. Khi hủy, file upload tay của đợt quay lại danh sách chờ gắn nên vẫn được giữ. Nếu gỡ một đợt đã chốt, phải upload lại các file `zrsd004` tay của đợt đó.
 - `robot-work/job-<n>`: ngay khi việc nhập xong (`DONE`). Việc lỗi giữ thư mục để xem lại.
 - File `ĐƠN HÀNG ONLINE`: ngay sau khi gửi xong cho trình duyệt. Muốn có lại thì bấm tải lần nữa.
+
+Lượt quét hằng đêm dừng và không xóa gì trong hai trường hợp, ghi vào `retention.log`:
+
+- Đang có `maintenance.json` (deploy, phục hồi hoặc chuyển máy): thoát sớm với mã 0, vì khôi phục bản `db` rồi quét sẽ xóa file mới hơn bản đó.
+- Có đường dẫn lưu trong database (`import_batch`, `generated_file`) nằm ngoài `SHOPONLINE_DATA_DIR` hiện tại, thường do database khôi phục lên máy có thư mục dữ liệu khác: mã thoát 1. Quy tắc giữ không khớp file nào, nên quét tiếp sẽ xóa mọi file quá 1 giờ. Sửa `SHOPONLINE_DATA_DIR` hoặc đường dẫn trong database rồi chạy lại.
+
+Gỡ xác nhận một file lịch sử Shop Online bị từ chối khi tên khách của đơn nào trong file đã bị xóa theo thời hạn lưu: nếu cho gỡ, đơn đó sẽ bị chặn mãi vì thiếu tên khách.
 - File Shop Online: khi mọi đơn trong file đã được xác nhận, kể cả xác nhận qua file khác.
 
 Lệnh `shoponline retention` (tác vụ `shoponline-retention`, 23:30 hằng đêm) **luôn** xóa file theo bảng trên, không cần `--apply`. Nó bỏ qua file mới hơn 1 giờ, vì file có thể được ghi trước khi dòng giữ nó được lưu. File không xóa được (ví dụ còn mở trong SAP hoặc Excel) chỉ được ghi log và để lượt sau. Số file đã xóa được ghi vào `retention.log` và một dòng `retention_files` trong `event_log`.
@@ -54,7 +61,7 @@ Xoay vòng ([retention.py](../src/shoponline/backup/retention.py)) áp dụng nh
 
 | Loại | Giữ |
 |---|---|
-| `db` | 15 bản mới nhất (1 bản mỗi ngày cộng bản trước mỗi deploy: khoảng 1–2 tuần) |
+| `db` | 15 bản mới nhất (1 bản mỗi ngày cộng bản trước mỗi deploy: khoảng 1–2 tuần). Ngoài database còn có thư mục `accounting-files/` chứa các file kế toán đã gửi (chỉ có trong thư mục dữ liệu, còn bản `full` thì hằng tuần). Phục hồi một bản `db` chép lại các file này nếu thư mục dữ liệu đang thiếu, không bao giờ ghi đè file đang có |
 | `app` | 15 bản mới nhất |
 | `full` | Theo tuổi: tối đa 30 ngày (web chỉ cho đặt 7–90 ngày). Bản `full` cuối cùng cũng bị xóa khi quá hạn; web cảnh báo khi 8 ngày không có bản `full` thành công |
 

@@ -3,6 +3,7 @@ import os
 from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 
+import pytest
 from sqlalchemy import select
 
 from shoponline.config import Settings
@@ -324,3 +325,48 @@ def test_discard_unused_never_deletes_outside_the_stored_folders(db, tmp_path):
 
     assert retention.discard_unused(db, settings, [elsewhere.stored_path]) == []
     assert Path(elsewhere.stored_path).exists()
+
+
+def test_sweep_keeps_every_accounting_file_even_one_no_run_points_to(db, tmp_path):
+    settings = _settings(tmp_path)
+    ex = settings.export_dir
+    before_runs = _generated(db, _file(ex / "old-final.xlsx", SPENT), "accounting_file")
+    by_cancelled_run = _generated(db, _file(ex / "cancelled.xlsx", SPENT), "accounting_file")
+    _run(db, "CANCELLED").generated_file_id = by_cancelled_run.id
+    order_file = _generated(db, _file(ex / "order.xlsx", SPENT), "order_file")
+
+    result = _sweep(db, settings)
+
+    assert result.files == [Path(order_file.stored_path)]
+    assert Path(before_runs.stored_path).exists() and Path(by_cancelled_run.stored_path).exists()
+
+
+def test_sweep_refuses_when_a_stored_path_is_outside_the_data_folder(db, tmp_path):
+    settings = _settings(tmp_path)
+    elsewhere = _file(tmp_path / "other-machine" / "uploads" / "a.xlsx", SPENT)
+    _upload(db, elsewhere, kind="zrsd004")
+    stray = _file(settings.upload_dir / "stray.xlsx", SPENT)
+
+    with pytest.raises(retention.ForeignStoredPaths):
+        _sweep(db, settings)
+
+    assert stray.exists() and elsewhere.exists()
+
+
+def test_sweep_skips_a_file_that_vanishes_between_listing_and_stat(db, tmp_path, monkeypatch):
+    settings = _settings(tmp_path)
+    ghost = _file(settings.upload_dir / "ghost.xlsx", SPENT)
+    other = _file(settings.upload_dir / "other.xlsx", SPENT)
+    real_stat = Path.stat
+
+    def stat(self, *args, **kwargs):
+        if self.name == "ghost.xlsx":
+            raise FileNotFoundError(str(self))
+        return real_stat(self, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "stat", stat)
+
+    result = _sweep(db, settings)
+
+    assert result.files == [other]
+    assert ghost.exists()

@@ -391,19 +391,29 @@ def _cmd_robot_switch(args: argparse.Namespace) -> int:
 
 def _cmd_retention(args: argparse.Namespace) -> int:
     """Files are always swept by the keep rules; --apply decides only the customer data."""
+    from shoponline.backup import maintenance
     from shoponline.db.session import session_scope
     from shoponline.maintenance import retention
     from shoponline.sapjobs import sap_settings
 
     settings = load_settings()
     _setup_logging(settings, "retention.log")
+    log = logging.getLogger("shoponline.retention")
+    marker = maintenance.read(settings)
+    if marker is not None:
+        log.info("Bỏ qua lượt dọn: đang bảo trì (%s), không xóa gì", marker.get("kind"))
+        return 0
     actor = getpass.getuser()
+    refused: retention.ForeignStoredPaths | None = None
     with session_scope(settings.database_url) as session:
         plan = retention.find_expired(session, settings)
         if args.apply:
             retention.apply(session, plan, actor)
         keep_days = sap_settings.load(session, os.environ).evidence_keep_days
-        swept = retention.sweep_files(session, settings, keep_days, actor)
+        try:
+            swept = retention.sweep_files(session, settings, keep_days, actor)
+        except retention.ForeignStoredPaths as exc:
+            refused, swept = exc, retention.SweepResult()
     verb = "Đã xóa" if args.apply else "Sẽ xóa (chế độ liệt kê, thêm --apply để xóa thật)"
     lines = [
         f"Thời hạn {settings.retention_days} ngày, mốc {plan.cutoff:%Y-%m-%d}",
@@ -415,8 +425,10 @@ def _cmd_retention(args: argparse.Namespace) -> int:
         f"Đã xóa {len(swept.files)} file hết dùng và {swept.screenshots} ảnh màn hình robot",
         *(f"  file {path}" for path in swept.files),
     ]
-    logging.getLogger("shoponline.retention").info("\n".join(lines))
-    return 0
+    if refused is not None:
+        lines.append(f"LỖI: không dọn file. {refused}")
+    log.info("\n".join(lines))
+    return 1 if refused is not None else 0
 
 
 def _cmd_accounting_ledger(args: argparse.Namespace) -> int:

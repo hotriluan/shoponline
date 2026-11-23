@@ -105,3 +105,33 @@ def test_retention_always_sweeps_files_and_logs_to_a_rotating_file(
     text = (settings.data_dir / "logs" / "retention.log").read_text(encoding="utf-8")
     assert "Sẽ xóa (chế độ liệt kê" in text and "đơn SHOPEE R-OLD" in text
     assert "Đã xóa 1 file hết dùng" in text and str(orphan) in text
+
+
+def test_retention_does_nothing_while_a_restore_or_deploy_is_running(
+    db, settings, clean_root_logger, monkeypatch
+):
+    from contextlib import contextmanager
+
+    import shoponline.db.session
+    from shoponline.backup import maintenance
+
+    @contextmanager
+    def test_session(_url):
+        yield db
+
+    monkeypatch.setattr(cli, "load_settings", lambda: settings)
+    monkeypatch.setattr(shoponline.db.session, "session_scope", test_session)
+    old = datetime.now() - timedelta(days=200)
+    orphan = settings.upload_dir / "orphan.xlsx"
+    orphan.parent.mkdir(parents=True)
+    orphan.write_bytes(b"x")
+    os.utime(orphan, (old.timestamp(), old.timestamp()))
+    maintenance.write(settings, "restore")
+
+    assert cli.main(["retention", "--apply"]) == 0
+
+    assert orphan.exists()
+    for handler in clean_root_logger.handlers:
+        handler.flush()
+    text = (settings.data_dir / "logs" / "retention.log").read_text(encoding="utf-8")
+    assert "đang bảo trì (restore)" in text

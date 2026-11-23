@@ -299,6 +299,16 @@ def swap_data(ctx: Context, new_data: Path, stamp: str) -> Path:
     return aside
 
 
+def restore_accounting_files(ctx: Context, source: Path) -> None:
+    """Put back the accounting files of a db backup that the data folder lacks. A file already
+    there is never overwritten: it is at least as new as the backup."""
+    export_dir = ctx.settings.export_dir
+    export_dir.mkdir(parents=True, exist_ok=True)
+    for file in sorted(source.iterdir()):
+        if file.is_file() and not (export_dir / file.name).exists():
+            shutil.copy2(file, export_dir / file.name)
+
+
 def bump_session_epoch(ctx: Context) -> None:
     with ctx.engine.begin() as conn:
         conn.execute(text("UPDATE ops.system_state SET session_epoch = session_epoch + 1"))
@@ -389,6 +399,8 @@ def _apply(
     url = ctx.settings.database_url
     if prep.manifest is not None and prep.manifest.kind == "full" and (prep.root / "data").is_dir():
         swap_data(ctx, prep.root / "data", stamp)
+    elif (prep.root / archive.ACCOUNTING).is_dir():
+        restore_accounting_files(ctx, prep.root / archive.ACCOUNTING)
     restore_public_schema(ctx, prep.dump, url, work)
     if new_machine:
         copied = copy_ops_from_bundle(ctx, prep.dump, url, work)

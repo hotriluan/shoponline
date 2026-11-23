@@ -1,6 +1,8 @@
 """Build the contents of a backup in a work folder, then the manifest describing them.
 
     db    database.dump            pg_dump -Fc of schemas public and ops
+          accounting-files/        the accounting files sent to accounting (they exist only in
+                                   the data folder, and the full backup is weekly)
     app   source.bundle            git bundle of the running commit
           env                      the env file without SHOPONLINE_BACKUP_PASSWORD
           config/                  the repo's config folder
@@ -30,6 +32,8 @@ BUNDLE = "source.bundle"
 ENV = "env"
 CONFIG = "config"
 DATA = "data"
+ACCOUNTING = "accounting-files"
+ACCOUNTING_KIND = "accounting_file"
 PASSWORD_VARIABLE = "SHOPONLINE_BACKUP_PASSWORD"
 # Never copied from the data folder: rebuilt, being written, or this machine's own state.
 DATA_SKIP = {
@@ -58,6 +62,8 @@ def top_level_members(kind: str) -> list[str]:
     members = [mf.NAME]
     if kind in ("db", "full"):
         members.append(DUMP)
+    if kind == "db":
+        members.append(ACCOUNTING)
     if kind in ("app", "full"):
         members += [BUNDLE, ENV, CONFIG, DATA]
     return members
@@ -66,7 +72,7 @@ def top_level_members(kind: str) -> list[str]:
 def allowed_member(path: str) -> bool:
     """Member names a backup of this system may contain (old backups hold one *.dump)."""
     top = path.split("/", 1)[0]
-    if top in (mf.NAME, DUMP, BUNDLE, ENV, CONFIG, DATA):
+    if top in (mf.NAME, DUMP, BUNDLE, ENV, CONFIG, DATA, ACCOUNTING):
         return True
     return "/" not in path and path.endswith(".dump")
 
@@ -83,6 +89,8 @@ def build(kind: str, reason: str, src: Sources, dest: Path) -> mf.Manifest:
     manifest.commit = _git(src.repo_root, ["rev-parse", "HEAD"], manifest.warnings)
     if kind in ("db", "full"):
         _dump_database(src, dest / DUMP, manifest)
+    if kind == "db":
+        _copy_accounting_files(src, dest / ACCOUNTING, manifest)
     if kind in ("app", "full"):
         if _git(src.repo_root, ["bundle", "create", str(dest / BUNDLE), "HEAD"], []) is None:
             manifest.warnings.append("Không tạo được git bundle; bản này không có mã nguồn")
@@ -122,6 +130,27 @@ def _dump_database(src: Sources, target: Path, manifest: mf.Manifest) -> None:
                 )
     finally:
         engine.dispose()
+
+
+def _copy_accounting_files(src: Sources, target: Path, manifest: mf.Manifest) -> None:
+    """Copy every accounting file the database knows into target. A missing file is a warning,
+    not a failure: the database part of the backup still counts."""
+    engine = create_engine(src.settings.database_url, poolclass=NullPool)
+    try:
+        with engine.connect() as conn:
+            paths = conn.execute(
+                text("SELECT stored_path FROM generated_file WHERE kind = :kind ORDER BY id"),
+                {"kind": ACCOUNTING_KIND},
+            ).scalars()
+            paths = [Path(p) for p in paths]
+    finally:
+        engine.dispose()
+    target.mkdir()
+    for path in paths:
+        try:
+            shutil.copy2(path, target / path.name)
+        except OSError as exc:
+            manifest.warnings.append(f"Không chép được file kế toán {path.name}: {exc.strerror}")
 
 
 def _git(repo: Path, args: list[str], warnings: list[str]) -> str | None:

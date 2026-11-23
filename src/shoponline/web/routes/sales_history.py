@@ -25,16 +25,18 @@ from fastapi import (
     UploadFile,
 )
 from fastapi.responses import FileResponse
-from sqlalchemy import delete, func, literal, select
+from sqlalchemy import and_, delete, func, literal, select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import Session
 
 from shoponline.clock import today_vn
 from shoponline.db.models import (
     AppUser,
+    CustomerInfo,
     GeneratedFile,
     SalesHistoryExported,
     SalesHistoryFileOrder,
+    SalesOrder,
 )
 from shoponline.domain import states
 from shoponline.exports.sales_history_workbook import (
@@ -419,6 +421,30 @@ def unconfirm_file(
     user: AppUser = Depends(require_admin),
 ):
     record = _history_file(db, file_id)
+    nameless = db.scalar(
+        select(func.count())
+        .select_from(SalesHistoryFileOrder)
+        .join(SalesOrder, SalesOrder.id == SalesHistoryFileOrder.sales_order_id)
+        .outerjoin(
+            CustomerInfo,
+            and_(
+                CustomerInfo.platform == SalesOrder.platform,
+                CustomerInfo.platform_order_id == SalesOrder.platform_order_id,
+            ),
+        )
+        .where(
+            SalesHistoryFileOrder.generated_file_id == record.id,
+            CustomerInfo.id.is_(None),
+        )
+    )
+    if nameless:
+        flash(
+            request,
+            f"Không gỡ xác nhận được: tên khách của {nameless} đơn trong file đã bị xóa theo "
+            "thời hạn lưu, các đơn này sẽ bị chặn mãi vì thiếu tên khách.",
+            "error",
+        )
+        return redirect("/sales-history")
     removed = db.execute(
         delete(SalesHistoryExported).where(SalesHistoryExported.generated_file_id == record.id)
     ).rowcount

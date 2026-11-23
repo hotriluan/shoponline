@@ -5,9 +5,10 @@ from urllib.parse import unquote
 
 import pytest
 from openpyxl import load_workbook
-from sqlalchemy import func, select
+from sqlalchemy import delete, func, select
 
 from shoponline.db.models import (
+    CustomerInfo,
     EventLog,
     GeneratedFile,
     PlatformSettlement,
@@ -523,3 +524,20 @@ def test_no_draft_when_no_order_can_be_one(db, login):
     assert "/sales-history/draft" not in admin.get(PAGE).text
     resp = admin.get("/sales-history/draft?month=2026-11", follow_redirects=True)
     assert "Không có đơn nào để xuất nháp." in resp.text
+
+
+def test_unconfirm_is_refused_once_a_customer_name_in_the_file_was_erased(db, login):
+    setup.report_name(db)
+    setup.order(db, "A-1", datetime(2026, 11, 11, 8))
+    setup.order(db, "A-2", datetime(2026, 11, 11, 9))
+    admin = login("admin")
+    _download(admin)
+    (file_id,) = _file_ids(db)
+    admin.post(f"/sales-history/files/{file_id}/confirm")
+    db.execute(delete(CustomerInfo).where(CustomerInfo.platform_order_id == "A-2"))
+    db.commit()
+
+    page = admin.post(f"/sales-history/files/{file_id}/unconfirm", follow_redirects=True).text
+
+    assert "Không gỡ xác nhận được" in page
+    assert _count(db, SalesHistoryExported) == 2
