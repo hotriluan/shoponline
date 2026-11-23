@@ -25,7 +25,7 @@ from sqlalchemy import create_engine, select, text, update
 from sqlalchemy.engine import make_url
 from sqlalchemy.pool import NullPool
 
-from shoponline.backup import archive, maintenance, pgtools, runner, staging, verify
+from shoponline.backup import archive, maintenance, naming, pgtools, runner, staging, verify
 from shoponline.backup import manifest as mf
 from shoponline.backup.runner import Context
 from shoponline.backup.sevenzip import SevenZipError
@@ -236,6 +236,18 @@ def restore_public_schema(ctx: Context, dump: Path, url: str, work: Path) -> Non
     )
 
 
+def business_rows(url: str) -> int:
+    """Orders in the database; 0 when there is no order table yet (a database just migrated)."""
+    engine = _engine(url)
+    try:
+        with engine.connect() as conn:
+            if conn.execute(text("SELECT to_regclass('public.sales_order')")).scalar() is None:
+                return 0
+            return conn.execute(text("SELECT count(*) FROM public.sales_order")).scalar_one()
+    finally:
+        engine.dispose()
+
+
 def run_migrate(database_url: str) -> None:
     from shoponline.cli import run_migrations
 
@@ -292,13 +304,97 @@ def bump_session_epoch(ctx: Context) -> None:
         conn.execute(text("UPDATE ops.system_state SET session_epoch = session_epoch + 1"))
 
 
-def _apply(ctx: Context, prep: Prepared, work: Path, stamp: str) -> None:
+# Tables of schema ops a new machine takes from the bundle: the web accounts and the schedule.
+# The other ops tables (backup log, Drive connection) belong to the machine that wrote them.
+OPS_TABLES_FROM_BUNDLE = ("app_user", "backup_settings")
+
+
+def copy_ops_from_bundle(ctx: Context, dump: Path, url: str, work: Path) -> list[str]:
+    """Replace ops.app_user and ops.backup_settings with the bundle's rows; returns the tables
+    copied (empty when the dump has no ops schema, as an old backup has not)."""
+    listing = pgtools.run(_pg_bin(ctx), "pg_restore", url, ["-l", str(dump)]).stdout.decode(
+        "utf-8", "replace"
+    )
+    tables = "|".join(OPS_TABLES_FROM_BUNDLE)
+    wanted = re.compile(rf"\sTABLE DATA ops ({tables})\s|\sSEQUENCE SET ops app_user_id_seq\s")
+    kept = [line for line in listing.splitlines() if wanted.search(line)]
+    present = [t for t in OPS_TABLES_FROM_BUNDLE if any(f" TABLE DATA ops {t} " in k for k in kept)]
+    if not present:
+        return []
+    toc = work / "ops-toc.txt"
+    toc.write_text("\n".join(kept) + "\n", encoding="utf-8")
+    engine = _engine(url)
+    try:
+        with engine.begin() as conn:
+            for table in present:
+                conn.execute(text(f"DELETE FROM ops.{table}"))
+    finally:
+        engine.dispose()
+    pgtools.run(
+        _pg_bin(ctx),
+        "pg_restore",
+        url,
+        ["--data-only", "-L", str(toc), "--single-transaction", "--exit-on-error", str(dump)],
+    )
+    return present
+
+
+def merge_env(env_file: Path, bundle_env: Path, web_host: str | None) -> list[str]:
+    """Add to the machine's .env the lines the bundle has and it lacks (never overwriting one it
+    has), and point SHOPONLINE_WEB_HOST at this machine. Returns the names added or set."""
+
+    def names(text_: str) -> dict[str, int]:
+        found = {}
+        for index, line in enumerate(text_.splitlines()):
+            key = line.split("=", 1)[0].strip()
+            if "=" in line and not line.lstrip().startswith("#"):
+                found[key] = index
+        return found
+
+    own = env_file.read_text(encoding="utf-8").splitlines() if env_file.is_file() else []
+    have = names("\n".join(own))
+    changed = []
+    if bundle_env.is_file():
+        for line in bundle_env.read_text(encoding="utf-8").splitlines():
+            key = line.split("=", 1)[0].strip()
+            if "=" in line and not line.lstrip().startswith("#") and key not in have:
+                if key == archive.PASSWORD_VARIABLE:
+                    continue
+                own.append(line)
+                have[key] = len(own) - 1
+                changed.append(key)
+    if web_host:
+        line = f"SHOPONLINE_WEB_HOST={web_host}"
+        if "SHOPONLINE_WEB_HOST" in have:
+            own[have["SHOPONLINE_WEB_HOST"]] = line
+        else:
+            own.append(line)
+        changed.append("SHOPONLINE_WEB_HOST")
+    env_file.write_text("\n".join(own) + "\n", encoding="utf-8")
+    return changed
+
+
+def _apply(
+    ctx: Context,
+    prep: Prepared,
+    work: Path,
+    stamp: str,
+    new_machine: bool = False,
+    web_host: str | None = None,
+    notes: dict | None = None,
+) -> None:
     """Data, business schema, count check, migrate, new session epoch: the steps both the
-    restore and its way back share."""
+    restore and its way back share. On a new machine it also takes the accounts and schedule
+    from the bundle and fills in its .env."""
     url = ctx.settings.database_url
     if prep.manifest is not None and prep.manifest.kind == "full" and (prep.root / "data").is_dir():
         swap_data(ctx, prep.root / "data", stamp)
     restore_public_schema(ctx, prep.dump, url, work)
+    if new_machine:
+        copied = copy_ops_from_bundle(ctx, prep.dump, url, work)
+        added = merge_env(ctx.repo_root / ".env", prep.root / archive.ENV, web_host)
+        if notes is not None:
+            notes.update(ops_copied=copied, env_set=added)
     # Counts are compared before migrate: they check that the restore was faithful, and a
     # migration may legitimately add rows.
     if prep.manifest is not None:
@@ -546,6 +642,56 @@ def _roll_back(ctx, safety, work: Path, stamp: str, progress: _Progress, reason:
         finished_at=datetime.now(UTC).isoformat(),
     )
     return Result("rolled_back", message, safety.run_id)
+
+
+# --- new machine -------------------------------------------------------------------------------
+
+
+def new_machine(
+    ctx: Context, target: str, force: bool = False, web_host: str | None = None
+) -> dict:
+    """Load a bundle (a full backup from the old machine) into this new, empty installation.
+
+    Replaces schema public, takes the web accounts and schedule, the data folder and the missing
+    .env lines from the bundle, migrates, and compares the row counts with the manifest.
+    Refused when the database already holds orders, unless force. No services are stopped and no
+    safety backup is made: this machine is not running yet."""
+    url = ctx.settings.database_url
+    if business_rows(url) > 0 and not force:
+        raise RestoreRefused(
+            "Database đã có đơn hàng; không ghi đè máy đang có dữ liệu (dùng --force nếu chắc chắn)"
+        )
+    archive_path = fetch(ctx, target)
+    stamp = datetime.now(UTC).strftime("%Y%m%d-%H%M%S")
+    notes: dict = {}
+    with staging.staging_dir(ctx.settings.backup_work_dir, "newmachine") as work:
+        prep = prepare(ctx, archive_path, work)
+        if prep.dump is None:
+            raise RestoreRefused("Bản Ứng dụng không có database; cần bản Toàn bộ hoặc Database")
+        if prep.manifest is None:
+            raise RestoreRefused("Gói chuyển máy phải có manifest (bản Toàn bộ của hệ thống này)")
+        check_version(ctx, prep.manifest)
+        _apply(ctx, prep, work, stamp, True, web_host, notes)
+    return {"file": archive_path.name, "kind": prep.manifest.kind, **notes}
+
+
+def fetch_latest(ctx: Context, kind: str, dest: Path) -> Path:
+    """Download the newest backup of `kind` from Drive into dest (for a machine with no backup
+    folder yet)."""
+    if ctx.drive is None or not ctx.drive.connected():
+        raise RestoreRefused("Chưa kết nối Google Drive (chạy: shoponline drive connect)")
+    best = None
+    for item in ctx.drive.list_backups():
+        parsed = naming.parse(item["name"])
+        if parsed and parsed.kind == kind and (best is None or parsed.taken_at > best[0].taken_at):
+            best = (parsed, item)
+    if best is None:
+        raise RestoreRefused(f"Không có bản sao lưu loại {kind} nào trên Google Drive")
+    dest.mkdir(parents=True, exist_ok=True)
+    partial = dest / (best[1]["name"] + ".partial")
+    ctx.drive.download(best[1]["id"], partial)
+    partial.replace(dest / best[1]["name"])
+    return dest / best[1]["name"]
 
 
 # --- queue handlers (registered with the runner) ---------------------------------------------

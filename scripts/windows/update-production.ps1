@@ -52,7 +52,7 @@ $maintenanceFile = Join-Path (Get-Setting "SHOPONLINE_DATA_DIR" (Join-Path $scri
 function Test-RestoreRunning {
     if (-not (Test-Path $maintenanceFile)) { return $false }
     try { $marker = Get-Content $maintenanceFile -Raw -Encoding UTF8 | ConvertFrom-Json } catch { return $false }
-    if ($marker.kind -ne "restore") { return $false }
+    if (@("restore", "migration") -notcontains $marker.kind) { return $false }
     return ([DateTime]::UtcNow - [DateTime]::Parse($marker.started_at).ToUniversalTime()) -lt [TimeSpan]::FromHours(2)
 }
 
@@ -115,7 +115,7 @@ function Complete-Deploy {
     if (-not (Start-Robot)) { throw "Robot không khởi động được" }
 }
 
-if (Test-RestoreRunning) { throw "Đang có phục hồi dữ liệu chạy (xem $maintenanceFile); không triển khai lúc này, thử lại sau" }
+if (Test-RestoreRunning) { throw "Đang có phục hồi dữ liệu hoặc chuyển máy chạy (xem $maintenanceFile); không triển khai lúc này, thử lại sau" }
 if (git status --porcelain --untracked-files=no) { throw "Thư mục $script:RepoRoot có sửa đổi cục bộ; không cập nhật" }
 git fetch --quiet origin main; Invoke-Native "git fetch"
 $target = (git rev-parse --verify "$Commit^{commit}"); Invoke-Native "git rev-parse"

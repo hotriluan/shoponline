@@ -157,6 +157,24 @@ def _drive_action(args, client, actor: str, drive_module) -> int:
     return 0
 
 
+def _cmd_new_machine(args: argparse.Namespace, ctx) -> int:
+    from shoponline.backup import restore, runner
+
+    with runner.backup_lock(ctx.engine) as lock:
+        if lock is None:
+            print("Đang có tiến trình sao lưu khác chạy.", file=sys.stderr)
+            return runner.EXIT_LOCKED
+        try:
+            report = restore.new_machine(ctx, args.target, args.force, args.web_host)
+        except restore.RestoreError as exc:
+            print(f"Từ chối: {exc}", file=sys.stderr)
+            return 1
+    print(f"Đã nạp {report['file']} (loại {report['kind']}) vào máy này.")
+    print(f"Bảng ops lấy từ gói: {', '.join(report.get('ops_copied') or []) or 'không có'}")
+    print(f"Dòng .env đã thêm hoặc đặt: {', '.join(report.get('env_set') or []) or 'không có'}")
+    return 0
+
+
 def _cmd_restore(args: argparse.Namespace, ctx) -> int:
     from datetime import timedelta
     from pathlib import Path
@@ -181,6 +199,8 @@ def _cmd_restore(args: argparse.Namespace, ctx) -> int:
         for table, (want, got) in result["diff"].items():
             print(f"  {table}: manifest {want}, sau phục hồi {got}", file=sys.stderr)
         return 1
+    if args.new_machine:
+        return _cmd_new_machine(args, ctx)
     name = Path(args.target).name
     if not args.yes:
         typed = input(f"Phục hồi hệ thống thật từ {name}? Gõ lại tên file để xác nhận: ")
@@ -217,6 +237,18 @@ def _cmd_backup(args: argparse.Namespace) -> int:
             return runner.worst(runner.process_requests(ctx, actions))
     if args.action == "restore":
         return _cmd_restore(args, ctx)
+    if args.action == "fetch-latest":
+        from pathlib import Path
+
+        from shoponline.backup import restore
+
+        try:
+            path = restore.fetch_latest(ctx, args.kind, Path(args.to))
+        except restore.RestoreError as exc:
+            print(f"Lỗi: {exc}", file=sys.stderr)
+            return 1
+        print(path)
+        return 0
     if args.action == "verify":
         from shoponline.backup import verify
 
@@ -231,7 +263,20 @@ def _cmd_backup(args: argparse.Namespace) -> int:
     to_drive = reason != "deploy" and not args.no_drive
     outcome = runner.run_now(ctx, args.kind, reason, actor, to_drive)
     print(outcome.message, file=sys.stderr if outcome.exit_code else sys.stdout)
+    if outcome.archive_path is not None:
+        print(f"Tệp: {outcome.archive_path}")
+    if outcome.exit_code == 0 and args.require_drive and not _on_drive(ctx, outcome.run_id):
+        print("Bản sao lưu chưa lên Google Drive nên không coi là xong.", file=sys.stderr)
+        return runner.EXIT_PARTIAL
     return outcome.exit_code
+
+
+def _on_drive(ctx, run_id: int | None) -> bool:
+    from shoponline.db.models import BackupRun
+
+    with ctx.session_factory() as db:
+        run = db.get(BackupRun, run_id) if run_id else None
+        return run is not None and run.drive_status == "ok"
 
 
 def _cmd_web(_args: argparse.Namespace) -> int:
@@ -487,6 +532,11 @@ def main(argv: list[str] | None = None) -> int:
         help="Tác vụ 15 phút: xử lý yêu cầu đang chờ rồi chạy bản theo lịch nếu tới hạn",
     )
     backup_run.add_argument("--no-drive", action="store_true", help="Không tải lên Google Drive")
+    backup_run.add_argument(
+        "--require-drive",
+        action="store_true",
+        help="Thoát mã 2 nếu bản chưa thật sự lên Google Drive (chuyển máy)",
+    )
     backup_verify = backup_actions.add_parser("verify", help="Kiểm tra một bản sao lưu")
     backup_verify.add_argument("target", help="Số bản (#id), tên file hoặc đường dẫn")
     queue = backup_actions.add_parser("process-queue", help="Xử lý các yêu cầu đang chờ")
@@ -500,7 +550,20 @@ def main(argv: list[str] | None = None) -> int:
     mode = backup_restore.add_mutually_exclusive_group(required=True)
     mode.add_argument("--drill", action="store_true", help="Phục hồi vào database diễn tập")
     mode.add_argument("--production", action="store_true", help="Phục hồi hệ thống thật")
+    mode.add_argument(
+        "--new-machine", action="store_true", help="Nạp gói chuyển máy vào máy mới còn trống"
+    )
+    backup_restore.add_argument(
+        "--web-host", default=None, help="Với --new-machine: SHOPONLINE_WEB_HOST của máy mới"
+    )
     backup_restore.add_argument("--force", action="store_true")
+    fetch = backup_actions.add_parser(
+        "fetch-latest", help="Tải bản sao lưu mới nhất của một loại từ Google Drive"
+    )
+    fetch.add_argument("--kind", choices=("db", "app", "full"), default="full")
+    fetch.add_argument("--to", required=True, help="Thư mục lưu file tải về")
+    fetch.add_argument("--pg-bin", default=None, help="Thư mục PostgreSQL bin")
+    fetch.add_argument("--seven-zip", default=None, help="Đường dẫn 7z.exe")
     backup_restore.add_argument("--yes", action="store_true", help="Không hỏi xác nhận")
     for action in (backup_run, backup_verify, queue, backup_restore):
         action.add_argument("--pg-bin", default=None, help="Thư mục PostgreSQL bin")

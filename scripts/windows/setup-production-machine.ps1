@@ -21,6 +21,14 @@
   With -Prepare the machine is built before the move day: no deploy runner, and the robot
   task stays disabled because the robot on the old machine still uses the SAP user.
 
+  With -Bundle <file | drive:latest> the data comes from a migration bundle (a full backup made
+  by server-export.ps1 on the old machine) instead of -Archive and -DataSource: after migrate
+  it loads the database, the web accounts and schedule, the data folder and the missing .env
+  lines, and compares the row counts with the bundle's manifest. drive:latest first connects
+  Google Drive (same OAuth client as the old machine) and downloads the newest full backup.
+  Unless -Prepare, it refuses to install the runner and enable the robot while GitHub still
+  lists another runner labelled shoponline-prod (online or not).
+
 .EXAMPLE
   powershell -ExecutionPolicy Bypass -File setup.ps1 -Prepare -Archive D:\backup\shoponline-shoponline-20261120-230000.7z -DataSource \\share\shoponline-migrate\data
 
@@ -30,6 +38,7 @@
 param(
     [string]$Archive,
     [string]$DataSource,
+    [string]$Bundle,
     [string]$DataDir = "C:\shoponline-data",
     [string]$RepoUrl = "https://github.com/hotriluan/shoponline.git",
     [switch]$Prepare,
@@ -117,6 +126,7 @@ if (-not $Stage2) {
     $stage2Args = @("-NoProfile", "-ExecutionPolicy", "Bypass", "-File", (Join-Path $RepoDir "scripts\windows\setup-production-machine.ps1"), "-Stage2", "-DataDir", $DataDir)
     if ($Archive) { $stage2Args += @("-Archive", $Archive) }
     if ($DataSource) { $stage2Args += @("-DataSource", $DataSource) }
+    if ($Bundle) { $stage2Args += @("-Bundle", $Bundle) }
     if ($Prepare) { $stage2Args += "-Prepare" }
     & pwsh @stage2Args
     exit $LASTEXITCODE
@@ -125,6 +135,9 @@ if (-not $Stage2) {
 # ---------------------------------------------------------------- stage 2: system (pwsh, in the repo)
 . (Join-Path $PSScriptRoot "settings.ps1")
 Set-Location $script:RepoRoot
+if ($Bundle -and ($Archive -or $DataSource)) {
+    throw "-Bundle thay cho -Archive và -DataSource; chỉ dùng một cách."
+}
 $EnvFile = Join-Path $script:RepoRoot ".env"
 $checks = [System.Collections.Generic.List[object]]::new()
 function Add-Check([bool]$done, [string]$text, [string]$todo = "") {
@@ -233,6 +246,31 @@ if (-not $Archive) {
 Write-Step "Schema"
 uv run --no-dev shoponline migrate; Assert-Native "migrate"
 
+# The migration bundle: database, web accounts and schedule, data folder, .env lines. The
+# Drive connection of this machine is its own: same OAuth client, connected here by device code.
+$driveReady = $false
+if ($Bundle) {
+    Write-Step "Gói chuyển máy $Bundle"
+    $bundlePath = $Bundle
+    if ($Bundle -eq "drive:latest") {
+        Write-Host "Kết nối Google Drive bằng cùng OAuth Client với máy cũ (Client ID và Secret nằm trong kho bí mật)."
+        $clientId = Read-Host "Google OAuth Client ID"
+        uv run --no-dev --extra robot shoponline drive set-client --client-id $clientId; Assert-Native "drive set-client"
+        uv run --no-dev --extra robot shoponline drive connect; Assert-Native "drive connect"
+        $driveReady = $true
+        $firstDir = (Get-Setting "SHOPONLINE_BACKUP_DIRS").Split(";") | Where-Object { $_.Trim() } | Select-Object -First 1
+        $fetched = uv run --no-dev --extra robot shoponline backup fetch-latest --kind full --to $firstDir.Trim()
+        Assert-Native "Tải bản mới nhất từ Drive"
+        $bundlePath = ($fetched | Select-Object -Last 1).Trim()
+        Write-Host "Đã tải $bundlePath"
+    }
+    $webHostNow = Get-Setting "SHOPONLINE_WEB_HOST" "127.0.0.1"
+    uv run --no-dev --extra robot shoponline backup restore $bundlePath --new-machine --web-host $webHostNow
+    Assert-Native "Nạp gói chuyển máy (số dòng sau khi nạp phải khớp manifest)"
+    Add-Check $true "Gói chuyển máy đã nạp; số dòng khớp manifest"
+    $webHost = Get-Setting "SHOPONLINE_WEB_HOST" "127.0.0.1"
+}
+
 Write-Step "Tác vụ Task Scheduler"
 $register = Join-Path $PSScriptRoot "register-tasks.ps1"
 & pwsh -NoProfile -ExecutionPolicy Bypass -File $register -User $Me -AtLogOn -OnlyMissing -WebPort $port
@@ -268,6 +306,31 @@ powercfg /change hibernate-timeout-ac 0
     $firewall = [bool](Get-NetFirewallRule -DisplayName "shoponline-web" -ErrorAction SilentlyContinue)
 }
 Add-Check $firewall "Tường lửa mở cổng $port cho mạng Domain và Private" "Chạy lại script và chấp nhận UAC."
+
+# A second runner labelled shoponline-prod would take deploy jobs meant for this machine, so with
+# a bundle the runner and the robot wait until GitHub lists no other one, offline ones included.
+if ($Bundle -and -not $Prepare) {
+    Write-Step "Kiểm tra runner nhãn shoponline-prod khác"
+    gh auth status 2>$null | Out-Null
+    if ($LASTEXITCODE -ne 0) { gh auth login; Assert-Native "gh auth login" }
+    $repoName = gh repo view --json nameWithOwner -q .nameWithOwner
+    Assert-Native "gh repo view"
+    $runnerLines = gh api "repos/$repoName/actions/runners" --paginate --jq '.runners[] | {name: .name, labels: [.labels[].name]} | @json'
+    Assert-Native "gh api runners"
+    $ownName = "$env:COMPUTERNAME-shoponline"
+    $others = @()
+    foreach ($line in @($runnerLines | Where-Object { $_ })) {
+        $runner = $line | ConvertFrom-Json
+        if (($runner.labels -contains "shoponline-prod") -and $runner.name -ne $ownName) { $others += $runner.name }
+    }
+    if ($others.Count -gt 0) {
+        throw ("GitHub còn runner nhãn shoponline-prod của máy khác: $($others -join ', '). Dữ liệu đã nạp nhưng chưa cài runner và chưa bật robot. " +
+            "Máy cũ còn chạy: trên máy cũ chạy server-export.ps1 rồi chạy lại script này. " +
+            "Máy cũ đã hỏng: gỡ runner cũ ở GitHub (Settings -> Actions -> Runners) và rào máy cũ trước khi bật nó lần nào nữa " +
+            "(rút mạng, đăng nhập, Disable mọi tác vụ shoponline-*), rồi chạy lại script này.")
+    }
+    Write-Host "Không còn runner nào khác nhãn shoponline-prod"
+}
 
 if ($Prepare) {
     Add-Check $false "Runner deploy" "Cài vào ngày chuyển máy: chạy lại script không có -Prepare (docs/deployment-guide.md, mục Chuyển máy chạy thật)."
@@ -320,6 +383,10 @@ $env:PYTHONIOENCODING = "utf-8"
 [Console]::OutputEncoding = [Text.Encoding]::UTF8
 $sapStatus = uv run --no-dev --extra robot shoponline sap-password status 2>$null
 Add-Check ("$sapStatus" -match "đã có") "Mật khẩu SAP của robot trên máy này" "uv run --extra robot shoponline sap-password set"
+if ($Bundle) {
+    Add-Check $driveReady "Google Drive đã kết nối trên máy này" "Mở trang Sao lưu, nhập cùng Client ID và Secret, bấm Kết nối bằng mã thiết bị (hoặc: uv run --extra robot shoponline drive connect)."
+    Add-Check $false "Đăng nhập web bằng tài khoản cũ" "Tài khoản và lịch sao lưu đã theo gói sang; đăng nhập thử, và xem trang Sao lưu."
+}
 Add-Check $false "Kiểm tra kết nối SAP" "Mở trang Robot SAP → Kết nối SAP và bấm Kiểm tra (sau khi robot cũ đã tắt)."
 
 Write-Host ""
