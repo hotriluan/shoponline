@@ -87,7 +87,12 @@ def require_admin(user: AppUser = Depends(current_user)) -> AppUser:
 
 
 def flash(request: Request, message: str, kind: str = "info") -> None:
-    request.session.setdefault("flash", []).append({"kind": kind, "message": message})
+    # Assigned, not appended in place: the session only saves what is set on it, so a message
+    # added to a list already there would be dropped.
+    request.session["flash"] = [
+        *request.session.get("flash", []),
+        {"kind": kind, "message": message},
+    ]
 
 
 def backup_warning(request: Request) -> str | None:

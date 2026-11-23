@@ -8,6 +8,7 @@ exactly what that file confirmed.
 from __future__ import annotations
 
 from calendar import monthrange
+from collections.abc import Sequence
 from datetime import date, timedelta
 from io import BytesIO
 from pathlib import Path
@@ -25,7 +26,7 @@ from fastapi import (
     UploadFile,
 )
 from fastapi.responses import FileResponse
-from sqlalchemy import and_, delete, func, literal, select
+from sqlalchemy import and_, delete, exists, func, literal, select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import Session
 
@@ -224,6 +225,7 @@ def download_history_file(
             message = "Không có đơn nào chờ xuất."
         flash(request, message, "error")
         return redirect(back)
+    overlapping = _unconfirmed_files_holding(db, result.order_ids)
     file_name = history_file_name(today_vn())
     record = save_generated(
         db,
@@ -238,6 +240,14 @@ def download_history_file(
         for order_id in result.order_ids
     )
     db.commit()
+    if overlapping:
+        flash(
+            request,
+            f"Đã có {len(overlapping)} file chưa xác nhận chứa cùng đơn với file vừa tải "
+            f"({', '.join(f'#{n}' for n in overlapping)}). Chỉ dán một file; khi xác nhận một "
+            "file, các file chưa xác nhận chứa cùng đơn sẽ bị xóa.",
+            "error",
+        )
     return FileResponse(record.stored_path, filename=file_name, media_type=XLSX)
 
 
@@ -342,6 +352,43 @@ async def upload_settlement(
     return redirect(back)
 
 
+def _unconfirmed_files_holding(
+    db: Session, order_ids: Sequence[int], *, besides: int | None = None
+) -> list[int]:
+    """Ids of history files with no confirmed order that hold any of these orders."""
+    stmt = (
+        select(GeneratedFile.id)
+        .join(SalesHistoryFileOrder, SalesHistoryFileOrder.generated_file_id == GeneratedFile.id)
+        .where(
+            GeneratedFile.kind == KIND,
+            SalesHistoryFileOrder.sales_order_id.in_(order_ids),
+            ~exists().where(SalesHistoryExported.generated_file_id == GeneratedFile.id),
+        )
+        .distinct()
+        .order_by(GeneratedFile.id)
+    )
+    if besides is not None:
+        stmt = stmt.where(GeneratedFile.id != besides)
+    return list(db.scalars(stmt))
+
+
+def _drop_unconfirmed_file(db: Session, actor: str, record: GeneratedFile, **detail) -> str:
+    """Delete a history file that was never confirmed and its order list; returns its path.
+    The caller commits, then removes the stored file."""
+    db.execute(
+        delete(SalesHistoryFileOrder).where(SalesHistoryFileOrder.generated_file_id == record.id)
+    )
+    path = record.stored_path
+    states.log_event(
+        db,
+        actor,
+        "sales_history_deleted",
+        detail={"file_id": record.id, "file_name": record.file_name, **detail},
+    )
+    db.delete(record)
+    return path
+
+
 def _history_file(db: Session, file_id: int) -> GeneratedFile:
     record = db.get(GeneratedFile, file_id)
     if record is None or record.kind != KIND:
@@ -388,6 +435,26 @@ def confirm_file(
         ).all()
     )
     skipped = total - confirmed
+    in_this_file = list(
+        db.scalars(
+            select(SalesHistoryFileOrder.sales_order_id).where(
+                SalesHistoryFileOrder.generated_file_id == record.id
+            )
+        )
+    )
+    # Another file never confirmed that holds the same orders would paste them a second time:
+    # drop it (it was never recorded as pasted, so nothing is lost; its other orders go into the
+    # next download).
+    superseded = [
+        _drop_unconfirmed_file(db, user.username, other, superseded_by=record.id)
+        for other in db.scalars(
+            select(GeneratedFile).where(
+                GeneratedFile.id.in_(
+                    _unconfirmed_files_holding(db, in_this_file, besides=record.id)
+                )
+            )
+        )
+    ]
     states.log_event(
         db,
         user.username,
@@ -405,10 +472,11 @@ def confirm_file(
         .where(SalesHistoryFileOrder.sales_order_id.in_(sharing))
         .distinct()
     ).all()
-    retention.discard_unused(db, request.app.state.settings, paths)
+    retention.discard_unused(db, request.app.state.settings, [*paths, *superseded])
+    note = f" Đã xóa {len(superseded)} file chưa xác nhận chứa cùng đơn." if superseded else ""
     flash(
         request,
-        f"Đã xác nhận {confirmed} đơn, bỏ qua {skipped} đơn đã xác nhận ở file khác.",
+        f"Đã xác nhận {confirmed} đơn, bỏ qua {skipped} đơn đã xác nhận ở file khác.{note}",
     )
     return redirect("/sales-history")
 
@@ -478,17 +546,8 @@ def delete_file(
     if confirmed:
         flash(request, "File đã xác nhận đã dán: gỡ xác nhận trước khi xóa.", "error")
         return redirect("/sales-history")
-    db.execute(
-        delete(SalesHistoryFileOrder).where(SalesHistoryFileOrder.generated_file_id == record.id)
-    )
-    path, name = record.stored_path, record.file_name
-    db.delete(record)
-    states.log_event(
-        db,
-        user.username,
-        "sales_history_deleted",
-        detail={"file_id": file_id, "file_name": name},
-    )
+    name = record.file_name
+    path = _drop_unconfirmed_file(db, user.username, record)
     db.commit()
     retention.discard_unused(db, request.app.state.settings, [path])
     flash(request, f"Đã xóa file {name}; các đơn chưa xác nhận sẽ có trong lần xuất sau.")

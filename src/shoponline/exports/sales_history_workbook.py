@@ -39,6 +39,9 @@ from shoponline.domain import states
 from shoponline.domain.report_names import province_of
 
 SHEET = "sheet1"
+DRAFT_SHEET = "NHÁP - KHÔNG DÁN"  # never the name of the file pasted into
+FORMULA_STARTS = ("=", "+", "-", "@")
+FORMULA_COLUMNS = (8, 9)  # H and I: the file's own formulas, written as formulas on purpose
 # Row 1 of sheet1, as written there (note the trailing space of "unitPrice ").
 COLUMNS = (
     "Division",
@@ -274,7 +277,7 @@ def collect_rows(session: Session, until: date, draft: bool = False) -> HistoryR
 def build_history_workbook(rows: Sequence[HistoryRow], draft: bool = False) -> Workbook:
     wb = Workbook()
     ws = wb.active
-    ws.title = SHEET
+    ws.title = DRAFT_SHEET if draft else SHEET
     bold = Font(bold=True)
     for col, title in enumerate(COLUMNS + (STATUS_COLUMN,) if draft else COLUMNS, start=1):
         ws.cell(1, col, title).font = bold
@@ -304,7 +307,14 @@ def build_history_workbook(rows: Sequence[HistoryRow], draft: bool = False) -> W
         if draft:
             values += (row.status or None,)
         for col, value in enumerate(values, start=1):
-            ws.cell(r, col, value)
+            cell = ws.cell(r, col, value)
+            # Text from a platform file (a customer name) must not become a formula in Excel.
+            if (
+                col not in FORMULA_COLUMNS
+                and isinstance(value, str)
+                and value.startswith(FORMULA_STARTS)
+            ):
+                cell.data_type = "s"
         for letter in MONEY_COLUMNS:
             ws[f"{letter}{r}"].number_format = MONEY_FORMAT
         for letter in TEXT_COLUMNS:  # ids made of digits stay text when pasted

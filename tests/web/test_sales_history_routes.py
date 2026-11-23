@@ -46,7 +46,7 @@ def _stored(db, file_id):
     return Path(db.get(GeneratedFile, file_id).stored_path)
 
 
-def test_a_file_with_an_order_still_unconfirmed_is_kept(db, login):
+def test_confirming_a_file_drops_the_unconfirmed_file_that_repeats_its_orders(db, login):
     setup.report_name(db)
     setup.order(db, "A-1", datetime(2026, 11, 11))
     admin = login("admin")
@@ -58,7 +58,9 @@ def test_a_file_with_an_order_still_unconfirmed_is_kept(db, login):
     admin.post(f"/sales-history/files/{first}/confirm")
 
     assert not _stored(db, first).exists()
-    assert _stored(db, second).exists()  # A-2 is not confirmed yet
+    # The second file would paste A-1 again, so it goes; A-2 returns to the pending orders.
+    assert db.get(GeneratedFile, second) is None
+    assert _order_ids_in_sheet(_download(admin)) == 1
 
 
 def _download(client):
@@ -68,7 +70,7 @@ def _download(client):
 
 
 def _order_ids_in_sheet(resp):
-    ws = load_workbook(BytesIO(resp.content))["sheet1"]
+    ws = load_workbook(BytesIO(resp.content)).active
     return ws.max_row - 1
 
 
@@ -136,7 +138,7 @@ def test_an_order_after_the_chosen_month_is_left_for_later(db, login):
     ws = load_workbook(BytesIO(client.get("/sales-history/file?month=2026-10").content))["sheet1"]
     assert [ws.cell(r, 18).value for r in range(2, ws.max_row + 1)] == ["OCT-31"]
     draft = client.get("/sales-history/draft?month=2026-10").content
-    assert load_workbook(BytesIO(draft))["sheet1"].max_row == 2
+    assert load_workbook(BytesIO(draft)).active.max_row == 2
     assert "<b>2</b> đơn" in client.get(PAGE).text  # OCT-31 stays until it is confirmed
 
 
@@ -214,10 +216,9 @@ def test_an_order_is_confirmed_once_across_files(db, login):
     first, second = _file_ids(db)
 
     assert "Đã xác nhận 2 đơn" in admin.post(f"/sales-history/files/{second}/confirm").text
-    # The first file holds the same orders: both are spent.
-    assert not _stored(db, first).exists() and not _stored(db, second).exists()
-    page = admin.post(f"/sales-history/files/{first}/confirm").text
-    assert "Đã xác nhận 0 đơn, bỏ qua 2 đơn" in page
+    # The first file held the same orders: it is gone, so it cannot be pasted a second time.
+    assert db.get(GeneratedFile, first) is None and not _stored(db, second).exists()
+    assert admin.post(f"/sales-history/files/{first}/confirm").status_code == 404
     assert _count(db, SalesHistoryExported) == 2
     db.expire_all()
     assert set(db.scalars(select(SalesHistoryExported.generated_file_id))) == {second}
@@ -490,7 +491,7 @@ def test_the_draft_downloads_without_storing_or_remembering_anything(db, login):
     disposition = resp.headers["content-disposition"]
     name = unquote(disposition.split("filename*=utf-8''")[1])
     assert name == "NHÁP SHOP ONLINE LỊCH SỬ 131126.xlsx"
-    ws = load_workbook(BytesIO(resp.content))["sheet1"]
+    ws = load_workbook(BytesIO(resp.content)).active
     assert [(ws.cell(r, 18).value, ws.cell(r, 21).value) for r in (2, 3)] == [
         ("FULL", None),
         ("NO-INV", "Chờ hóa đơn"),
@@ -541,3 +542,36 @@ def test_unconfirm_is_refused_once_a_customer_name_in_the_file_was_erased(db, lo
 
     assert "Không gỡ xác nhận được" in page
     assert _count(db, SalesHistoryExported) == 2
+
+
+def test_confirming_a_file_removes_unconfirmed_files_that_share_its_orders(db, login):
+    setup.report_name(db)
+    setup.order(db, "A-1", datetime(2026, 11, 11, 8))
+    setup.order(db, "A-2", datetime(2026, 11, 11, 9))
+    admin = login("admin")
+    _download(admin)
+    setup.order(db, "A-3", datetime(2026, 11, 11, 10))
+    _download(admin)  # A-1, A-2 again, and A-3
+    first, second = _file_ids(db)
+    second_path = _stored(db, second)
+
+    page = admin.post(f"/sales-history/files/{first}/confirm").text
+
+    assert "Đã xóa 1 file chưa xác nhận chứa cùng đơn" in page
+    assert _file_ids(db) == [first]
+    assert not second_path.exists()
+    assert _count(db, SalesHistoryExported) == 2  # A-1 and A-2, through the first file
+    assert _count(db, SalesHistoryFileOrder) == 2  # only the first file lists orders
+    assert _order_ids_in_sheet(_download(admin)) == 1  # A-3 went back to the pending orders
+
+
+def test_downloading_while_an_unconfirmed_file_holds_the_same_orders_warns(db, login):
+    setup.report_name(db)
+    setup.order(db, "A-1", datetime(2026, 11, 11, 8))
+    admin = login("admin")
+    _download(admin)
+
+    _download(admin)  # double click
+    page = admin.get(PAGE).text
+
+    assert "Đã có 1 file chưa xác nhận chứa cùng đơn" in page

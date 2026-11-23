@@ -315,13 +315,29 @@ def test_the_draft_workbook_has_a_status_column_and_the_real_one_does_not(db):
     rows = collect_rows(db, UNTIL, draft=True).rows
     buffer = BytesIO()
     build_history_workbook(rows, draft=True).save(buffer)
-    draft = load_workbook(buffer)["sheet1"]
+    book = load_workbook(buffer)
+    draft = book["NHÁP - KHÔNG DÁN"]
 
     assert draft.max_column == 21 and draft["U1"].value == "Trạng thái"
     assert [draft.cell(r, 21).value for r in (2, 3, 4)] == [None, "Chờ hóa đơn", "Chờ tiền vô"]
     assert draft["S3"].value is None and draft["T4"].value is None
+    assert "sheet1" not in book.sheetnames  # a draft is never mistaken for the real sheet
     assert _sheet(rows).max_column == len(COLUMNS) == 20
 
 
 def test_draft_file_name():
     assert history_draft_file_name(date(2026, 11, 16)) == "NHÁP SHOP ONLINE LỊCH SỬ 161126.xlsx"
+
+
+def test_a_customer_name_that_looks_like_a_formula_stays_text(db):
+    setup.report_name(db)
+    for n, name in enumerate(("=1+1", "+84 Lan", "-Minh", "@SUM(A1)", "Nguyễn Văn A")):
+        setup.order(db, f"F-{n}", datetime(2026, 11, 11, 8, n), name=name)
+    rows = collect_rows(db, UNTIL).rows
+
+    ws = _sheet(rows)
+
+    names = [ws.cell(r, 5) for r in range(2, ws.max_row + 1)]
+    assert [c.value for c in names] == ["=1+1", "+84 Lan", "-Minh", "@SUM(A1)", "Nguyễn Văn A"]
+    assert {c.data_type for c in names} == {"s"}
+    assert ws["H2"].data_type == "f" and ws["I3"].data_type == "f"  # the file's own formulas
