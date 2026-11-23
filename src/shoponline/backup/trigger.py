@@ -46,6 +46,7 @@ def enqueue(
     target_run_id: int | None = None,
     to_drive: bool = False,
     exclusive: bool = False,
+    result: dict | None = None,
 ) -> BackupRequest | None:
     """Add a request and commit. With exclusive=True nothing is added (None) when a backup is
     already waiting or running; the check and the insert are one step, so two clicks at the same
@@ -62,6 +63,7 @@ def enqueue(
         target_run_id=target_run_id,
         to_drive=to_drive,
         requested_by=actor[:50],
+        result=result,
     )
     db.add(request)
     db.commit()

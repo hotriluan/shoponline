@@ -68,7 +68,7 @@ def _legacy_archive(ctx, tmp_path, alembic_cfg):
 
 def test_newer_backup_is_refused_before_services_stop(backup_ctx, services, monkeypatch):
     outcome = _make_backup(backup_ctx)
-    monkeypatch.setattr(restore, "_known_revisions", lambda repo: {"0001_initial"})
+    monkeypatch.setattr(restore, "known_revisions", lambda: {"0001_initial"})
     with pytest.raises(restore.RestoreRefused, match="phiên bản mới hơn"):
         _production(backup_ctx, outcome.file_name)
     assert services == []

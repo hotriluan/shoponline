@@ -1,0 +1,38 @@
+{% extends "base.html" %}
+{% block title %}Đang phục hồi{% endblock %}
+{% block content %}
+<h1>Đang phục hồi</h1>
+<div class="box">
+  <p id="state"><strong>Đã gửi yêu cầu.</strong> Web sẽ tạm ngừng 1–3 phút rồi chạy lại; trang này tự theo dõi và sẽ chuyển bạn tới trang đăng nhập khi xong.</p>
+  <p class="muted" id="step"></p>
+</div>
+<script>
+(function () {
+  var started = Date.now(), wentDown = false, state = document.getElementById('state'), step = document.getElementById('step');
+  function loginUp() {
+    return fetch('/login', {cache: 'no-store'}).then(function (r) { return r.ok; }).catch(function () { return false; });
+  }
+  function tick() {
+    fetch('/backup/restoring/{{ request_id }}/status', {headers: {'x-autosave': '1'}, cache: 'no-store'})
+      .then(function (r) { if (!r.ok) { throw new Error('gone'); } return r.json(); })
+      .then(function (d) {
+        step.textContent = d.message || '';
+        if (d.status === 'pending' && Date.now() - started > 120000) {
+          state.innerHTML = '<strong class="bad">Tác vụ phục hồi không chạy.</strong> Kiểm tra tác vụ shoponline-restore trong Task Scheduler hoặc phục hồi bằng dòng lệnh trên máy chủ.';
+          return;
+        }
+        if (['done', 'rolled_back', 'failed', 'expired'].indexOf(d.status) >= 0) { location.href = '/backup'; return; }
+        setTimeout(tick, 4000);
+      })
+      .catch(function () {
+        // The web is down (being restored) or the session ended: wait for the login page.
+        wentDown = true;
+        loginUp().then(function (up) {
+          if (up) { location.href = '/login'; } else { setTimeout(tick, 4000); }
+        });
+      });
+  }
+  setTimeout(tick, 3000);
+})();
+</script>
+{% endblock %}

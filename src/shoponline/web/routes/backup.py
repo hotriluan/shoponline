@@ -7,23 +7,37 @@ read: they expose what is on Drive or change the connection. Secrets never reach
 from __future__ import annotations
 
 import logging
+import shutil
 from datetime import datetime
+from urllib.parse import unquote
 
 from fastapi import APIRouter, Depends, Form, Request
-from fastapi.responses import JSONResponse
+from fastapi.concurrency import run_in_threadpool
+from fastapi.responses import FileResponse, JSONResponse
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from shoponline.backup import KIND_LABELS, KINDS, runner, status, trigger
+from shoponline.backup import (
+    KIND_LABELS,
+    KINDS,
+    inventory,
+    manage,
+    restore,
+    runner,
+    status,
+    trigger,
+)
 from shoponline.backup.drive import DriveClient, DriveError, friendly_error
+from shoponline.backup.staging import staging_dir
 from shoponline.clock import VIETNAM
-from shoponline.db.models import AppUser, BackupRun
+from shoponline.db.models import AppUser, BackupRequest, BackupRun, EventLog
 from shoponline.web.app import current_user, flash, get_db, redirect, render, require_admin
+from shoponline.web.auth import authenticate
+from shoponline.web.pagination import paginate
 
 log = logging.getLogger(__name__)
 router = APIRouter()
 
-RECENT_RUNS = 10
 WEEKDAYS = ["Thứ Hai", "Thứ Ba", "Thứ Tư", "Thứ Năm", "Thứ Sáu", "Thứ Bảy", "Chủ nhật"]
 CARDS = [
     (
@@ -48,6 +62,7 @@ LOCAL_LABELS = {
     "interrupted": "Bị dừng giữa chừng",
     "rotated": "Đã xóa theo số bản giữ",
     "deleted": "Đã xóa",
+    "missing": "Không có (chỉ trên Drive)",
 }
 DRIVE_LABELS = {
     None: "Không yêu cầu",
@@ -69,8 +84,63 @@ SOURCE_LABELS = {
 }
 
 
+STATE_FILTERS = [
+    ("ok", "Thành công"),
+    ("failed", "Lỗi"),
+    ("running", "Đang chạy"),
+    ("drive_failed", "Lỗi Drive"),
+    ("only_drive", "Chỉ trên Drive"),
+    ("deleted", "Đã xóa"),
+]
+
+
 def drive_client(request: Request) -> DriveClient:
     return request.app.state.drive
+
+
+def web_context(request: Request, db: Session) -> runner.Context:
+    """What backup code needs, built for a web request (no locks are taken from the web)."""
+    return runner.Context(
+        settings=request.app.state.settings,
+        session_factory=request.app.state.session_factory,
+        engine=db.get_bind(),
+        repo_root=restore.CODE_ROOT,
+        drive=request.app.state.drive,
+    )
+
+
+def _drive_listing(request: Request, db: Session, connected: bool):
+    """The cached Drive list (None when not connected or unreadable) and an error text."""
+    if not connected:
+        return None, None
+    listing = request.app.state.drive_listing
+    files, error = listing.get(request.app.state.drive, inventory.newest_finish(db))
+    if files is not None:
+        inventory.add_drive_found(db, files)
+    return files, error
+
+
+def _filtered_runs(request: Request):
+    stmt = select(BackupRun).order_by(BackupRun.started_at.desc(), BackupRun.id.desc())
+    params = request.query_params
+    if params.get("kind") in KINDS:
+        stmt = stmt.where(BackupRun.kind == params["kind"])
+    if params.get("source") in SOURCE_LABELS:
+        stmt = stmt.where(BackupRun.source == params["source"])
+    state = params.get("state")
+    if state == "ok":
+        stmt = stmt.where(BackupRun.local_status.in_(("ok", "partial")))
+    elif state == "failed":
+        stmt = stmt.where(BackupRun.local_status.in_(("failed", "interrupted")))
+    elif state == "running":
+        stmt = stmt.where(BackupRun.local_status == "running")
+    elif state == "drive_failed":
+        stmt = stmt.where(BackupRun.drive_status == "failed")
+    elif state == "only_drive":
+        stmt = stmt.where(BackupRun.local_status == "missing")
+    elif state == "deleted":
+        stmt = stmt.where(BackupRun.deleted_at.is_not(None))
+    return stmt
 
 
 def _hhmm(value) -> str:
@@ -94,9 +164,26 @@ def _places(db: Session) -> list[dict]:
 def backup_page(
     request: Request, db: Session = Depends(get_db), user: AppUser = Depends(current_user)
 ):
-    drive = drive_client(request).state()
+    client = drive_client(request)
+    drive = client.state()
     settings = runner.backup_settings(db)
-    runs = db.scalars(select(BackupRun).order_by(BackupRun.id.desc()).limit(RECENT_RUNS)).all()
+    listing, listing_error = _drive_listing(request, db, drive["status"] == "connected")
+    stmt = _filtered_runs(request)
+    page = paginate(
+        request, db, stmt, BackupRun.file_name, BackupRun.actor, BackupRun.source, BackupRun.kind
+    )
+    rows = inventory.build_rows(
+        page.items,
+        inventory.local_names(request.app.state.settings),
+        listing,
+        drive["status"] == "connected",
+        restore.known_revisions(),
+    )
+    waiting = db.scalars(
+        select(BackupRequest)
+        .where(BackupRequest.status.in_(("pending", "running")))
+        .order_by(BackupRequest.id)
+    ).all()
     return render(
         request,
         "backup.html",
@@ -111,7 +198,14 @@ def backup_page(
         weekdays=list(enumerate(WEEKDAYS)),
         next_runs=status.next_runs(db),
         places=_places(db),
-        runs=runs,
+        rows=rows,
+        page=page,
+        waiting=waiting,
+        listing_error=listing_error,
+        filters={k: request.query_params.get(k, "") for k in ("kind", "source", "state")},
+        state_options=STATE_FILTERS,
+        source_options=list(SOURCE_LABELS.items()),
+        max_upload_mb=manage.MAX_UPLOAD // 2**20,
         cards=CARDS,
         local_labels=LOCAL_LABELS,
         drive_labels=DRIVE_LABELS,
@@ -318,3 +412,242 @@ def save_settings(
     db.commit()
     flash(request, "Đã lưu lịch và số bản giữ. Áp dụng ngay từ lần kiểm tra kế tiếp (15 phút).")
     return redirect("/backup")
+
+
+# --- the backup list: files and actions -------------------------------------------------------
+
+
+def _run_or_none(db: Session, run_id: int) -> BackupRun | None:
+    return db.get(BackupRun, run_id)
+
+
+def _wake(request: Request, task: str, what: str) -> None:
+    if trigger.start_task(task):
+        flash(request, f"Đã bắt đầu {what}.")
+    else:
+        flash(request, f"Đã xếp yêu cầu {what}; sẽ chạy trong vòng 15 phút.")
+
+
+@router.get("/backup/runs/{run_id}/status")
+def run_status(run_id: int, db: Session = Depends(get_db), user: AppUser = Depends(require_admin)):
+    """What the page polls for a running row. Labels only: never the raw error text."""
+    run = _run_or_none(db, run_id)
+    if run is None:
+        return JSONResponse({"ok": False}, status_code=404)
+    local, _ = inventory._local_state(run, True, False)
+    drive, _ = inventory._drive_state(run, None, True)
+    done = run.local_status != "running" and run.drive_status != "uploading"
+    return JSONResponse({"ok": True, "local": local, "drive": drive, "finished": done})
+
+
+@router.get("/backup/runs/{run_id}/download")
+def download_backup(
+    request: Request,
+    run_id: int,
+    db: Session = Depends(get_db),
+    user: AppUser = Depends(require_admin),
+):
+    run = _run_or_none(db, run_id)
+    if run is None:
+        flash(request, "Không có bản sao lưu này.", "error")
+        return redirect("/backup")
+    try:
+        path = restore.fetch(web_context(request, db), str(run_id))
+    except (restore.RestoreError, DriveError) as exc:
+        flash(request, str(exc), "error")
+        return redirect("/backup")
+    db.add(EventLog(actor=user.username, kind="backup_download", detail=run.file_name))
+    db.commit()
+    return FileResponse(path, filename=run.file_name, media_type="application/x-7z-compressed")
+
+
+@router.post("/backup/runs/{run_id}/verify")
+def verify_backup(
+    request: Request,
+    run_id: int,
+    db: Session = Depends(get_db),
+    user: AppUser = Depends(require_admin),
+):
+    if _run_or_none(db, run_id) is None:
+        flash(request, "Không có bản sao lưu này.", "error")
+        return redirect("/backup")
+    trigger.enqueue(db, "verify", user.username, target_run_id=run_id)
+    _wake(request, trigger.BACKUP_TASK, "kiểm tra bản sao lưu")
+    return redirect("/backup")
+
+
+@router.post("/backup/runs/{run_id}/retry-drive")
+def retry_drive(
+    request: Request,
+    run_id: int,
+    db: Session = Depends(get_db),
+    user: AppUser = Depends(require_admin),
+):
+    """Upload the same file again; no new backup is made."""
+    run = _run_or_none(db, run_id)
+    if run is None:
+        flash(request, "Không có bản sao lưu này.", "error")
+    elif not drive_client(request).connected():
+        flash(request, "Chưa kết nối Google Drive.", "error")
+    else:
+        request.app.state.drive_listing.invalidate()
+        trigger.enqueue(db, "retry_drive", user.username, target_run_id=run_id, to_drive=True)
+        _wake(request, trigger.BACKUP_TASK, "tải lại lên Google Drive")
+    return redirect("/backup")
+
+
+@router.post("/backup/runs/{run_id}/delete")
+def delete_backup(
+    request: Request,
+    run_id: int,
+    where: str = Form("local"),
+    db: Session = Depends(get_db),
+    user: AppUser = Depends(require_admin),
+):
+    if where not in ("local", "drive", "both"):
+        flash(request, "Chọn nơi cần xóa.", "error")
+        return redirect("/backup")
+    try:
+        message = manage.delete_files(web_context(request, db), run_id, where, user.username)
+    except (manage.ManageError, DriveError) as exc:
+        flash(request, str(exc), "error")
+    except Exception as exc:
+        log.exception("Xóa bản sao lưu lỗi")
+        flash(request, friendly_error(exc), "error")
+    else:
+        flash(request, message)
+    db.commit()
+    request.app.state.drive_listing.invalidate()
+    return redirect("/backup")
+
+
+@router.post("/backup/runs/{run_id}/restore")
+def restore_backup(
+    request: Request,
+    run_id: int,
+    mode: str = Form("drill"),
+    password: str = Form(""),
+    confirm_name: str = Form(""),
+    force: str = Form(""),
+    db: Session = Depends(get_db),
+    user: AppUser = Depends(require_admin),
+):
+    run = _run_or_none(db, run_id)
+    if run is None or run.kind == "app":
+        flash(request, "Bản này không phục hồi trên máy đang chạy.", "error")
+        return redirect("/backup")
+    if mode == "drill":
+        trigger.enqueue(db, "drill", user.username, target_run_id=run_id)
+        _wake(request, trigger.BACKUP_TASK, "diễn tập phục hồi")
+        return redirect("/backup")
+    problem = _production_refusal(request, db, user, run, password, confirm_name, force)
+    if problem:
+        flash(request, problem, "error")
+        return redirect("/backup")
+    queued = trigger.enqueue(
+        db,
+        "restore",
+        user.username,
+        target_run_id=run_id,
+        result={"force": bool(force)},
+    )
+    if trigger.start_task(trigger.RESTORE_TASK):
+        return redirect(f"/backup/restoring/{queued.id}")
+    queued.status, queued.finished_at = "failed", datetime.now(VIETNAM)
+    queued.message = "Không chạy được tác vụ phục hồi (shoponline-restore)"
+    db.commit()
+    flash(
+        request,
+        "Không chạy được tác vụ phục hồi (shoponline-restore). Kiểm tra tác vụ trong Task "
+        "Scheduler, hoặc phục hồi bằng dòng lệnh trên máy chủ.",
+        "error",
+    )
+    return redirect("/backup")
+
+
+def _production_refusal(request, db, user, run, password, confirm_name, force) -> str | None:
+    if authenticate(db, user.username, password) is None:
+        return "Sai mật khẩu của bạn; không phục hồi."
+    if confirm_name.strip() != run.file_name:
+        return "Tên file gõ lại không khớp; không phục hồi."
+    revision = (run.manifest or {}).get("alembic_revision")
+    if revision and revision not in restore.known_revisions():
+        return f"Bản từ phiên bản mới hơn (revision {revision}); cập nhật mã trước."
+    busy = db.scalar(
+        select(BackupRequest.id).where(
+            BackupRequest.action == "restore", BackupRequest.status.in_(("pending", "running"))
+        )
+    )
+    if busy:
+        return "Đang có yêu cầu phục hồi khác chờ hoặc chạy."
+    if run.manifest is None and not force:
+        return "Bản cũ không có manifest: tích ô xác nhận đã hiểu rồi gửi lại (nên diễn tập trước)."
+    if restore.other_active_users(db, user.username) and not force:
+        return "Có người dùng khác đang dùng web; tích ô xác nhận rồi gửi lại."
+    return None
+
+
+@router.get("/backup/restoring/{request_id}")
+def restoring_page(
+    request: Request,
+    request_id: int,
+    db: Session = Depends(get_db),
+    user: AppUser = Depends(require_admin),
+):
+    return render(request, "backup_restoring.html", user, request_id=request_id)
+
+
+@router.get("/backup/restoring/{request_id}/status")
+def restoring_status(
+    request_id: int, db: Session = Depends(get_db), user: AppUser = Depends(require_admin)
+):
+    req = db.get(BackupRequest, request_id)
+    if req is None:
+        return JSONResponse({"ok": False}, status_code=404)
+    return JSONResponse({"ok": True, "status": req.status, "message": req.message})
+
+
+# --- upload -----------------------------------------------------------------------------------
+
+
+def _upload_reply(request: Request, ok: bool, message: str, status_code: int = 200):
+    flash(request, message, "info" if ok else "error")
+    return JSONResponse({"ok": ok, "message": message}, status_code=status_code)
+
+
+@router.post("/backup/upload")
+async def upload_backup(
+    request: Request, db: Session = Depends(get_db), user: AppUser = Depends(require_admin)
+):
+    """The file is the request body itself (not multipart), so its size is known and limited
+    before anything is written, and a refused file never reaches the disk beyond the limit."""
+    length = request.headers.get("content-length", "")
+    if not length.isdigit() or int(length) == 0:
+        return _upload_reply(request, False, "Thiếu kích thước file.", 411)
+    size = int(length)
+    if size > manage.MAX_UPLOAD:
+        return _upload_reply(request, False, "File quá lớn (tối đa 1 GB).", 413)
+    settings = request.app.state.settings
+    settings.data_dir.mkdir(parents=True, exist_ok=True)
+    if shutil.disk_usage(settings.data_dir).free < 2 * size:
+        return _upload_reply(request, False, "Không đủ chỗ trống trên ổ dữ liệu.", 507)
+    name = unquote(request.headers.get("x-file-name", "")).strip()
+    ctx = web_context(request, db)
+    with staging_dir(settings.backup_work_dir, "upload") as work:
+        part = work / "upload.7z"
+        received = 0
+        with part.open("wb") as out:
+            async for chunk in request.stream():
+                received += len(chunk)
+                if received > size or received > manage.MAX_UPLOAD:
+                    break
+                out.write(chunk)
+        if received != size:
+            return _upload_reply(request, False, "File tải lên không đủ hoặc vượt giới hạn.", 400)
+        try:
+            run = await run_in_threadpool(manage.ingest_upload, ctx, part, name, user.username)
+        except manage.ManageError as exc:
+            return _upload_reply(request, False, str(exc), 422)
+    db.commit()
+    request.app.state.drive_listing.invalidate()
+    return _upload_reply(request, True, f"Đã nhận bản sao lưu {run.file_name}.")

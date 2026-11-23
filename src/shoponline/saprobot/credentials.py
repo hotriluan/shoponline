@@ -36,6 +36,4 @@ def read_password(user: str, env: Mapping[str, str] | None = None) -> str | None
 
 
 def store_password(user: str, password: str) -> None:
-    secrets_store.write(
-        target_name(user), password, user.strip().upper(), "shoponline SAP robot"
-    )
+    secrets_store.write(target_name(user), password, user.strip().upper(), "shoponline SAP robot")

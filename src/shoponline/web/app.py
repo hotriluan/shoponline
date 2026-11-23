@@ -18,6 +18,7 @@ from starlette.middleware.sessions import SessionMiddleware
 
 from shoponline.backup import status as backup_status
 from shoponline.backup.drive import DriveClient
+from shoponline.backup.inventory import DriveListing
 from shoponline.config import Settings
 from shoponline.db.models import AppUser, SystemState
 from shoponline.db.session import session_factory as default_session_factory
@@ -148,6 +149,12 @@ def render(
     request: Request, template: str, user: AppUser | None, status_code: int = 200, **context
 ):
     messages = request.session.pop("flash", [])
+    if user is not None and user.role == "admin":
+        from shoponline.backup import restore
+
+        outcome = restore.take_banner(request.app.state.settings, user.username)
+        if outcome is not None:
+            messages.append({"kind": outcome[0], "message": outcome[1]})
     robot = robot_state(request) if user else RobotState()
     return TEMPLATES.TemplateResponse(
         request,
@@ -204,6 +211,7 @@ def create_app(
     app.state.env = dict(os.environ if env is None else env)
     app.state.session_factory = session_factory or default_session_factory(settings.database_url)
     app.state.drive = DriveClient(app.state.session_factory)
+    app.state.drive_listing = DriveListing()
     app.add_middleware(
         SessionMiddleware,
         secret_key=settings.secret_key,

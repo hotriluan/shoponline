@@ -1,0 +1,195 @@
+{% from "pager.html" import search, links, empty_search %}
+{% set admin = user.role == 'admin' %}
+<h2>Danh sách bản sao lưu và nhật ký ({{ page.total }})</h2>
+
+{% if waiting %}
+<div class="box">
+  <strong>Yêu cầu đang chờ hoặc đang chạy</strong>
+  <ul style="margin:4px 0 0 18px">
+  {% for w in waiting %}
+    <li>{{ w.action }}{% if w.kind %} {{ kind_labels.get(w.kind, w.kind) }}{% endif %} · {{ w.requested_by }} · {{ w.requested_at|localtime('%d/%m %H:%M:%S') }} ·
+      <span class="tag j-{{ 'RUNNING' if w.status == 'running' else 'PENDING' }}">{{ 'Đang chạy' if w.status == 'running' else 'Đang chờ' }}</span>{% if w.message %} <span class="muted">{{ w.message }}</span>{% endif %}</li>
+  {% endfor %}
+  </ul>
+</div>
+{% endif %}
+{% if listing_error %}<div class="flash error">Google Drive: {{ listing_error }}. Cột Drive có thể chưa đúng.</div>{% endif %}
+
+<form class="tt-bar" method="get">
+  <label>Loại
+    <select name="kind" onchange="this.form.submit()">
+      <option value="">Tất cả</option>
+      {% for k, label in kind_labels.items() %}<option value="{{ k }}" {{ 'selected' if filters.kind == k }}>{{ label }}</option>{% endfor %}
+    </select></label>
+  <label>Nguồn
+    <select name="source" onchange="this.form.submit()">
+      <option value="">Tất cả</option>
+      {% for k, label in source_options %}<option value="{{ k }}" {{ 'selected' if filters.source == k }}>{{ label }}</option>{% endfor %}
+    </select></label>
+  <label>Trạng thái
+    <select name="state" onchange="this.form.submit()">
+      <option value="">Tất cả</option>
+      {% for k, label in state_options %}<option value="{{ k }}" {{ 'selected' if filters.state == k }}>{{ label }}</option>{% endfor %}
+    </select></label>
+  <label class="tt-search"><span class="tt-sr">Tìm</span>
+    <input type="search" name="q" value="{{ page.q }}" placeholder="Tìm theo tên file, người, nguồn…" autocomplete="off"></label>
+  <button class="secondary">Lọc</button>
+  <span class="tt-count">{{ page.total }} dòng</span>
+  {% if admin %}<span style="margin-left:auto">
+    <label class="button secondary" for="upload-file" style="margin:0">Tải lên bản sao lưu</label>
+    <input type="file" id="upload-file" accept=".7z" hidden>
+  </span>{% endif %}
+</form>
+{% if admin %}<p class="muted" id="upload-status">Chỉ nhận file .7z do hệ thống này tạo, tối đa {{ max_upload_mb }} MB; phải mở được bằng mật khẩu sao lưu.</p>{% endif %}
+
+<div class="scroll">
+<table data-plain>
+  <thead><tr>
+    <th>Phạm vi / tên file</th><th>Nguồn · người · thời gian</th><th>Dung lượng</th>
+    <th>Máy chủ</th><th>Google Drive</th>{% if admin %}<th>Thao tác</th>{% endif %}
+  </tr></thead>
+  <tbody>
+  {% for row in rows %}{% set r = row.run %}
+    <tr data-run="{{ r.id }}" {% if r.local_status == 'running' or r.drive_status == 'uploading' %}data-running="1"{% endif %}>
+      <td>
+        <strong>{{ kind_labels[r.kind] }}</strong><br><code>{{ r.file_name }}</code>
+        {% if r.manifest and r.manifest.get("tables") %}<br><span class="muted">DB: {{ r.manifest.tables|length }} bảng • {{ r.manifest.tables.values()|sum }} bản ghi{% if r.manifest.alembic_revision %} • {{ r.manifest.alembic_revision }}{% endif %}</span>{% endif %}
+      </td>
+      <td>{{ source_labels.get(r.source, r.source) }}{% if r.source == 'deploy' and r.manifest and r.manifest.commit %} <span class="muted">({{ r.manifest.commit[:7] }})</span>{% endif %}<br>
+        {{ r.started_at|localtime('%d/%m/%Y %H:%M:%S') }}{% if r.finished_at %} <span class="muted">({{ ((r.finished_at - r.started_at).total_seconds())|round|int }} giây)</span>{% endif %}<br>
+        <span class="muted">{{ r.actor }}</span></td>
+      <td class="num">{% if r.size_bytes %}{{ (r.size_bytes / 1048576)|round(1) }} MB{% endif %}</td>
+      <td><span class="tag {{ row.local_css }}">{{ row.local_label }}</span>{% if r.local_error %}<br><span class="bad">{{ r.local_error }}</span>{% endif %}</td>
+      <td><span class="tag {{ row.drive_css }}">{{ row.drive_label }}</span>{% if r.drive_error %}<br><span class="bad">{{ r.drive_error }}</span>{% endif %}
+        {% if admin and row.can_retry_drive %}<form class="inline" method="post" action="/backup/runs/{{ r.id }}/retry-drive"><button class="secondary" title="Tải lại file này lên Drive, không tạo bản mới">Thử lại</button></form>{% endif %}</td>
+      {% if admin %}
+      <td style="white-space:nowrap">
+        {% if r.local_status != 'running' and r.drive_status != 'uploading' %}
+        {% if row.can_download %}<a class="button secondary" href="/backup/runs/{{ r.id }}/download" title="Tải về file .7z (vẫn mã hóa)">Tải về</a>{% endif %}
+        {% if row.can_download %}<form class="inline" method="post" action="/backup/runs/{{ r.id }}/verify"><button class="secondary" title="Kiểm tra: mã hóa, 7z test, SHA-256">Kiểm tra</button></form>{% endif %}
+        {% if row.can_restore %}<button type="button" class="secondary" data-restore="{{ r.id }}" data-name="{{ r.file_name }}" data-kind="{{ r.kind }}" data-legacy="{{ '1' if not r.manifest else '' }}" data-block="{{ row.restore_block or '' }}">Phục hồi…</button>{% endif %}
+        {% if r.deleted_at is none %}<button type="button" class="secondary" data-delete="{{ r.id }}" data-name="{{ r.file_name }}" title="Xóa">Xóa</button>{% endif %}
+        {% endif %}
+        {% if r.verify_result %}<br><span class="{{ 'ok' if r.verify_result.startswith('OK') else 'bad' }}" title="{{ r.verified_at|localtime('%d/%m %H:%M') }}">{{ r.verify_result[:80] }}</span>{% endif %}
+      </td>
+      {% endif %}
+    </tr>
+  {% else %}
+    <tr><td colspan="{{ 6 if admin else 5 }}" class="muted">{{ empty_search(page, 'Chưa có bản sao lưu nào.') }}</td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+</div>
+{{ links(page) }}
+
+{% if admin %}
+<dialog id="restore-dialog">
+  <form method="post" id="restore-form">
+    <h3 style="margin-top:0">Phục hồi <code id="restore-name"></code></h3>
+    <div id="restore-block" class="flash error" hidden></div>
+    <fieldset style="border:0; padding:0; margin:0">
+      <label><input type="radio" name="mode" value="drill" checked> <strong>Diễn tập</strong> (mặc định): khôi phục vào database tạm và so số dòng với manifest. Không đụng hệ thống đang chạy.</label><br>
+      <label><input type="radio" name="mode" value="production"> <strong>Phục hồi hệ thống thật</strong></label>
+    </fieldset>
+    <div id="production-fields" hidden>
+      <p id="restore-scope-db" hidden>Thay <strong>dữ liệu nghiệp vụ</strong> (đơn, SAP, sổ kế toán…) bằng nội dung bản sao lưu.</p>
+      <p id="restore-scope-full" hidden>Thay <strong>dữ liệu nghiệp vụ và các file trong thư mục dữ liệu</strong> bằng nội dung bản sao lưu.</p>
+      <ul>
+        <li>Tài khoản người dùng web, lịch sao lưu và kết nối Drive <strong>giữ nguyên</strong>; mọi người phải đăng nhập lại.</li>
+        <li>Web và robot dừng 1–3 phút. Hệ thống tự sao lưu trạng thái hiện tại trước, và tự lùi lại nếu có bước lỗi.</li>
+        <li>Nhật ký sự kiện (event_log) lùi về thời điểm của bản sao lưu.</li>
+      </ul>
+      <p id="restore-legacy" class="bad" hidden>Bản cũ không có manifest: không kiểm được phiên bản và số dòng trước khi phục hồi; nên diễn tập trước.</p>
+      <label style="display:block"><input type="checkbox" name="force" value="1"> Tôi hiểu và vẫn phục hồi (cần khi có người khác đang dùng web hoặc bản cũ không có manifest)</label>
+      <div class="row" style="margin-top:8px">
+        <label>Mật khẩu của bạn <input type="password" name="password" autocomplete="current-password"></label>
+        <label>Gõ lại tên file <input type="text" name="confirm_name" size="48" autocomplete="off"></label>
+      </div>
+    </div>
+    <div class="row" style="margin-top:12px">
+      <button type="submit">Tiếp tục</button>
+      <button type="button" class="secondary" data-close>Hủy</button>
+    </div>
+  </form>
+</dialog>
+
+<dialog id="delete-dialog">
+  <form method="post" id="delete-form">
+    <h3 style="margin-top:0">Xóa <code id="delete-name"></code></h3>
+    <label style="display:block"><input type="radio" name="where" value="local" checked> Chỉ ở máy chủ</label>
+    <label style="display:block"><input type="radio" name="where" value="drive"> Chỉ trên Google Drive</label>
+    <label style="display:block"><input type="radio" name="where" value="both"> Cả hai</label>
+    <p class="muted">Không xóa được bản thành công mới nhất của mỗi loại hay bản an toàn của lần phục hồi gần nhất. Dòng nhật ký vẫn giữ.</p>
+    <div class="row"><button class="danger" type="submit">Xóa</button><button type="button" class="secondary" data-close>Hủy</button></div>
+  </form>
+</dialog>
+
+<script>
+(function () {
+  function open(dialog) { if (dialog.showModal) { dialog.showModal(); } else { dialog.setAttribute('open', ''); } }
+  document.querySelectorAll('dialog [data-close]').forEach(function (b) {
+    b.addEventListener('click', function () { b.closest('dialog').close(); });
+  });
+
+  var rd = document.getElementById('restore-dialog'), rf = document.getElementById('restore-form');
+  var production = document.getElementById('production-fields');
+  function syncMode() {
+    var prod = rf.elements.mode.value === 'production';
+    production.hidden = !prod;
+    rf.elements.password.required = prod; rf.elements.confirm_name.required = prod;
+  }
+  rf.querySelectorAll('input[name=mode]').forEach(function (r) { r.addEventListener('change', syncMode); });
+  document.querySelectorAll('[data-restore]').forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      rf.action = '/backup/runs/' + btn.dataset.restore + '/restore';
+      document.getElementById('restore-name').textContent = btn.dataset.name;
+      var block = document.getElementById('restore-block');
+      block.hidden = !btn.dataset.block; block.textContent = btn.dataset.block;
+      rf.elements.mode.value = 'drill';
+      document.getElementById('restore-scope-db').hidden = btn.dataset.kind !== 'db';
+      document.getElementById('restore-scope-full').hidden = btn.dataset.kind !== 'full';
+      document.getElementById('restore-legacy').hidden = !btn.dataset.legacy;
+      rf.elements.password.value = ''; rf.elements.confirm_name.value = ''; rf.elements.force.checked = false;
+      rf.querySelector('input[value=production]').disabled = !!btn.dataset.block;
+      syncMode(); open(rd);
+    });
+  });
+
+  var dd = document.getElementById('delete-dialog'), df = document.getElementById('delete-form');
+  document.querySelectorAll('[data-delete]').forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      df.action = '/backup/runs/' + btn.dataset.delete + '/delete';
+      document.getElementById('delete-name').textContent = btn.dataset.name;
+      open(dd);
+    });
+  });
+
+  // Rows that are still running update themselves: reload once the server says they finished.
+  var running = document.querySelectorAll('tr[data-running]');
+  if (running.length) {
+    setInterval(function () {
+      running.forEach(function (tr) {
+        fetch('/backup/runs/' + tr.dataset.run + '/status', {headers: {'x-autosave': '1'}})
+          .then(function (r) { return r.json(); })
+          .then(function (d) { if (d.finished) { location.reload(); } })
+          .catch(function () {});
+      });
+    }, 3000);
+  }
+
+  var file = document.getElementById('upload-file'), note = document.getElementById('upload-status');
+  if (file) {
+    file.addEventListener('change', function () {
+      var f = file.files[0];
+      if (!f) { return; }
+      note.textContent = 'Đang tải lên ' + f.name + '…';
+      fetch('/backup/upload', {method: 'POST', body: f,
+        headers: {'x-file-name': encodeURIComponent(f.name), 'x-autosave': '1'}})
+        .then(function (r) { return r.json(); })
+        .then(function (d) { location.reload(); })
+        .catch(function () { note.textContent = 'Tải lên lỗi: mất kết nối tới máy chủ.'; });
+    });
+  }
+})();
+</script>
+{% endif %}

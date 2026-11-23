@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 {% block title %}Sao lưu{% endblock %}
-{% block head %}{% if busy or runs and runs[0].local_status == 'running' %}<meta http-equiv="refresh" content="5">{% endif %}{% endblock %}
+{% block head %}{% if busy %}<meta http-equiv="refresh" content="5">{% endif %}{% endblock %}
 {% block content %}
 {% set admin = user.role == 'admin' %}
 <h1>Sao lưu</h1>
@@ -88,24 +88,5 @@
   </fieldset>
 </form>
 
-<h2>Các lần sao lưu gần đây</h2>
-<div class="scroll">
-<table>
-  <thead><tr><th>Loại</th><th>Tên file</th><th>Nguồn</th><th>Lúc</th><th>Máy chủ</th><th>Google Drive</th></tr></thead>
-  <tbody>
-  {% for r in runs %}
-    <tr>
-      <td>{{ kind_labels[r.kind] }}</td>
-      <td><code>{{ r.file_name }}</code></td>
-      <td>{{ source_labels.get(r.source, r.source) }}{% if r.actor != 'system' %} · {{ r.actor }}{% endif %}</td>
-      <td>{{ r.started_at|localtime('%d/%m/%Y %H:%M:%S') }}</td>
-      <td>{{ local_labels.get(r.local_status, r.local_status) }}{% if r.local_error %}<br><span class="bad">{{ r.local_error }}</span>{% endif %}</td>
-      <td>{{ drive_labels.get(r.drive_status, r.drive_status) }}{% if r.drive_error %}<br><span class="bad">{{ r.drive_error }}</span>{% endif %}</td>
-    </tr>
-  {% else %}
-    <tr><td colspan="6" class="muted">Chưa có lần sao lưu nào.</td></tr>
-  {% endfor %}
-  </tbody>
-</table>
-</div>
+{% include "backup_list.html" %}
 {% endblock %}

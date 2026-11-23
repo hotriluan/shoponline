@@ -120,10 +120,21 @@ def _known_revisions(repo_root: Path) -> set[str]:
     return {rev.revision for rev in script.walk_revisions()}
 
 
+def known_revisions() -> set[str]:
+    """Schema revisions the running code can read (found once, then remembered)."""
+    global _KNOWN
+    if _KNOWN is None:
+        _KNOWN = _known_revisions(CODE_ROOT)
+    return _KNOWN
+
+
+_KNOWN: set[str] | None = None
+
+
 def check_version(ctx: Context, manifest: mf.Manifest) -> None:
     """A backup of a newer schema than this code knows cannot be read by this code."""
     revision = manifest.alembic_revision
-    if revision and revision not in _known_revisions(CODE_ROOT):
+    if revision and revision not in known_revisions():
         raise RestoreRefused(
             f"Bản sao lưu từ phiên bản mới hơn (revision {revision}); cập nhật mã trước"
         )
@@ -303,7 +314,11 @@ def _apply(ctx: Context, prep: Prepared, work: Path, stamp: str) -> None:
 
 
 def write_status(ctx: Context, **fields) -> None:
-    path = ctx.settings.data_dir / STATUS_FILE
+    store_status(ctx.settings, **fields)
+
+
+def store_status(settings, **fields) -> None:
+    path = settings.data_dir / STATUS_FILE
     path.parent.mkdir(parents=True, exist_ok=True)
     current = {}
     if path.is_file():
@@ -321,6 +336,20 @@ def read_status(settings) -> dict | None:
         return json.loads((settings.data_dir / STATUS_FILE).read_text(encoding="utf-8"))
     except (OSError, ValueError):
         return None
+
+
+def take_banner(settings, username: str) -> tuple[str, str] | None:
+    """(kind, message) for the first administrator to see the outcome of a finished restore,
+    once. The web restarts during a restore, so the outcome is read from the status file."""
+    status = read_status(settings)
+    if not status or status.get("state") not in ("done", "rolled_back", "failed"):
+        return None
+    if status.get("banner_shown_by"):
+        return None
+    store_status(settings, banner_shown_by=username)
+    kind = "info" if status["state"] == "done" else "error"
+    prefix = {"done": "Phục hồi xong. ", "rolled_back": "Đã lùi lại. ", "failed": "Phục hồi lỗi. "}
+    return kind, prefix[status["state"]] + (status.get("message") or "")
 
 
 class _Progress:
@@ -351,15 +380,20 @@ class _Progress:
                 db.commit()
 
 
+def other_active_users(db, actor: str) -> int:
+    """Users other than `actor` seen on the web in the last five minutes."""
+    return db.execute(
+        text(
+            "SELECT count(*) FROM ops.app_user WHERE username <> :actor "
+            "AND last_seen_at > now() - make_interval(secs => :secs)"
+        ),
+        {"actor": actor, "secs": ACTIVE_USER_WINDOW.total_seconds()},
+    ).scalar_one()
+
+
 def _other_active_users(ctx: Context, actor: str) -> int:
-    with ctx.engine.connect() as conn:
-        return conn.execute(
-            text(
-                "SELECT count(*) FROM ops.app_user WHERE username <> :actor "
-                "AND last_seen_at > now() - make_interval(secs => :secs)"
-            ),
-            {"actor": actor, "secs": ACTIVE_USER_WINDOW.total_seconds()},
-        ).scalar_one()
+    with ctx.session_factory() as db:
+        return other_active_users(db, actor)
 
 
 def _wait_web(ctx: Context) -> None:
@@ -387,6 +421,7 @@ def production(
         result=None,
         message=None,
         safety_run_id=None,
+        banner_shown_by=None,
     )
     try:
         return _production(ctx, target, actor, force, progress)
