@@ -107,7 +107,9 @@ def test_save_changes_the_user_and_logs_who_changed_what(db, app):
     admin = _login(app, "admin")
     admin.post(URL, data={**FORM, "sap_user": "NEWUSER", "action": "save"})
     config = sap_settings.load(db, NO_ENV)
-    assert config.sap_user == "NEWUSER" and config.target_verified
+    assert (
+        config.sap_user == "NEWUSER" and not config.target_verified
+    )  # a new user must be checked again
     event = db.scalars(
         select(EventLog)
         .where(EventLog.kind == "sap_settings_changed", EventLog.actor == "admin")
@@ -192,9 +194,7 @@ def test_finished_check_shows_the_session_or_the_fix_and_stops_refreshing(db, ap
     assert "Name or password is incorrect" in page and "logon_failed" in page
 
 
-def test_changed_system_blocks_report_reads_until_a_check_succeeds(
-    db, app, tmp_path, frozen_today
-):
+def test_changed_system_blocks_report_reads_until_a_check_succeeds(db, app, tmp_path, frozen_today):
     upsert_mapping(db, "SHOPEE", "Sơn thử A", "Màu 01,1 lít", "100000001", "SAP A", "t")
     file = shopee_orders_file(tmp_path / "s.xlsx", [shopee_row("A1")])
     batch = import_orders(db, read_shopee_orders(file), "SHOPEE", date(2026, 11, 11), "t").batch
