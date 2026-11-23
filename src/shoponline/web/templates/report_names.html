@@ -1,21 +1,22 @@
 {% extends "base.html" %}
+{% from "_macros.html" import page_header %}
 {% block title %}Tên báo cáo{% endblock %}
 {% block content %}
-<h1>Tên báo cáo cho file Shop Online</h1>
+{{ page_header('Tên báo cáo cho file Shop Online') }}
 <p class="muted">Mỗi mã vật tư trong ánh xạ SAP được ghi vào file lịch sử Shop Online với itemName, kích cỡ
   (cột Product Classification SKU) và variation ở đây. Mã chưa lưu hiện giá trị gợi ý từ tên sản phẩm trên sàn:
   kiểm lại, sửa nếu cần rồi bấm <b>Lưu tất cả</b>. Dòng để trống cả ba ô được bỏ qua.</p>
-<p>
+<div class="action-bar">
   <a class="button {{ 'secondary' if missing else '' }}" href="/report-names">Tất cả</a>
   <a class="button {{ '' if missing else 'secondary' }}" href="/report-names?missing=true">Chưa lưu ({{ unsaved }})</a>
-</p>
+</div>
 <form method="post" action="/report-names">
 {% if missing %}<input type="hidden" name="missing" value="true">{% endif %}
 <div class="scroll">
 <table>
   <tr><th>Mã vật tư</th><th>Tên SAP</th><th>itemName</th><th>Kích cỡ</th><th>variation</th><th>Trạng thái</th></tr>
   {% for row in rows %}
-  <tr>
+  <tr{% if not row.saved %} class="attention"{% endif %}>
     <td>{{ row.material_number }}<input type="hidden" name="material_number" value="{{ row.material_number }}"></td>
     <td>{{ row.sap_name }}</td>
     <td><input type="text" name="item_name" value="{{ row.item_name }}" size="44"{% if user.role != 'admin' %} readonly{% endif %}></td>
@@ -32,6 +33,6 @@
   {% endfor %}
 </table>
 </div>
-{% if user.role == 'admin' and rows %}<p><button>Lưu tất cả</button></p>{% endif %}
+{% if user.role == 'admin' and rows %}<p class="sticky-bottom"><button>Lưu tất cả</button></p>{% endif %}
 </form>
 {% endblock %}

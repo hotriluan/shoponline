@@ -1,8 +1,9 @@
 {% extends "base.html" %}
+{% from "_macros.html" import page_header %}
 {% block title %}Đơn {{ order.platform_order_id }}{% endblock %}
 {% block content %}
-<h1>Đơn {{ order.platform }} {{ order.platform_order_id }}</h1>
-<div class="box">
+{{ page_header('Đơn ' ~ order.platform ~ ' ' ~ order.platform_order_id, '', '/batches/' ~ order.order_batch_id, 'Lô ' ~ order.batch.processing_date.strftime('%d/%m/%Y')) }}
+<div class="card">
   <p><span class="tag s-{{ order.status }}">{{ STATUS_LABELS[order.status] }}</span>
      {% if order.status_reason %}<span class="muted">{{ order.status_reason }}</span>{% endif %}</p>
   <p>Đặt lúc {{ order.ordered_at.strftime('%d/%m/%Y %H:%M') }} ·
@@ -27,19 +28,19 @@
   {% endif %}
 </div>
 <h2>Dòng đơn</h2>
-<table>
-  <tr><th>#</th><th>Sản phẩm</th><th>Phân loại</th><th>SL</th><th>Giá gốc</th><th>Trợ giá/đv</th><th>Mã SAP</th><th>Tên SAP</th></tr>
+<div class="scroll"><table>
+  <tr><th>#</th><th>Sản phẩm</th><th>Phân loại</th><th class="num">SL</th><th class="num">Giá gốc</th><th class="num">Trợ giá/đv</th><th>Mã SAP</th><th>Tên SAP</th></tr>
   {% for i in order.items %}
   <tr><td>{{ i.line_no }}</td><td>{{ i.product_name }}</td><td>{{ i.variation_name }}</td><td class="num">{{ i.quantity }}</td>
       <td class="num">{{ i.unit_price|money }}</td><td class="num">{{ i.unit_subsidy|money }}</td>
       <td>{{ i.material_number or '—' }}</td><td>{{ i.sap_name or '' }}</td></tr>
   {% endfor %}
-</table>
+</table></div>
 <h2>Lịch sử</h2>
-<table>
+<div class="scroll"><table>
   <tr><th>Lúc</th><th>Người</th><th>Việc</th><th>Chi tiết</th></tr>
   {% for e in events %}
   <tr><td>{{ e.at|localtime('%d/%m/%Y %H:%M:%S') }}</td><td>{{ e.actor }}</td><td>{{ e.kind }}</td><td class="muted">{{ e.detail or '' }}</td></tr>
   {% endfor %}
-</table>
+</table></div>
 {% endblock %}

@@ -1,8 +1,9 @@
 {% extends "base.html" %}
+{% from "_macros.html" import page_header %}
 {% block title %}Xem trước zrsd004{% endblock %}
 {% block content %}
-<h1>Xem trước file zrsd004</h1>
-<div class="box">
+{{ page_header('Xem trước file zrsd004', '', '/sap-reports', 'Báo cáo SAP') }}
+<div class="card">
   <p>{{ row_count }} dòng DO trong file zrsd004; {{ delivered }} đơn chuyển sang "Đã có DO".</p>
   {% if preview.warnings %}
   <div class="flash error">{{ preview.warnings|length }} dòng còn thiếu thông tin. Có thể bổ sung ở trang

@@ -1,4 +1,5 @@
 from collections import Counter
+from dataclasses import dataclass
 from datetime import UTC, date, datetime
 from pathlib import Path
 
@@ -34,6 +35,47 @@ from shoponline.web.routes.accounting import begin_run
 from shoponline.web.uploads import save_generated
 
 router = APIRouter()
+
+STEP_LABELS = (
+    "Nhập file",
+    "Ánh xạ đủ",
+    "Gửi sales admin",
+    "Xác nhận SO/DO",
+    "Đối chiếu SO",
+    "Gửi kế toán",
+)
+
+
+@dataclass(frozen=True)
+class Step:
+    label: str
+    state: str  # "done", "current" or "todo"
+
+
+def batch_steps(orders: list[SalesOrder], confirmed: bool, reconciled_clean: bool) -> list[Step]:
+    """Where the batch is in the daily flow, from what is already recorded. The first step not
+    yet done is the current one; steps after it are still to do even if their own test passes."""
+    live = [o for o in orders if o.status != states.CANCELLED]
+    unmapped = any(o.status in (states.MAPPING_ERROR, states.NEED_REVIEW) for o in orders)
+    done = [
+        True,
+        not unmapped,
+        confirmed,
+        confirmed,
+        confirmed and reconciled_clean,
+        bool(live) and all(o.status == states.DELIVERED for o in live),
+    ]
+    steps: list[Step] = []
+    current_taken = False
+    for label, ok in zip(STEP_LABELS, done, strict=True):
+        if ok and not current_taken:
+            steps.append(Step(label, "done"))
+        elif not current_taken:
+            steps.append(Step(label, "current"))
+            current_taken = True
+        else:
+            steps.append(Step(label, "todo"))
+    return steps
 
 
 def _batch(db: Session, batch_id: int) -> OrderBatch:
@@ -101,6 +143,7 @@ def batch_detail(
         excluded=excluded,
         report=report,
         open_orders=open_orders,
+        steps=batch_steps(orders, batch.confirmed_at is not None, bool(report and report.clean)),
         progress=progress,
         invoiced=sum(1 for p in progress.values() if p.invoice),
         paid=sum(1 for p in progress.values() if p.paid is not None),

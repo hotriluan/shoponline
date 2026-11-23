@@ -1,12 +1,16 @@
 {% extends "base.html" %}
+{% from "_macros.html" import page_header %}
 {% block title %}Tải file sàn{% endblock %}
 {% block content %}
-<h1>Tải file "chờ giao hàng" của sàn</h1>
-<form class="box" method="post" action="/imports" enctype="multipart/form-data">
+{{ page_header('Tải file "chờ giao hàng" của sàn', 'Bước đầu của ngày: nhập file đơn từ trang quản lý sàn.') }}
+<form class="card" method="post" action="/imports" enctype="multipart/form-data">
+  <fieldset class="choice-group">
+    <legend class="muted">Sàn</legend>
+    {% for p in platforms %}
+    <label class="choice"><input type="radio" name="platform" value="{{ p }}" {{ 'checked' if loop.first }}><span>{{ p }}</span></label>
+    {% endfor %}
+  </fieldset>
   <div class="row">
-    <label>Sàn
-      <select name="platform">{% for p in platforms %}<option>{{ p }}</option>{% endfor %}</select>
-    </label>
     <label>Ngày xử lý (D)
       <input type="date" name="processing_date" value="{{ today }}" required>
     </label>
@@ -15,8 +19,11 @@
     </label>
     <button>Nhập file</button>
   </div>
-  <p class="muted">Nhập lại cùng file không đổi dữ liệu. File thiếu cột bắt buộc hoặc có dòng lỗi bị từ chối toàn bộ.
-  Đơn có nhiều sản phẩm được gom thành một đơn (một SO, một hóa đơn).
-  Lazada: tên và địa chỉ khách lấy luôn từ file (cột billingName, billingAddr).</p>
+  <details class="note">
+    <summary>Lưu ý</summary>
+    <p class="muted">Nhập lại cùng file không đổi dữ liệu. File thiếu cột bắt buộc hoặc có dòng lỗi bị từ chối toàn bộ.
+    Đơn có nhiều sản phẩm được gom thành một đơn (một SO, một hóa đơn).
+    Lazada: tên và địa chỉ khách lấy luôn từ file (cột billingName, billingAddr).</p>
+  </details>
 </form>
 {% endblock %}

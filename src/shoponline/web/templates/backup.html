@@ -1,12 +1,13 @@
 {% extends "base.html" %}
+{% from "_macros.html" import page_header %}
 {% block title %}Sao lưu{% endblock %}
 {% block head %}{% if busy %}<meta http-equiv="refresh" content="5">{% endif %}{% endblock %}
 {% block content %}
 {% set admin = user.role == 'admin' %}
-<h1>Sao lưu</h1>
+{{ page_header('Sao lưu') }}
 
-<div class="box">
-  <table>
+<div class="card">
+  <div class="scroll"><table>
     <thead><tr><th>Loại</th><th>Máy chủ: lần thành công gần nhất</th><th>Google Drive: lần thành công gần nhất</th></tr></thead>
     <tbody>
     {% for p in places %}
@@ -17,7 +18,7 @@
       </tr>
     {% endfor %}
     </tbody>
-  </table>
+  </table></div>
   <p class="muted">Lần chạy kế tiếp theo lịch:
     Database {% if next_runs.db %}{{ next_runs.db|localtime('%d/%m/%Y %H:%M') }}{% endif %};
     Toàn bộ {% if next_runs.full %}{{ next_runs.full|localtime('%d/%m/%Y %H:%M') }}{% endif %}.
@@ -26,10 +27,10 @@
 
 <h2>Sao lưu ngay</h2>
 {% if admin %}
-<form method="post" action="/backup/run" class="box">
-  <div class="row" style="align-items:stretch">
+<form method="post" action="/backup/run" class="card">
+  <div class="row stretch">
     {% for kind, title, text in cards %}
-    <div class="box" style="flex:1; min-width:240px; margin:0">
+    <div class="card grow">
       <strong>{{ title }}</strong>
       <p class="muted">{{ text }}</p>
       <button name="kind" value="{{ kind }}" {% if busy %}disabled{% endif %}>Sao lưu ngay</button>
@@ -46,14 +47,14 @@
   {% if busy %}<p class="muted"><strong>Đang có bản sao lưu chạy</strong>; các nút mở lại khi xong (trang tự tải lại mỗi 5 giây).</p>{% endif %}
 </form>
 {% else %}
-<div class="box muted">Tài khoản xem chỉ xem được trạng thái sao lưu.</div>
+<div class="card muted">Tài khoản xem chỉ xem được trạng thái sao lưu.</div>
 {% endif %}
 
 {% include "backup_drive.html" %}
 
 <h2>Lịch và số bản giữ</h2>
-<form method="post" action="/backup/settings" class="box">
-  <fieldset {% if not admin %}disabled{% endif %} style="border:0; padding:0; margin:0">
+<form method="post" action="/backup/settings" class="card">
+  <fieldset {% if not admin %}disabled {% endif %}class="bare">
     <div class="row">
       <label>Giờ sao lưu Database (hằng ngày)
         <input type="text" name="db_time" value="{{ form.db_time }}" size="6" placeholder="16:30">
@@ -67,7 +68,7 @@
         <input type="text" name="full_time" value="{{ form.full_time }}" size="6" placeholder="16:30">
       </label>
     </div>
-    <div class="row" style="margin-top:8px">
+    <div class="row mt-2">
       <label>Giữ bản Database
         <input type="text" name="keep_db" value="{{ settings.keep_db }}" size="4" inputmode="numeric">
       </label>
@@ -77,7 +78,7 @@
       <label>Giữ bản Toàn bộ tối đa (ngày)
         <input type="text" name="full_max_days" value="{{ settings.full_max_days }}" size="4" inputmode="numeric">
       </label>
-      <label style="flex-direction:row; align-items:center; gap:6px">
+      <label class="inline-field">
         <input type="checkbox" name="drive_on_schedule" value="1" {% if settings.drive_on_schedule %}checked{% endif %}>
         Bản theo lịch lên Google Drive
       </label>

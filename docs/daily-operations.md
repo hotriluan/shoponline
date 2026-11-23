@@ -2,6 +2,14 @@
 
 Dành cho admin shop online. Ở chế độ thủ công hệ thống không ghi gì vào SAP; sales admin vẫn tạo SO và DO như hiện nay.
 
+## Trang Việc hôm nay và menu
+
+Đăng nhập xong web mở trang **Việc hôm nay** (mục đầu của menu bên trái, địa chỉ `/`). Trang chỉ đọc, người xem cũng thấy. Mỗi thẻ nêu một việc kèm nút đi tới trang xử lý: đơn thiếu ánh xạ hoặc cần kiểm tra, lô chờ sales admin xác nhận, lô chờ đối chiếu SO, đợt gửi kế toán, đơn đã có DO chưa vào file Shop Online, và tình trạng robot, sao lưu. Thẻ không có việc hiện dấu ✓ "Không có việc".
+
+Menu chia bốn nhóm theo thứ tự làm việc: **Hằng ngày** (Tải file sàn, Lô đơn, Báo cáo SAP), **Kế toán** (Gửi kế toán, File Shop Online), **Dữ liệu gốc** (Ánh xạ SAP, Tên báo cáo, Khách hàng) và **Hệ thống** (Robot SAP, Kết nối SAP, Sao lưu). Mục đang mở được tô sáng; Robot SAP và Sao lưu có chấm cam khi đang có cảnh báo. Trên màn hình hẹp, bấm nút ☰ để mở menu.
+
+Trang lô có thanh bước (Nhập file, Ánh xạ đủ, Gửi sales admin, Xác nhận SO/DO, Đối chiếu SO, Gửi kế toán) cho biết lô đang ở bước nào; nút nổi bật trong khung hành động là việc kế tiếp.
+
 ## Trong ngày D
 
 1. **Tải file sàn.** Trang **Tải file sàn**: chọn sàn (Shopee, TikTok hoặc Lazada), ngày xử lý D, chọn file "chờ giao hàng" tải từ trang quản lý sàn. Tải nhiều file trong một ngày được; đơn đã có không bị nhân đôi. File TikTok có dòng không có mã đơn hợp lệ (trống, không phải toàn chữ số) bị từ chối, kèm số dòng, thay vì bỏ dòng im lặng. Trang kết quả nêu riêng: đơn đã có SO, DO hoặc đã hủy mà file ghi nội dung khác (dữ liệu đơn không bị đổi) và đơn đã thuộc lô của ngày khác (ở lại lô cũ). Đơn có nhiều sản phẩm được gom thành một đơn: cùng một số ở cột `Đơn Hàng` trong file `ĐƠN HÀNG ONLINE`, nên sales admin tạo một SO và kế toán xuất một hóa đơn cho cả đơn. Lazada gom theo cột `orderNumber` (không phải `orderItemId`, là mã của từng sản phẩm).
@@ -66,7 +74,7 @@ Mọi bảng có dòng tiêu đề đều bấm được vào tên cột để s
 ## Khi có sự cố
 
 - **Web không mở được hoặc máy chạy thật hỏng:** làm file Excel bằng tay như trước, báo người quản trị hệ thống.
-- **Thanh cảnh báo sao lưu màu cam:** trang **Sao lưu** (mục trên cùng của menu) nói rõ nơi nào hỏng hoặc bản nào quá hạn. Người xem chỉ đọc; admin bấm **Sao lưu ngay** hoặc báo người quản trị.
+- **Thanh cảnh báo sao lưu màu cam:** trang **Sao lưu** (nhóm Hệ thống trên menu bên trái) nói rõ nơi nào hỏng hoặc bản nào quá hạn. Người xem chỉ đọc; admin bấm **Sao lưu ngay** hoặc báo người quản trị.
 - **File bị từ chối:** thông báo nêu cột thiếu hoặc dòng lỗi. Sàn có thể đã đổi mẫu file; không sửa tay file sàn, báo người quản trị.
 
 ## Biên bản chạy song song (cổng G1)

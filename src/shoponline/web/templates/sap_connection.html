@@ -1,12 +1,13 @@
 {% extends "base.html" %}
+{% from "_macros.html" import page_header %}
 {% block title %}Kết nối SAP{% endblock %}
 {% block head %}{% if checking %}<meta http-equiv="refresh" content="3">{% endif %}{% endblock %}
 {% block content %}
 {% set admin = user.role == 'admin' %}
 {% set locked = checking or not admin %}
-<h1>Kết nối SAP</h1>
+{{ page_header('Kết nối SAP') }}
 
-<div class="box">
+<div class="card">
   <div class="row">
     <span>
       Robot:
@@ -28,8 +29,8 @@
   </div>
 </div>
 
-<form method="post" action="/robot/sap-connection" class="box">
-  <fieldset {% if locked %}disabled{% endif %} style="border:0; padding:0; margin:0">
+<form method="post" action="/robot/sap-connection" class="card">
+  <fieldset {% if locked %}disabled {% endif %}class="bare">
     <div class="row">
       <label>Hệ thống (SID)
         <input type="text" name="system" value="{{ form.system }}" size="5" maxlength="3" placeholder="AEP">
@@ -62,7 +63,7 @@
     </div>
     {% if not entries %}<p class="muted">Danh sách mục SAP Logon sẽ hiện ở đây khi robot chạy và báo về; hiện cần gõ tên đúng từng ký tự.</p>{% endif %}
     {% if admin %}
-    <div class="row" style="margin-top:12px">
+    <div class="row mt-3">
       <button name="action" value="save_check">Lưu và kiểm tra</button>
       <button name="action" value="save" class="secondary">Lưu</button>
       <button name="action" value="check" class="secondary" formnovalidate>Kiểm tra</button>
@@ -75,7 +76,7 @@
 </form>
 
 <h2>Kết quả kiểm tra gần nhất</h2>
-<div class="box">
+<div class="card">
   {% if check is none %}
   <span class="muted">Chưa kiểm tra lần nào.</span>
   {% else %}

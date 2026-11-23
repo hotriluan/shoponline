@@ -1,17 +1,17 @@
 {% extends "base.html" %}
+{% from "_macros.html" import page_header %}
 {% block title %}Gửi kế toán{% endblock %}
 {% block content %}
-<h1>Gửi kế toán</h1>
+{{ page_header('Gửi kế toán') }}
 <p class="muted">Mỗi lần chốt là một file <strong>SHOP ONLINE ddmmyy.xlsx</strong> chứa DO của mọi sàn và mọi ngày goods issue chưa gửi. DO đã chốt không bao giờ gửi lại.</p>
 
 {% if open_run %}
-<div class="box">
-  <strong>Đang có đợt mở #{{ open_run.id }}</strong>
+<div class="card warn">
+  <div class="card-head"><h2>Đang có đợt mở #{{ open_run.id }}</h2><a class="button" href="/accounting/runs/{{ open_run.id }}">Mở đợt</a></div>
   <span class="muted">tạo bởi {{ open_run.created_by }} lúc {{ open_run.created_at|localtime }}</span>
-  <a class="button" href="/accounting/runs/{{ open_run.id }}">Mở đợt</a>
 </div>
 {% else %}
-<div class="box">
+<div class="card">
   {% if due and due.pairs %}
   <p>{{ due.pending }} đơn đang chờ gửi kế toán; đợt mới sẽ đọc {{ due.pairs|length }} lượt (sàn × ngày goods issue).</p>
   {% else %}
@@ -29,12 +29,12 @@
 {% from "pager.html" import search, links, empty_search %}
 <h2>Các đợt gần đây</h2>
 {{ search(page, 'Tìm theo số đợt, trạng thái, người tạo…') }}
-<table data-server>
-  <tr><th>Đợt</th><th>Trạng thái</th><th>Tạo</th><th>Chốt</th><th>Số DO</th><th></th></tr>
+<div class="scroll"><table data-server>
+  <tr><th>Đợt</th><th>Trạng thái</th><th>Tạo</th><th>Chốt</th><th class="num">Số DO</th><th></th></tr>
   {% for r in recent %}
   <tr>
     <td><a href="/accounting/runs/{{ r.id }}">#{{ r.id }}</a></td>
-    <td><span class="tag">{{ {'OPEN': 'Đang mở', 'FINALIZED': 'Đã chốt', 'CANCELLED': 'Đã hủy', 'REVOKED': 'Đã gỡ chốt'}[r.status] }}</span></td>
+    <td><span class="tag {{ {'OPEN': 'warn', 'FINALIZED': 'ok', 'CANCELLED': '', 'REVOKED': 'bad'}[r.status] }}">{{ {'OPEN': 'Đang mở', 'FINALIZED': 'Đã chốt', 'CANCELLED': 'Đã hủy', 'REVOKED': 'Đã gỡ chốt'}[r.status] }}</span></td>
     <td>{{ r.created_by }} {{ r.created_at|localtime }}</td>
     <td>{% if r.finalized_at %}{{ r.finalized_by }} {{ r.finalized_at|localtime }}{% endif %}</td>
     <td class="num">{{ counts.get(r.id, '') }}</td>
@@ -43,6 +43,6 @@
   {% else %}
   <tr><td colspan="6" class="muted">{{ empty_search(page, 'Chưa có đợt nào.') }}</td></tr>
   {% endfor %}
-</table>
+</table></div>
 {{ links(page) }}
 {% endblock %}

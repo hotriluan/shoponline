@@ -1,0 +1,36 @@
+{# Shared components. Import with: {% from "_macros.html" import page_header, card, stat, status_badge, empty_state %} #}
+
+{% macro page_header(title, subtitle='', crumb_href='', crumb_label='') %}
+<div class="page-header">
+  <div>
+    {% if crumb_href %}<div class="crumbs"><a href="{{ crumb_href }}">{{ crumb_label }}</a> ›</div>{% endif %}
+    <h1>{{ title }}</h1>
+    {% if subtitle %}<p class="sub">{{ subtitle }}</p>{% endif %}
+  </div>
+  {% if caller %}<div class="page-actions">{{ caller() }}</div>{% endif %}
+</div>
+{% endmacro %}
+
+{% macro card(title='', tone='', count=none) %}
+<section class="card {{ tone }}">
+  {% if title %}<div class="card-head"><h2>{{ title }}{% if count is not none %} <span class="tag {{ tone }}">{{ count }}</span>{% endif %}</h2></div>{% endif %}
+  {{ caller() }}
+</section>
+{% endmacro %}
+
+{% macro stat(value, label) %}
+<div class="stat"><span class="n">{{ value }}</span><span class="l">{{ label }}</span></div>
+{% endmacro %}
+
+{# kind: "s" for order statuses, "j" for robot job statuses. #}
+{% macro status_badge(status, kind='s') %}
+<span class="tag {{ kind }}-{{ status }}">{{ (STATUS_LABELS if kind == 's' else JOB_LABELS).get(status, status) }}</span>
+{% endmacro %}
+
+{% macro empty_state(text) %}
+<p class="empty">{{ text }}</p>
+{% endmacro %}
+
+{% macro action_bar() %}
+<div class="action-bar">{{ caller() }}</div>
+{% endmacro %}

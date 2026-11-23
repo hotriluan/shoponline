@@ -1,8 +1,9 @@
 {% extends "base.html" %}
+{% from "_macros.html" import page_header %}
 {% block title %}Khách hàng{% endblock %}
 {% block content %}
-<h1>Tên và địa chỉ khách hàng</h1>
-<form class="box row" method="get" action="/customers">
+{{ page_header('Tên và địa chỉ khách hàng', 'Cần cho file Shop Online. Gõ xong một dòng là tự lưu.') }}
+<form class="card row" method="get" action="/customers">
   <label>Lô
     <select name="batch_id">
       <option value="">— theo sàn —</option>
@@ -16,7 +17,7 @@
 
 {% if user.role == 'admin' %}
 <h2>Thêm khách theo mã đơn</h2>
-<form class="box row" method="post" action="/customers/save">
+<form class="card row" method="post" action="/customers/save">
   <label>Sàn<select name="platform">{% for p in platforms %}<option {{ 'selected' if p == platform }}>{{ p }}</option>{% endfor %}</select></label>
   <label>Mã đơn<input type="text" name="platform_order_id" required size="20"></label>
   <label>Tên khách<input type="text" name="customer_name" size="24"></label>
@@ -30,10 +31,10 @@
 <h2>{% if batch %}Lô {{ batch.platform }} {{ batch.processing_date.strftime('%d/%m/%Y') }}{% else %}{{ platform }}{% endif %} ({{ page.total if page else rows|length }} dòng)</h2>
 {% if page %}{{ search(page, 'Tìm theo mã đơn, tên khách, địa chỉ…') }}{% endif %}
 {% if user.role == 'admin' %}<p class="muted">Gõ xong một ô rồi chuyển sang ô khác là dòng đó tự lưu; kết quả hiện ở cột cuối.</p>{% endif %}
-<table{% if page %} data-server{% endif %}>
+<div class="scroll"><table{% if page %} data-server{% endif %}>
   <tr><th>Mã đơn</th><th>Tên khách</th><th>Địa chỉ</th><th></th></tr>
   {% for c in rows %}
-  <tr{% if user.role == 'admin' %} data-autosave="/customers/save"{% endif %}>
+  <tr{% if user.role == 'admin' %} data-autosave="/customers/save"{% endif %}{% if not c.customer_name or not c.address %} class="attention"{% endif %}>
     <td>{{ c.platform_order_id }}
       <input type="hidden" name="platform" value="{{ c.platform }}">
       <input type="hidden" name="platform_order_id" value="{{ c.platform_order_id }}"></td>
@@ -44,6 +45,6 @@
   {% else %}
   <tr><td colspan="4" class="muted">{% if page %}{{ empty_search(page, 'Không có dòng nào.') }}{% else %}Không có dòng nào.{% endif %}</td></tr>
   {% endfor %}
-</table>
+</table></div>
 {% if page %}{{ links(page) }}{% endif %}
 {% endblock %}

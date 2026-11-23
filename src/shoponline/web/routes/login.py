@@ -25,7 +25,7 @@ def login(
     request.session.clear()
     request.session["user_id"] = user.id
     request.session["epoch"] = session_epoch(db)
-    return redirect("/batches")
+    return redirect("/")
 
 
 @router.post("/logout")

@@ -5,148 +5,36 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{% block title %}Shop online{% endblock %}</title>
 {% block head %}{% endblock %}
-<style>
-  :root { --ink:#1f2933; --muted:#616e7c; --line:#d9e2ec; --bg:#f5f7fa; --accent:#1f6feb; --bad:#b42318; --warn:#b54708; --ok:#067647; }
-  * { box-sizing: border-box; }
-  body { margin:0; font: 14px/1.45 system-ui, "Segoe UI", sans-serif; color:var(--ink); background:var(--bg); }
-  header { background:#fff; border-bottom:1px solid var(--line); padding:8px 16px; display:flex; gap:16px; align-items:center; flex-wrap:wrap; }
-  header nav a { margin-right:12px; color:var(--ink); text-decoration:none; font-weight:500; }
-  header nav a:hover { color:var(--accent); }
-  header .who { margin-left:auto; color:var(--muted); display:flex; gap:8px; align-items:center; }
-  main { padding:16px; max-width:1400px; margin:0 auto; }
-  h1 { font-size:20px; margin:4px 0 12px; } h2 { font-size:16px; margin:20px 0 8px; }
-  table { border-collapse:collapse; width:100%; background:#fff; }
-  th, td { border:1px solid var(--line); padding:4px 8px; text-align:left; vertical-align:top; }
-  th { background:#eef2f6; font-weight:600; }
-  td.num { text-align:right; font-variant-numeric: tabular-nums; }
-  .box { background:#fff; border:1px solid var(--line); padding:12px; margin:8px 0; border-radius:4px; }
-  .flash { padding:8px 12px; margin:8px 0; border-radius:4px; background:#e6f4ea; white-space:pre-wrap; }
-  .flash.error { background:#fdecea; color:var(--bad); }
-  .banner { background:#fff4e5; color:var(--warn); padding:6px 16px; border-bottom:1px solid #f5d9b0; }
-  .tag { display:inline-block; padding:1px 6px; border-radius:3px; font-size:12px; background:#eef2f6; }
-  .s-READY { background:#e6f4ea; color:var(--ok); } .s-MAPPING_ERROR, .s-NEED_REVIEW { background:#fdecea; color:var(--bad); }
-  .j-FAILED, .j-UNKNOWN, .j-NEED_REVIEW { background:#fdecea; color:var(--bad); } .j-DONE { background:#e6f4ea; color:var(--ok); } .j-PENDING, .j-RUNNING { background:#e8f0fe; color:var(--accent); }
-  .s-SO_LINKED, .s-DELIVERED { background:#e8f0fe; color:var(--accent); } .s-CANCELLED { background:#eee; color:var(--muted); }
-  .muted { color:var(--muted); } .bad { color:var(--bad); } .ok { color:var(--ok); }
-  form.inline { display:inline; }
-  input[type=text], input[type=date], select { padding:4px 6px; border:1px solid var(--line); border-radius:3px; font:inherit; }
-  button, .button { padding:4px 10px; border:1px solid var(--accent); background:var(--accent); color:#fff; border-radius:3px; cursor:pointer; font:inherit; text-decoration:none; display:inline-block; }
-  button.secondary, .button.secondary { background:#fff; color:var(--accent); }
-  button.danger { background:var(--bad); border-color:var(--bad); }
-  .row { display:flex; gap:12px; flex-wrap:wrap; align-items:end; }
-  .row label { display:flex; flex-direction:column; gap:2px; }
-  .scroll { overflow-x:auto; }
-  :focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
-  tr[hidden] { display:none; }
-  th.tt-sort { cursor:pointer; user-select:none; white-space:nowrap; }
-  th.tt-sort:hover { background:#e3e9f0; }
-  th.tt-sort::after { content:" ↕"; color:#9aa5b1; font-weight:400; }
-  th[aria-sort=ascending]::after { content:" ▲"; color:var(--accent); }
-  th[aria-sort=descending]::after { content:" ▼"; color:var(--accent); }
-  tr.tt-filters th { background:#f7f9fb; padding:3px 4px; font-weight:400; }
-  tr.tt-filters select { width:100%; max-width:180px; padding:2px 4px; font-size:12px; }
-  .tt-bar { display:flex; gap:8px 12px; flex-wrap:wrap; align-items:center; margin:8px 0 6px; }
-  .tt-search input { width:280px; max-width:100%; padding:5px 8px; border:1px solid var(--line); border-radius:3px; font:inherit; }
-  .tt-count { color:var(--muted); }
-  .tt-size { margin-left:auto; color:var(--muted); display:flex; gap:6px; align-items:center; }
-  .tt-sr { position:absolute; width:1px; height:1px; overflow:hidden; clip:rect(0 0 0 0); white-space:nowrap; }
-  .tt-pager { display:flex; justify-content:space-between; align-items:center; gap:8px; flex-wrap:wrap; margin:6px 0 12px; color:var(--muted); }
-  .tt-pages { display:flex; gap:4px; align-items:center; }
-  .tt-pages button, .tt-pages a.button { min-width:32px; min-height:32px; padding:2px 8px; }
-  .tt-pages button[aria-current], .tt-pages a.button[aria-current] { background:var(--accent); color:#fff; }
-  .tt-pages button:disabled { opacity:.45; cursor:default; }
-</style>
+<link rel="stylesheet" href="/static/app.css?v={{ static_version('app.css') }}">
+<script src="/static/app.js?v={{ static_version('app.js') }}" defer></script>
 </head>
 <body>
-{% if user %}
-<header>
-  <strong>Shop online</strong>
-  <nav>
-    <a href="/batches">Lô đơn</a>
-    <a href="/imports">Tải file sàn</a>
-    <a href="/sku-mappings">Ánh xạ SAP</a>
-    <a href="/report-names">Tên báo cáo</a>
-    <a href="/customers">Khách hàng</a>
-    <a href="/sap-reports">Báo cáo SAP</a>
-    <a href="/accounting">Gửi kế toán</a>
-    <a href="/sales-history">File Shop Online</a>
-    <a href="/robot">Robot SAP</a>
-    <a href="/robot/sap-connection">Kết nối SAP</a>
-    <a href="/backup">Sao lưu</a>
-  </nav>
-  <span class="who">{{ user.username }} ({{ user.role }})
-    <form class="inline" method="post" action="/logout"><button class="secondary">Đăng xuất</button></form>
-  </span>
-</header>
-{% if backup_warning %}<div class="banner">⚠ {{ backup_warning }}</div>{% endif %}
-{% if robot_warning %}<div class="banner">⚠ {{ robot_warning }} – <a href="/robot">xem hàng đợi</a></div>{% endif %}
-{% endif %}
-<main>
-  {% for m in messages %}{% if m.message %}<div class="flash {{ m.kind }}">{{ m.message }}</div>{% endif %}{% endfor %}
-  {% if error %}<div class="flash error">{{ error }}</div>{% endif %}
-  {% block content %}{% endblock %}
-</main>
-<script>
-/* Autosave: an element with data-autosave="<url>" (a table row or a form) posts all its named
-   fields to that url shortly after any of them changes, and shows the result in its
-   [data-autosave-status]. data-autosave-require lists fields that must be filled before
-   saving; data-autosave-reload reloads the page after a successful save. */
-(function () {
-  var failed = new Set();
-  document.querySelectorAll('[data-autosave]').forEach(function (box) {
-    var status = box.querySelector('[data-autosave-status]');
-    var required = (box.dataset.autosaveRequire || '').split(',').filter(Boolean);
-    var timer = null, chain = Promise.resolve();
-    function fields() {
-      return Array.prototype.filter.call(
-        box.querySelectorAll('input[name], select[name], textarea[name]'),
-        function (f) { return f.type !== 'file' && (f.type !== 'checkbox' || f.checked); });
-    }
-    function body() {
-      var params = new URLSearchParams();
-      fields().forEach(function (f) { params.append(f.name, f.value); });
-      return params.toString();
-    }
-    function show(text, kind) {
-      if (!status) return;
-      status.textContent = text;
-      status.className = kind === 'error' ? 'bad' : (kind === 'ok' ? 'ok' : 'muted');
-    }
-    var saved = body();
-    function save() {
-      timer = null;
-      var payload = body();
-      if (payload === saved && !failed.has(box)) return;
-      var missing = required.some(function (name) {
-        var f = box.querySelector('[name="' + name + '"]');
-        return f && !f.value.trim();
-      });
-      if (missing) { show('Chưa đủ thông tin, chưa lưu', 'wait'); return; }
-      show('Đang lưu…', 'wait');
-      chain = chain.then(function () {
-        return fetch(box.dataset.autosave, {
-          method: 'POST', body: payload, keepalive: true, credentials: 'same-origin',
-          headers: {'Content-Type': 'application/x-www-form-urlencoded', 'X-Autosave': '1'}
-        }).then(function (resp) {
-          return resp.json().catch(function () { return {ok: false, message: 'Lỗi máy chủ (' + resp.status + ')'}; });
-        }).then(function (data) {
-          if (data.ok) {
-            saved = payload; failed.delete(box);
-            show('✓ ' + data.message + ' ' + new Date().toLocaleTimeString('vi-VN', {hour: '2-digit', minute: '2-digit'}), 'ok');
-            if (box.dataset.autosaveReload !== undefined) location.reload();
-          } else { failed.add(box); show('✗ ' + (data.message || 'Dữ liệu không hợp lệ'), 'error'); }
-        }, function () { failed.add(box); show('✗ Mất kết nối, chưa lưu. Sửa lại ô để thử lại.', 'error'); });
-      });
-    }
-    box.addEventListener('change', function () { clearTimeout(timer); timer = setTimeout(save, 600); });
-    box.addEventListener('focusout', function () { if (timer) { clearTimeout(timer); save(); } });
-    if (box.tagName === 'FORM') box.addEventListener('submit', function (e) { e.preventDefault(); clearTimeout(timer); save(); });
-  });
-  window.addEventListener('beforeunload', function (e) {
-    if (failed.size) { e.preventDefault(); e.returnValue = ''; }
-  });
-})();
-</script>
+<div class="app{{ '' if user else ' single' }}">
+  {% if user %}
+  <div class="topbar">
+    <button type="button" class="menu-btn" data-nav-toggle aria-expanded="false" aria-controls="sidebar" aria-label="Mở menu">☰</button>
+    <strong>Shop online</strong>
+  </div>
+  <aside class="sidebar" id="sidebar">
+    <a class="brand" href="/">Shop online</a>
+    {% include "_nav.html" %}
+    <div class="sidebar-foot">
+      <div class="who"><strong>{{ user.username }}</strong> ({{ user.role }})</div>
+      <form method="post" action="/logout"><button class="secondary">Đăng xuất</button></form>
+    </div>
+  </aside>
+  <div class="scrim" data-nav-scrim></div>
+  {% endif %}
+  <div class="content">
+    {% if user and backup_warning %}<div class="banner">⚠ {{ backup_warning }}</div>{% endif %}
+    {% if user and robot_warning %}<div class="banner">⚠ {{ robot_warning }} – <a href="/robot">xem hàng đợi</a></div>{% endif %}
+    <main{% if not user %} class="narrow"{% endif %}>
+      {% for m in messages %}{% if m.message %}<div class="flash {{ m.kind }}">{{ m.message }}</div>{% endif %}{% endfor %}
+      {% if error %}<div class="flash error">{{ error }}</div>{% endif %}
+      {% block content %}{% endblock %}
+    </main>
+  </div>
+</div>
 {% include "table_tools.html" %}
 </body>
 </html>

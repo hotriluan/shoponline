@@ -1,8 +1,8 @@
 {% extends "base.html" %}
+{% from "_macros.html" import page_header %}
 {% block title %}Bản sao lưu trên Drive{% endblock %}
 {% block content %}
-<h1>Bản sao lưu trên Google Drive</h1>
-<p><a href="/backup">← Về trang Sao lưu</a></p>
+{{ page_header('Bản sao lưu trên Google Drive', '', '/backup', 'Sao lưu') }}
 {% if files_error %}<div class="flash error">{{ files_error }}</div>{% endif %}
 <div class="scroll">
 <table>

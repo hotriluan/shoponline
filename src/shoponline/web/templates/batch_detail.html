@@ -1,36 +1,53 @@
 {% extends "base.html" %}
+{% from "_macros.html" import page_header %}
 {% block title %}Lô {{ batch.platform }} {{ batch.processing_date.strftime('%d/%m/%Y') }}{% endblock %}
 {% block content %}
-<h1>Lô {{ batch.platform }} ngày {{ batch.processing_date.strftime('%d/%m/%Y') }}</h1>
-
-<div class="box row">
-  <form method="post" action="/batches/{{ batch.id }}/gi-date" class="row"
-        {% if user.role == 'admin' %}data-autosave="/batches/{{ batch.id }}/gi-date" data-autosave-require="gi_date" data-autosave-reload{% endif %}>
-    <label>Ngày goods issue <input type="date" name="gi_date" value="{{ batch.gi_date.isoformat() }}" required></label>
-    {% if user.role == 'admin' %}<span class="muted" data-autosave-status>Đổi ngày là tự lưu</span>{% endif %}
-  </form>
-  <a class="button" href="/batches/{{ batch.id }}/order-file">Tải file ĐƠN HÀNG ONLINE</a>
+{% call page_header('Lô ' ~ batch.platform ~ ' ngày ' ~ batch.processing_date.strftime('%d/%m/%Y'), '', '/batches', 'Lô đơn') %}
   <a class="button secondary" href="/customers?batch_id={{ batch.id }}">Nhập tên khách</a>
-  {% if not batch.confirmed_at and user.role == 'admin' %}
-  <form method="post" action="/batches/{{ batch.id }}/confirm" class="inline"
-        onsubmit="return confirm('Sales admin đã tạo xong SO và DO cho lô này?')">
-    <button>Sales admin đã tạo SO và DO</button>
-  </form>
-  {% elif batch.confirmed_at %}
-  <span class="muted">Đã xác nhận bởi {{ batch.confirmed_by }} lúc {{ batch.confirmed_at|localtime('%d/%m/%Y %H:%M') }}</span>
-  <a class="button secondary" href="/sap-reports?batch_id={{ batch.id }}">Tải zrsd001</a>
-  {% if user.role == 'admin' %}
-  {% if robot_enabled and robot_verified %}
-  <form method="post" action="/batches/{{ batch.id }}/read-zrsd001" class="inline"
-        onsubmit="return confirm('Robot sẽ đọc lại zrsd001 của lô này?')">
-    <button class="secondary">Đọc lại zrsd001</button>
-  </form>
-  {% elif robot_enabled %}
-  <span class="muted">Robot đang khóa: đã đổi hệ thống SAP, cần <a href="/robot/sap-connection">kiểm tra kết nối</a> thành công trước.</span>
-  {% endif %}
-  <form method="post" action="/batches/{{ batch.id }}/accounting-file" class="inline">
-    <button class="secondary">Xuất file gửi kế toán</button>
-  </form>
+{% endcall %}
+
+<ol class="steps" aria-label="Tiến độ của lô">
+  {% for s in steps %}<li class="{{ s.state if s.state == 'done' }}"{% if s.state == 'current' %} aria-current="step"{% endif %}>{{ s.label }}</li>{% endfor %}
+</ol>
+
+{% set confirmed = batch.confirmed_at is not none %}
+<div class="card">
+  <div class="row">
+    <form method="post" action="/batches/{{ batch.id }}/gi-date" class="row"
+          {% if user.role == 'admin' %}data-autosave="/batches/{{ batch.id }}/gi-date" data-autosave-require="gi_date" data-autosave-reload{% endif %}>
+      <label>Ngày goods issue <input type="date" name="gi_date" value="{{ batch.gi_date.isoformat() }}" required></label>
+      {% if user.role == 'admin' %}<span class="muted" data-autosave-status>Đổi ngày là tự lưu</span>{% endif %}
+    </form>
+  </div>
+  <div class="action-bar">
+    {% if not confirmed %}
+    <a class="button" href="/batches/{{ batch.id }}/order-file">Tải file ĐƠN HÀNG ONLINE</a>
+    {% if user.role == 'admin' %}
+    <form method="post" action="/batches/{{ batch.id }}/confirm" class="inline"
+          onsubmit="return confirm('Sales admin đã tạo xong SO và DO cho lô này?')">
+      <button class="secondary">Sales admin đã tạo SO và DO</button>
+    </form>
+    {% endif %}
+    {% else %}
+    {% if user.role == 'admin' %}
+    <form method="post" action="/batches/{{ batch.id }}/accounting-file" class="inline">
+      <button>Xuất file gửi kế toán</button>
+    </form>
+    {% endif %}
+    <a class="button secondary" href="/batches/{{ batch.id }}/order-file">Tải file ĐƠN HÀNG ONLINE</a>
+    <a class="button secondary" href="/sap-reports?batch_id={{ batch.id }}">Tải zrsd001</a>
+    {% if user.role == 'admin' and robot_enabled and robot_verified %}
+    <form method="post" action="/batches/{{ batch.id }}/read-zrsd001" class="inline"
+          onsubmit="return confirm('Robot sẽ đọc lại zrsd001 của lô này?')">
+      <button class="secondary">Đọc lại zrsd001</button>
+    </form>
+    {% endif %}
+    {% endif %}
+  </div>
+  {% if confirmed %}
+  <p class="muted">Đã xác nhận bởi {{ batch.confirmed_by }} lúc {{ batch.confirmed_at|localtime('%d/%m/%Y %H:%M') }}</p>
+  {% if user.role == 'admin' and robot_enabled and not robot_verified %}
+  <p class="muted">Robot đang khóa: đã đổi hệ thống SAP, cần <a href="/robot/sap-connection">kiểm tra kết nối</a> thành công trước.</p>
   {% endif %}
   {% endif %}
 </div>
@@ -38,13 +55,14 @@
 
 {% if report %}
 <h2>Đối chiếu SO {% if report.clean %}<span class="tag s-READY">không có lệch</span>{% endif %}</h2>
+{% if report.clean %}<div class="flash">Không có lệch giữa file sàn và SAP.</div>{% endif %}
 {% if report.missing_so %}
-<div class="box"><strong>1. Đơn sẵn sàng chưa có SO ({{ report.missing_so|length }})</strong>:
+<div class="card warn"><strong>1. Đơn sẵn sàng chưa có SO ({{ report.missing_so|length }})</strong>:
   {% for o in report.missing_so %}<a href="/orders/{{ o.id }}">{{ o.platform_order_id }}</a>{% if not loop.last %}, {% endif %}{% endfor %}</div>
 {% endif %}
 {% if report.unmatched_sos %}
-<div class="box"><strong>2. SO trong ngày có PO No không khớp đơn nào ({{ report.unmatched_sos|length }})</strong>
-  <table>
+<div class="card warn"><strong>2. SO trong ngày có PO No không khớp đơn nào ({{ report.unmatched_sos|length }})</strong>
+  <div class="scroll"><table>
     <tr><th>SO</th><th>PO No trong SAP</th><th>Giá trị gồm thuế</th><th>Nối với đơn</th></tr>
     {% for r in report.unmatched_sos %}
     <tr><td>{{ r.so_number }}</td><td>{{ r.po_no }}</td><td class="num">{{ r.net_value_incl|money }}</td>
@@ -55,40 +73,40 @@
           <button class="secondary">Nối</button>
         </form>{% endif %}</td></tr>
     {% endfor %}
-  </table></div>
+  </table></div></div>
 {% endif %}
 {% if report.duplicate_po %}
-<div class="box"><strong class="bad">3. Một mã đơn có nhiều SO</strong>
+<div class="card bad"><strong class="bad">3. Một mã đơn có nhiều SO</strong>
   <ul>{% for po, sos in report.duplicate_po %}<li>{{ po }}: {{ sos|join(', ') }}</li>{% endfor %}</ul></div>
 {% endif %}
 {% if report.cancelled_with_so %}
-<div class="box"><strong class="bad">5. Đơn đã hủy trên sàn nhưng SO còn trong SAP ({{ report.cancelled_with_so|length }})</strong>
+<div class="card bad"><strong class="bad">5. Đơn đã hủy trên sàn nhưng SO còn trong SAP ({{ report.cancelled_with_so|length }})</strong>
   <ul>{% for o, sos in report.cancelled_with_so %}<li><a href="/orders/{{ o.id }}">{{ o.platform_order_id }}</a>: SO {{ sos|join(', ') }}. Hủy hoặc đóng SO trong SAP; nếu đã có DO thì DO vẫn vào file kế toán.</li>{% endfor %}</ul></div>
 {% endif %}
 {% if report.excluded_without_so %}
-<div class="box"><strong class="bad">6. Đơn bị loại khỏi file đơn hàng và chưa có SO ({{ report.excluded_without_so|length }})</strong>
+<div class="card bad"><strong class="bad">6. Đơn bị loại khỏi file đơn hàng và chưa có SO ({{ report.excluded_without_so|length }})</strong>
   <p>Thiếu ánh xạ hoặc cần xem lại nên không có trong file đơn hàng; không sửa thì sẽ không bao giờ có SO.</p>
   <ul>{% for o in report.excluded_without_so %}<li><a href="/orders/{{ o.id }}">{{ o.platform_order_id }}</a>: {{ STATUS_LABELS[o.status] }}{% if o.status_reason %}. {{ o.status_reason }}{% endif %}</li>{% endfor %}</ul></div>
 {% endif %}
 {% if report.changed_after_so %}
-<div class="box"><strong class="bad">7. Sàn đổi nội dung đơn sau khi đã có SO, DO hoặc đã hủy ({{ report.changed_after_so|length }})</strong>
+<div class="card bad"><strong class="bad">7. Sàn đổi nội dung đơn sau khi đã có SO, DO hoặc đã hủy ({{ report.changed_after_so|length }})</strong>
   <p>Dữ liệu đơn trong hệ thống không bị đổi, nên so sánh với SO ở mục 4 không thấy lệch. Kiểm tra với sàn rồi sửa SO trong SAP nếu cần.</p>
   <ul>{% for o in report.changed_after_so %}<li><a href="/orders/{{ o.id }}">{{ o.platform_order_id }}</a></li>{% endfor %}</ul></div>
 {% endif %}
 {% if report.value_mismatch %}
-<div class="box"><strong class="bad">4. SO khác file sàn</strong>
-  <table><tr><th>Đơn</th><th>SO</th><th>Mong đợi</th><th>Trong SAP</th><th>Chi tiết</th></tr>
+<div class="card bad"><strong class="bad">4. SO khác file sàn</strong>
+  <div class="scroll"><table><tr><th>Đơn</th><th>SO</th><th>Mong đợi</th><th>Trong SAP</th><th>Chi tiết</th></tr>
   {% for m in report.value_mismatch %}
   <tr><td><a href="/orders/{{ m.order.id }}">{{ m.order.platform_order_id }}</a></td><td>{{ m.so_number }}</td>
       <td class="num">{{ m.expected|money }}</td><td class="num">{{ m.actual|money }}</td><td>{{ m.detail }}</td></tr>
-  {% endfor %}</table></div>
+  {% endfor %}</table></div></div>
 {% endif %}
 {% endif %}
 
 <h2>Đơn ({{ orders|length }})</h2>
 <p><span class="tag">Đã có hóa đơn: {{ invoiced }}</span> <span class="tag">Đã có tiền vô: {{ paid }}</span></p>
 <div class="scroll"><table>
-  <tr><th>Mã đơn</th><th>Đặt lúc</th><th>Sản phẩm</th><th>SL</th><th>Đơn giá</th><th>Trợ giá/đv</th><th>Mã SAP</th>
+  <tr><th>Mã đơn</th><th>Đặt lúc</th><th>Sản phẩm</th><th class="num">SL</th><th class="num">Đơn giá</th><th class="num">Trợ giá/đv</th><th>Mã SAP</th>
       <th>Trạng thái</th><th>SO</th><th>DO</th><th>Số hóa đơn</th><th>Tiền vô</th><th>Khách</th></tr>
   {% for o in orders %}
   {% for i in o.items %}

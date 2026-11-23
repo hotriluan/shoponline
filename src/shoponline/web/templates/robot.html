@@ -1,8 +1,10 @@
 {% extends "base.html" %}
+{% from "_macros.html" import page_header %}
 {% block title %}Robot SAP{% endblock %}
 {% block content %}
-<h1>Robot SAP</h1>
-<div class="box row">
+{{ page_header('Robot SAP') }}
+<div class="card {{ 'bad' if control.paused else '' }}">
+  <div class="row">
   {% if target %}
   <span>Hệ thống đích của việc mới: <strong>{{ target }}</strong></span>
   <a href="/robot/sap-connection">Kết nối SAP</a>
@@ -24,11 +26,12 @@
   </form>
   {% endif %}
   {% endif %}
+  </div>
 </div>
 
 {% if user.role == 'admin' and target %}
 <h2>Ra lệnh cho robot</h2>
-<div class="box">
+<div class="card">
   {% if command_refusal %}
   <span class="muted">{{ command_refusal }}</span>
   {% else %}
@@ -61,7 +64,7 @@
 {% endif %}
 
 <h2>Hàng đợi</h2>
-<p>
+<p class="action-bar">
   <a href="/robot">Tất cả</a>{% for code, label in JOB_LABELS.items() %} · <a href="/robot?status={{ code }}">{{ label }}</a>{% endfor %}
 </p>
 {% from "pager.html" import search, links, empty_search %}
@@ -89,7 +92,7 @@
     <td>
       {% if j.evidence_path %}<a href="/robot/jobs/{{ j.id }}/evidence" target="_blank">Ảnh</a>{% endif %}
       {% if user.role == 'admin' and j.kind in read_kinds and j.status in retryable %}
-      <form method="post" action="/robot/jobs/{{ j.id }}/retry" class="inline"><button class="secondary">Chạy lại</button></form>
+      <form method="post" action="/robot/jobs/{{ j.id }}/retry" class="inline"><button class="secondary sm">Chạy lại</button></form>
       {% endif %}
     </td>
   </tr>

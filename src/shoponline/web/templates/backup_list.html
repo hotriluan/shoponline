@@ -3,9 +3,9 @@
 <h2>Danh sách bản sao lưu và nhật ký ({{ page.total }})</h2>
 
 {% if waiting %}
-<div class="box">
+<div class="card">
   <strong>Yêu cầu đang chờ hoặc đang chạy</strong>
-  <ul style="margin:4px 0 0 18px">
+  <ul class="tight">
   {% for w in waiting %}
     <li>{{ w.action }}{% if w.kind %} {{ kind_labels.get(w.kind, w.kind) }}{% endif %} · {{ w.requested_by }} · {{ w.requested_at|localtime('%d/%m %H:%M:%S') }} ·
       <span class="tag j-{{ 'RUNNING' if w.status == 'running' else 'PENDING' }}">{{ 'Đang chạy' if w.status == 'running' else 'Đang chờ' }}</span>{% if w.message %} <span class="muted">{{ w.message }}</span>{% endif %}</li>
@@ -35,8 +35,8 @@
     <input type="search" name="q" value="{{ page.q }}" placeholder="Tìm theo tên file, người, nguồn…" autocomplete="off"></label>
   <button class="secondary">Lọc</button>
   <span class="tt-count">{{ page.total }} dòng</span>
-  {% if admin %}<span style="margin-left:auto">
-    <label class="button secondary" for="upload-file" style="margin:0">Tải lên bản sao lưu</label>
+  {% if admin %}<span class="push-right">
+    <label class="button secondary" for="upload-file">Tải lên bản sao lưu</label>
     <input type="file" id="upload-file" accept=".7z" hidden>
   </span>{% endif %}
 </form>
@@ -63,7 +63,7 @@
       <td><span class="tag {{ row.drive_css }}">{{ row.drive_label }}</span>{% if r.drive_error %}<br><span class="bad">{{ r.drive_error }}</span>{% endif %}
         {% if admin and row.can_retry_drive %}<form class="inline" method="post" action="/backup/runs/{{ r.id }}/retry-drive"><button class="secondary" title="Tải lại file này lên Drive, không tạo bản mới">Thử lại</button></form>{% endif %}</td>
       {% if admin %}
-      <td style="white-space:nowrap">
+      <td class="nowrap">
         {% if r.local_status != 'running' and r.drive_status != 'uploading' %}
         {% if row.can_download %}<a class="button secondary" href="/backup/runs/{{ r.id }}/download" title="Tải về file .7z (vẫn mã hóa)">Tải về</a>{% endif %}
         {% if row.can_download %}<form class="inline" method="post" action="/backup/runs/{{ r.id }}/verify"><button class="secondary" title="Kiểm tra: mã hóa, 7z test, SHA-256">Kiểm tra</button></form>{% endif %}
@@ -85,9 +85,9 @@
 {% if admin %}
 <dialog id="restore-dialog">
   <form method="post" id="restore-form">
-    <h3 style="margin-top:0">Phục hồi <code id="restore-name"></code></h3>
+    <h3 class="flush-top">Phục hồi <code id="restore-name"></code></h3>
     <div id="restore-block" class="flash error" hidden></div>
-    <fieldset style="border:0; padding:0; margin:0">
+    <fieldset class="bare">
       <label><input type="radio" name="mode" value="drill" checked> <strong>Diễn tập</strong> (mặc định): khôi phục vào database tạm và so số dòng với manifest. Không đụng hệ thống đang chạy.</label><br>
       <label><input type="radio" name="mode" value="production"> <strong>Phục hồi hệ thống thật</strong></label>
     </fieldset>
@@ -100,13 +100,13 @@
         <li>Nhật ký sự kiện (event_log) lùi về thời điểm của bản sao lưu.</li>
       </ul>
       <p id="restore-legacy" class="bad" hidden>Bản cũ không có manifest: không kiểm được phiên bản và số dòng trước khi phục hồi; nên diễn tập trước.</p>
-      <label style="display:block"><input type="checkbox" name="force" value="1"> Tôi hiểu và vẫn phục hồi (cần khi có người khác đang dùng web hoặc bản cũ không có manifest)</label>
-      <div class="row" style="margin-top:8px">
+      <label class="check-line"><input type="checkbox" name="force" value="1"> Tôi hiểu và vẫn phục hồi (cần khi có người khác đang dùng web hoặc bản cũ không có manifest)</label>
+      <div class="row mt-2">
         <label>Mật khẩu của bạn <input type="password" name="password" autocomplete="current-password"></label>
         <label>Gõ lại tên file <input type="text" name="confirm_name" size="48" autocomplete="off"></label>
       </div>
     </div>
-    <div class="row" style="margin-top:12px">
+    <div class="row mt-3">
       <button type="submit">Tiếp tục</button>
       <button type="button" class="secondary" data-close>Hủy</button>
     </div>
@@ -115,10 +115,10 @@
 
 <dialog id="delete-dialog">
   <form method="post" id="delete-form">
-    <h3 style="margin-top:0">Xóa <code id="delete-name"></code></h3>
-    <label style="display:block"><input type="radio" name="where" value="local" checked> Chỉ ở máy chủ</label>
-    <label style="display:block"><input type="radio" name="where" value="drive"> Chỉ trên Google Drive</label>
-    <label style="display:block"><input type="radio" name="where" value="both"> Cả hai</label>
+    <h3 class="flush-top">Xóa <code id="delete-name"></code></h3>
+    <label class="check-line"><input type="radio" name="where" value="local" checked> Chỉ ở máy chủ</label>
+    <label class="check-line"><input type="radio" name="where" value="drive"> Chỉ trên Google Drive</label>
+    <label class="check-line"><input type="radio" name="where" value="both"> Cả hai</label>
     <p class="muted">Không xóa được bản thành công mới nhất của mỗi loại hay bản an toàn của lần phục hồi gần nhất. Dòng nhật ký vẫn giữ.</p>
     <div class="row"><button class="danger" type="submit">Xóa</button><button type="button" class="secondary" data-close>Hủy</button></div>
   </form>

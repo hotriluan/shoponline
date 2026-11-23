@@ -1,21 +1,22 @@
 {% extends "base.html" %}
+{% from "_macros.html" import page_header %}
 {% block title %}File Shop Online{% endblock %}
 {% block content %}
-<h1>Dòng cho file Shop Online 2022-2026</h1>
+{% call page_header('Dòng cho file Shop Online 2022-2026') %}
+  <form class="row" method="get" action="/sales-history">
+    <label>Tháng đặt hàng<input type="month" name="month" value="{{ month }}" required></label>
+    <button class="secondary">Xem</button>
+  </form>
+{% endcall %}
 <p class="muted">Lấy mọi đơn "Đã có DO" chưa được xác nhận là đã dán vào file lịch sử, đặt tới hết tháng chọn
   ({{ until.strftime('%d/%m/%Y') }}), kể cả đơn của tháng trước đó mà giờ mới đủ dữ liệu. Tải file, copy từ dòng 2 trở đi, dán vào dòng trống đầu tiên của sheet1 trong file lịch sử, rồi bấm
   <b>Xác nhận đã dán</b> cho đúng file đó ở bảng dưới.</p>
 
-<form class="box row" method="get" action="/sales-history">
-  <label>Tháng đặt hàng<input type="month" name="month" value="{{ month }}" required></label>
-  <button class="secondary">Xem</button>
-</form>
-
-<div class="box">
+<div class="card">
   <p><b>{{ orders }}</b> đơn, <b>{{ lines }}</b> dòng sẵn sàng xuất{% if blocked %}; <b class="bad">{{ blocked|length }}</b> đơn bị chặn{% endif %}{% if settlement_count %}; <b>{{ settlement_count }}</b> đơn chờ tiền vô{% endif %}.</p>
   {% if lines or draft_orders %}
-  <p>{% if lines %}<a class="button" href="/sales-history/file?month={{ month }}">Tải file</a>{% endif %}
-    {% if draft_orders %}<a class="button secondary" href="/sales-history/draft?month={{ month }}">Tải file nháp</a>{% endif %}</p>
+  <div class="action-bar">{% if lines %}<a class="button" href="/sales-history/file?month={{ month }}">Tải file</a>{% endif %}
+    {% if draft_orders %}<a class="button secondary" href="/sales-history/draft?month={{ month }}">Tải file nháp</a>{% endif %}</div>
   {% if draft_orders %}
   <p class="muted">Nháp để kiểm tra, gồm cả đơn chờ hóa đơn hoặc tiền vô (cột Trạng thái). Không dán nháp vào file lịch sử; nháp không có trong bảng File đã tải.</p>
   {% endif %}
@@ -27,12 +28,14 @@
   {% endif %}
 </div>
 
-<div class="box" id="tax-invoice">
+<div class="card" id="tax-invoice">
+  <h2>Chờ hóa đơn {% if invoice_range %}<span class="tag warn">{{ waiting_invoice }}</span>{% endif %}</h2>
   {% if invoice_range %}
   <p><b>{{ waiting_invoice }}</b> đơn đã có DO nhưng chưa có Tax Invoice Doc. Hóa đơn xuất sau DO; khi SAP đã xuất hóa đơn, đọc zrsd003 với ngày hóa đơn từ
     {{ invoice_range[0].strftime('%d/%m/%Y') }} đến {{ invoice_range[1].strftime('%d/%m/%Y') }}
     (từ đầu tháng chọn, hoặc đơn chờ cũ hơn, đến hôm nay: hóa đơn của đơn cuối tháng ra trong tháng sau).</p>
   {% if user.role == 'admin' %}
+  <div class="action-bar">
   {% if robot_refusal %}
   <p class="muted">{{ robot_refusal }}</p>
   {% else %}
@@ -41,13 +44,14 @@
     <button>Robot đọc zrsd003</button></form>
   {% endif %}
   <a href="/sap-reports">Hoặc tải file zrsd003 bằng tay</a>
+  </div>
   {% endif %}
   {% else %}
   <p class="muted">Không có đơn nào của tháng {{ until.strftime('%m/%Y') }} chờ Tax Invoice Doc., không cần đọc zrsd003.</p>
   {% endif %}
 </div>
 
-<div class="box" id="settlement">
+<div class="card" id="settlement">
   <h2>Đơn chờ tiền vô ({{ settlement_count }})</h2>
   <p class="muted">Sàn quyết toán vài ngày sau khi giao; đơn tự vào lần tải sau khi đã upload file của sàn.
     Lazada không cần: cột Tiền Vô để trống.</p>
@@ -65,7 +69,7 @@
     (sheet "Chi tiết đơn hàng"). File Lazada Balance Transactions không dùng được.</p>
   {% endif %}
   {% if waiting_settlement %}
-  <table>
+  <div class="scroll"><table>
     <tr><th>Sàn</th><th>Mã đơn</th><th>Ngày đặt</th></tr>
     {% for b in waiting_settlement %}
     <tr>
@@ -74,13 +78,13 @@
       <td>{{ b.order.ordered_at.strftime('%d/%m/%Y %H:%M') }}</td>
     </tr>
     {% endfor %}
-  </table>
+  </table></div>
   {% endif %}
 </div>
 
 {% if blocked %}
 <h2 class="bad">Đơn bị chặn ({{ blocked|length }})</h2>
-<table>
+<div class="scroll"><table>
   <tr><th>Sàn</th><th>Mã đơn</th><th>Ngày đặt</th><th>Lý do</th></tr>
   {% for b in blocked %}
   <tr>
@@ -90,13 +94,13 @@
     <td>{% for text, link in b.reasons %}{% if link %}<a href="{{ link }}">{{ text }}</a>{% else %}{{ text }}{% endif %}{% if not loop.last %}<br>{% endif %}{% endfor %}</td>
   </tr>
   {% endfor %}
-</table>
+</table></div>
 {% endif %}
 
 {% from "pager.html" import search, links, empty_search %}
 <h2>File đã tải ({{ files_page.total }})</h2>
 {{ search(files_page, 'Tìm theo tên file hoặc người tải…') }}
-<table data-server>
+<div class="scroll"><table data-server>
   <tr><th>Thời gian</th><th>Người tải</th><th>File</th><th class="num">Số đơn</th><th>Trạng thái</th>{% if user.role == 'admin' %}<th></th>{% endif %}</tr>
   {% for f in files %}
   <tr>
@@ -124,6 +128,6 @@
   {% else %}
   <tr><td colspan="6" class="muted">{{ empty_search(files_page, 'Chưa tải file nào.') }}</td></tr>
   {% endfor %}
-</table>
+</table></div>
 {{ links(files_page) }}
 {% endblock %}

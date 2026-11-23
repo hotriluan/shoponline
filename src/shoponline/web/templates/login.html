@@ -1,12 +1,15 @@
 {% extends "base.html" %}
 {% block title %}Đăng nhập{% endblock %}
 {% block content %}
-<div class="box" style="max-width:360px;margin:60px auto">
+<div class="card login-card">
+  <p class="login-brand">Shop online</p>
   <h1>Đăng nhập</h1>
   <form method="post" action="/login">
-    <p><label>Tên đăng nhập<br><input type="text" name="username" autofocus required></label></p>
-    <p><label>Mật khẩu<br><input type="password" name="password" required style="padding:4px 6px;border:1px solid #d9e2ec;border-radius:3px"></label></p>
-    <button>Đăng nhập</button>
+    <label class="field-block">Tên đăng nhập
+      <input type="text" name="username" autofocus required autocomplete="username"></label>
+    <label class="field-block">Mật khẩu
+      <input type="password" name="password" required autocomplete="current-password"></label>
+    <button class="block">Đăng nhập</button>
   </form>
 </div>
 {% endblock %}

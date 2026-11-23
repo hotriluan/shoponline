@@ -1,8 +1,9 @@
 {% extends "base.html" %}
+{% from "_macros.html" import page_header %}
 {% block title %}Đang phục hồi{% endblock %}
 {% block content %}
-<h1>Đang phục hồi</h1>
-<div class="box">
+{{ page_header('Đang phục hồi') }}
+<div class="card">
   <p id="state"><strong>Đã gửi yêu cầu.</strong> Web sẽ tạm ngừng 1–3 phút rồi chạy lại; trang này tự theo dõi và sẽ chuyển bạn tới trang đăng nhập khi xong.</p>
   <p class="muted" id="step"></p>
 </div>

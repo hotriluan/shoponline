@@ -1,0 +1,41 @@
+{# Sidebar. The menu is declared once: (group, label, href, match prefix, exact-only). #}
+{% set items = [
+  ('', 'Việc hôm nay', '/', '/', true),
+  ('Hằng ngày', 'Tải file sàn', '/imports', '/imports', false),
+  ('Hằng ngày', 'Lô đơn', '/batches', '/batches', false),
+  ('Hằng ngày', 'Báo cáo SAP', '/sap-reports', '/sap-reports', false),
+  ('Kế toán', 'Gửi kế toán', '/accounting', '/accounting', false),
+  ('Kế toán', 'File Shop Online', '/sales-history', '/sales-history', false),
+  ('Dữ liệu gốc', 'Ánh xạ SAP', '/sku-mappings', '/sku-mappings', false),
+  ('Dữ liệu gốc', 'Tên báo cáo', '/report-names', '/report-names', false),
+  ('Dữ liệu gốc', 'Khách hàng', '/customers', '/customers', false),
+  ('Hệ thống', 'Robot SAP', '/robot', '/robot', false),
+  ('Hệ thống', 'Kết nối SAP', '/robot/sap-connection', '/robot/sap-connection', false),
+  ('Hệ thống', 'Sao lưu', '/backup', '/backup', false),
+] %}
+{# The open item is the one whose prefix is the longest match of the current path. #}
+{% set path = request.url.path %}
+{% set best = namespace(href='', size=-1) %}
+{% for group, label, href, prefix, exact in items %}
+  {% if (path == prefix) or (not exact and path.startswith(prefix ~ '/')) %}
+    {% if prefix|length > best.size %}{% set best.href = href %}{% set best.size = prefix|length %}{% endif %}
+  {% endif %}
+{% endfor %}
+{% set best_href = best.href %}
+{% if best_href == '' and path.startswith('/orders/') %}{% set best_href = '/batches' %}{% endif %}
+<nav aria-label="Menu chính">
+{% set groups = namespace(last=None) %}
+{% for group, label, href, prefix, exact in items %}
+  {% if group != groups.last %}
+    {% if groups.last is not none %}</div>{% endif %}
+    <div class="nav-group">
+    {% if group %}<div class="nav-title">{{ group }}</div>{% endif %}
+    {% set groups.last = group %}
+  {% endif %}
+  <a class="nav-link" href="{{ href }}"{% if href == best_href %} aria-current="page"{% endif %}>
+    <span>{{ label }}</span>
+    {% if group == 'Hệ thống' and (robot_warning or backup_warning) and ((href == '/robot' and robot_warning) or (href == '/backup' and backup_warning)) %}<span class="nav-dot" title="Có cảnh báo" role="img" aria-label="Có cảnh báo"></span>{% endif %}
+  </a>
+{% endfor %}
+</div>
+</nav>

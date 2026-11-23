@@ -1,10 +1,11 @@
 {% extends "base.html" %}
+{% from "_macros.html" import page_header %}
 {% block title %}Báo cáo SAP{% endblock %}
 {% block content %}
-<h1>Báo cáo SAP</h1>
+{{ page_header('Báo cáo SAP', 'Tải báo cáo xuất từ SAP lên khi robot không đọc được.') }}
 {% if user.role == 'admin' %}
 <h2>zrsd001 (lựa chọn "Complete") – lưu số SO và đối chiếu</h2>
-<form class="box row" method="post" action="/sap-reports/zrsd001" enctype="multipart/form-data">
+<form class="card row" method="post" action="/sap-reports/zrsd001" enctype="multipart/form-data">
   <label>Lô đang xác nhận (để kiểm tra bộ lọc)
     <select name="batch_id">
       <option value="">— không chọn —</option>
@@ -14,12 +15,12 @@
   <button>Tải lên</button>
 </form>
 <h2>zrsd004 – DO đã giao</h2>
-<form class="box row" method="post" action="/sap-reports/zrsd004" enctype="multipart/form-data">
+<form class="card row" method="post" action="/sap-reports/zrsd004" enctype="multipart/form-data">
   <label>File zrsd004 xuất từ SAP<input type="file" name="file" accept=".xlsx,.XLSX" required></label>
   <button>Tải lên và xem trước</button>
 </form>
 <h2>zrsd003 – số hóa đơn (Tax Invoice)</h2>
-<form class="box row" method="post" action="/sap-reports/zrsd003" enctype="multipart/form-data">
+<form class="card row" method="post" action="/sap-reports/zrsd003" enctype="multipart/form-data">
   <label>File zrsd003 xuất từ SAP<input type="file" name="file" accept=".xlsx,.XLSX" required></label>
   <button>Tải lên</button>
 </form>
@@ -28,7 +29,7 @@
 {% from "pager.html" import search, links, empty_search %}
 <h2>Lần tải gần đây</h2>
 {{ search(page, 'Tìm theo loại, tên file, người tải…') }}
-<table data-server>
+<div class="scroll"><table data-server>
   <tr><th>Lúc</th><th>Loại</th><th>File</th><th>Người</th><th>Mới / cập nhật / không đổi</th><th></th></tr>
   {% for r in recent %}
   <tr><td>{{ r.imported_at|localtime('%d/%m/%Y %H:%M') }}</td><td>{{ r.kind }}</td><td>{{ r.file_name }}</td><td>{{ r.imported_by }}</td>
@@ -37,6 +38,6 @@
   {% else %}
   <tr><td colspan="6" class="muted">{{ empty_search(page, 'Chưa tải lần nào.') }}</td></tr>
   {% endfor %}
-</table>
+</table></div>
 {{ links(page) }}
 {% endblock %}

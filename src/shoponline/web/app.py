@@ -11,6 +11,7 @@ from pathlib import Path
 
 from fastapi import Depends, FastAPI, Request
 from fastapi.responses import JSONResponse, RedirectResponse
+from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
@@ -34,6 +35,18 @@ TEMPLATES.env.filters["money"] = lambda v: "" if v is None else f"{int(v):,}".re
 TEMPLATES.env.filters["localtime"] = lambda v, fmt="%d/%m/%Y %H:%M": (
     "" if v is None else (v.astimezone() if v.tzinfo else v).strftime(fmt)
 )
+STATIC_DIR = Path(__file__).parent / "static"
+
+
+def static_version(name: str) -> int:
+    """File mtime, so a changed stylesheet or script is fetched again after a deploy."""
+    try:
+        return int((STATIC_DIR / name).stat().st_mtime)
+    except OSError:
+        return 0
+
+
+TEMPLATES.env.globals["static_version"] = static_version
 log = logging.getLogger(__name__)
 
 
@@ -208,6 +221,7 @@ def create_app(
         sales_history,
         sap_reports,
         sku_mapping,
+        today,
     )
 
     app = FastAPI(title="shoponline", docs_url=None, redoc_url=None, openapi_url=None)
@@ -238,11 +252,10 @@ def create_app(
         flash(request, "Tài khoản xem không được thay đổi dữ liệu.", "error")
         return redirect(request.headers.get("referer") or "/batches")
 
-    @app.get("/")
-    def home():
-        return redirect("/batches")
+    app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 
     for module in (
+        today,
         login,
         imports,
         batches,

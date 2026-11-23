@@ -1,5 +1,5 @@
 <h2>Kết nối Google Drive</h2>
-<div class="box">
+<div class="card">
   <p>
     {% if drive.status == 'connected' %}<span class="tag j-DONE">Đã kết nối: {{ drive.email }}</span>
     {% elif drive.status == 'error' %}<span class="tag j-FAILED">Lỗi: {{ drive.error }}</span>
@@ -19,7 +19,7 @@
   </details>
 
   {% if user.role == 'admin' %}
-  <form method="post" action="/backup/drive/client" style="margin-top:12px">
+  <form method="post" action="/backup/drive/client" class="mt-3">
     <strong>Bước A. OAuth Client</strong>
     <div class="row">
       <label>Client ID
@@ -36,14 +36,14 @@
   <p class="muted">Client ID: {{ drive.client_id or 'chưa nhập' }}</p>
   {% endif %}
 
-  <div style="margin-top:12px">
+  <div class="mt-3">
     <strong>Bước B. Kết nối và kiểm tra</strong>
     <p>Tài khoản: {{ drive.email or '—' }}; thư mục <code>shoponline-backup</code>{% if drive.folder_id %} (ID <code>{{ drive.folder_id }}</code>){% endif %}.</p>
 
     {% if drive.device and user.role == 'admin' %}
-    <div class="box" style="background:#f0f6ff">
+    <div class="card device-box">
       <p>Mở <a href="{{ drive.device.url }}" target="_blank" rel="noopener">{{ drive.device.url }}</a> và nhập mã:</p>
-      <p style="font-size:28px; letter-spacing:4px; font-weight:700; margin:4px 0" id="user-code">{{ drive.device.user_code }}</p>
+      <p class="device-code" id="user-code">{{ drive.device.user_code }}</p>
       <button type="button" class="secondary" onclick="navigator.clipboard && navigator.clipboard.writeText(document.getElementById('user-code').textContent)">Chép mã</button>
       <p class="muted">Mã hết hạn lúc {{ drive.device.expires_at|localtime('%H:%M:%S') }}. <span id="device-status">Đang chờ bạn xác nhận…</span></p>
     </div>

@@ -1,31 +1,39 @@
 {% extends "base.html" %}
+{% from "_macros.html" import page_header, stat %}
 {% block title %}Kết quả nhập file{% endblock %}
 {% block content %}
-<h1>Đã nhập {{ record.file_name }}</h1>
-<div class="box">
-  <p>{{ result.new }} đơn mới, {{ result.updated }} đơn cập nhật, {{ result.unchanged }} đơn không đổi.</p>
-  <p><a class="button" href="/batches/{{ result.batch.id }}">Mở lô {{ result.batch.platform }} {{ result.batch.processing_date.strftime('%d/%m/%Y') }}</a></p>
+{% call page_header('Đã nhập ' ~ record.file_name, '', '/imports', 'Tải file sàn') %}
+  <a class="button" href="/batches/{{ result.batch.id }}">Mở lô {{ result.batch.platform }} {{ result.batch.processing_date.strftime('%d/%m/%Y') }}</a>
+  {% if result.problem_orders %}<a class="button secondary" href="/sku-mappings?platform={{ result.batch.platform }}">Ánh xạ SAP</a>{% endif %}
+{% endcall %}
+<div class="card">
+  <div class="stats">
+    {{ stat(result.new, 'đơn mới') }}
+    {{ stat(result.updated, 'đơn cập nhật') }}
+    {{ stat(result.unchanged, 'đơn không đổi') }}
+  </div>
+  <p class="muted">{{ result.new }} đơn mới, {{ result.updated }} đơn cập nhật, {{ result.unchanged }} đơn không đổi.</p>
 </div>
 {% if result.changed_after_so %}
-<div class="box"><strong class="bad">{{ result.changed_after_so|length }} đơn đã có SO, DO hoặc đã hủy, nhưng file này ghi nội dung khác</strong>
+<div class="card bad"><strong class="bad">{{ result.changed_after_so|length }} đơn đã có SO, DO hoặc đã hủy, nhưng file này ghi nội dung khác</strong>
   <p>Dữ liệu của các đơn này không bị đổi. Kiểm tra với sàn rồi sửa SO trong SAP nếu cần:
   {% for o in result.changed_after_so %}<a href="/orders/{{ o.id }}">{{ o.platform_order_id }}</a>{% if not loop.last %}, {% endif %}{% endfor %}</p></div>
 {% endif %}
 {% if result.in_other_batch %}
-<div class="box"><strong class="bad">{{ result.in_other_batch|length }} đơn đã thuộc lô ngày khác</strong>
+<div class="card bad"><strong class="bad">{{ result.in_other_batch|length }} đơn đã thuộc lô ngày khác</strong>
   <p>Các đơn này ở lại lô cũ, không chuyển sang lô {{ result.batch.processing_date.strftime('%d/%m/%Y') }}:
   {% for o, b in result.in_other_batch %}<a href="/orders/{{ o.id }}">{{ o.platform_order_id }}</a> (lô <a href="/batches/{{ b.id }}">{{ b.processing_date.strftime('%d/%m/%Y') }}</a>){% if not loop.last %}, {% endif %}{% endfor %}</p></div>
 {% endif %}
 {% if result.problem_orders %}
 <h2 class="bad">{{ result.problem_orders|length }} đơn cần xử lý</h2>
-<table>
+<div class="scroll"><table>
   <tr><th>Mã đơn</th><th>Trạng thái</th><th>Lý do</th></tr>
   {% for o in result.problem_orders %}
   <tr><td><a href="/orders/{{ o.id }}">{{ o.platform_order_id }}</a></td>
       <td><span class="tag s-{{ o.status }}">{{ STATUS_LABELS[o.status] }}</span></td>
       <td>{{ o.status_reason or '' }}</td></tr>
   {% endfor %}
-</table>
+</table></div>
 <p><a href="/sku-mappings?platform={{ result.batch.platform }}">Bổ sung ánh xạ</a></p>
 {% endif %}
 {% endblock %}

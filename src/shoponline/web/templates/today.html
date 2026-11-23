@@ -1,0 +1,79 @@
+{% extends "base.html" %}
+{% from "_macros.html" import page_header, stat %}
+{% block title %}Việc hôm nay{% endblock %}
+{% block content %}
+{% call page_header('Việc hôm nay', 'Hôm nay là ' ~ today.strftime('%d/%m/%Y') ~ '. Chào ' ~ user.username ~ '.') %}
+  {% if user.role == 'admin' %}<a class="button" href="/imports">Tải file sàn</a>{% endif %}
+{% endcall %}
+
+<div class="card-grid">
+  <section class="card {{ 'warn' if figures.needs_attention else 'ok' }}">
+    <div class="card-head"><h2>Đơn cần xử lý</h2></div>
+    {% if figures.needs_attention %}
+      {{ stat(figures.needs_attention, 'đơn thiếu ánh xạ hoặc cần kiểm tra') }}
+      <div class="card-foot"><a class="button" href="/sku-mappings">Ánh xạ SAP</a> <a class="button secondary" href="/batches">Mở lô đơn</a></div>
+    {% else %}
+      <p class="ok">✓ Không có việc</p>
+    {% endif %}
+  </section>
+
+  <section class="card {{ 'warn' if figures.awaiting_sales_admin else 'ok' }}">
+    <div class="card-head"><h2>Lô chờ sales admin</h2></div>
+    {% if figures.awaiting_sales_admin %}
+      {{ stat(figures.awaiting_sales_admin, 'lô chưa xác nhận đã tạo SO và DO') }}
+      <div class="card-foot"><a class="button" href="/batches">Mở lô đơn</a></div>
+    {% else %}
+      <p class="ok">✓ Không có việc</p>
+    {% endif %}
+  </section>
+
+  <section class="card {{ 'warn' if figures.awaiting_reconcile else 'ok' }}">
+    <div class="card-head"><h2>Lô chờ đối chiếu SO</h2></div>
+    {% if figures.awaiting_reconcile %}
+      {{ stat(figures.awaiting_reconcile, 'lô đã xác nhận nhưng còn đơn sẵn sàng chưa có SO') }}
+      <div class="card-foot"><a class="button" href="/batches">Mở lô đơn</a></div>
+    {% else %}
+      <p class="ok">✓ Không có việc</p>
+    {% endif %}
+  </section>
+
+  <section class="card {{ 'warn' if run or figures.due_pairs else 'ok' }}">
+    <div class="card-head"><h2>Gửi kế toán</h2></div>
+    {% if run %}
+      <p>Đợt mở #{{ run.id }}: {{ figures.run_reading }} lượt đang đọc, {{ figures.run_errors }} lượt lỗi.</p>
+      <div class="card-foot"><a class="button" href="/accounting/runs/{{ run.id }}">Mở đợt</a></div>
+    {% elif figures.due_pairs %}
+      {{ stat(figures.due_pairs, 'lượt (sàn × ngày) cần đọc để gửi kế toán') }}
+      <div class="card-foot">
+        {% if user.role == 'admin' %}
+        <form method="post" action="/accounting/runs" class="inline"><button>Xuất file gửi kế toán</button></form>
+        {% endif %}
+        <a class="button secondary" href="/accounting">Xem trang Gửi kế toán</a>
+      </div>
+    {% else %}
+      <p class="ok">✓ Không có việc</p>
+    {% endif %}
+  </section>
+
+  <section class="card {{ 'warn' if figures.shop_online_pending else 'ok' }}">
+    <div class="card-head"><h2>File Shop Online</h2></div>
+    {% if figures.shop_online_pending %}
+      {{ stat(figures.shop_online_pending, 'đơn đã có DO chưa vào file Shop Online') }}
+      <div class="card-foot"><a class="button" href="/sales-history">Mở File Shop Online</a></div>
+    {% else %}
+      <p class="ok">✓ Không có việc</p>
+    {% endif %}
+  </section>
+
+  <section class="card {{ 'warn' if robot_warning or backup_warning else 'ok' }}">
+    <div class="card-head"><h2>Hệ thống</h2></div>
+    <p>
+      {% if not robot_enabled %}Robot SAP chưa được bật.
+      {% elif robot_warning %}<span class="warn-text">{{ robot_warning }}</span>
+      {% else %}<span class="ok">✓ Robot SAP đang chạy.</span>{% endif %}
+    </p>
+    <p>{% if backup_warning %}<span class="warn-text">{{ backup_warning }}</span>{% else %}<span class="ok">✓ Sao lưu bình thường.</span>{% endif %}</p>
+    <div class="card-foot"><a class="button secondary" href="/robot">Robot SAP</a> <a class="button secondary" href="/backup">Sao lưu</a></div>
+  </section>
+</div>
+{% endblock %}
