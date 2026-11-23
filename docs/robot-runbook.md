@@ -122,7 +122,7 @@ Giới hạn: lớp chặn bảo vệ trước lỗi trong mã robot và trướ
 
 ## Chưa có, chờ bản ghi recorder
 
-Màn hình lọc, lưới kết quả và bước xuất Excel của ba báo cáo đã có trong `config/sap_screens.yaml` và `config/sap_popups.yaml` (bản ghi ngày 2026-11-12, `zrsd003` ngày 2026-11-19). Chưa chạy trên SAP thật. Các mục dưới đây điền sau lần chạy thử:
+Màn hình lọc, lưới kết quả và bước xuất Excel của ba báo cáo đã có trong `config/sap_screens.yaml` và `config/sap_popups.yaml` (bản ghi ngày 2026-11-12, `zrsd003` ngày 2026-11-19). Đã chạy trên SAP production (zrsd001 các lô đầu, zrsd003 đọc theo tháng việc #61 ngày 2026-11-23); chưa có biên bản chạy thử ghi lại từng màn hình. Các mục dưới đây điền theo biên bản đó:
 - Câu trên thanh trạng thái khi `ZRSD003` không có hóa đơn nào: chưa được chụp, robot đang nhận "No data to display". Nếu `ZRSD003` báo câu khác, việc chuyển **Lỗi** (không nhập sai); chụp ảnh của việc và thêm câu đó vào `NO_DATA_TEXT` trong [report_screen.py](../src/shoponline/saprobot/transactions/report_screen.py).
 - Thời gian một lần đọc báo cáo.
 - Biên bản chạy thử trên Production ngoài giờ cao điểm (50 việc đọc liên tiếp, ngắt mạng, sai hệ thống đích) và 5 ngày so robot với file tải lên.

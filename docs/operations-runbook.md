@@ -113,7 +113,7 @@ Làm như bước 8 của [daily-operations.md](daily-operations.md) cho `zrsd00
 ### File đã chốt không còn trên máy chủ
 
 - **Dấu hiệu:** tải file đã chốt báo "không còn trên máy chủ".
-- **Việc cần làm:** retention không xóa file đã chốt, nên đây là file bị xóa hoặc mất ngoài hệ thống. Khôi phục từ bản sao lưu (thư mục `exports`). Không có bản sao thì hỏi kế toán dùng bản đã gửi; không chốt lại.
+- **Việc cần làm:** retention không xóa file đã chốt, nên đây là file bị xóa hoặc mất ngoài hệ thống. Khôi phục từ bản sao lưu: bản `db` có thư mục `accounting-files` (phục hồi một bản `db` tự chép lại file còn thiếu, không ghi đè file đang có), bản `full` có `data/exports`. Không có bản sao thì hỏi kế toán dùng bản đã gửi; không chốt lại.
 
 ## Máy và dữ liệu
 
@@ -142,6 +142,23 @@ Web, robot, sao lưu và runner chạy ẩn, không có cửa sổ để xem. Mu
 ### Xem danh sách xóa theo thời hạn
 
 Tác vụ `shoponline-retention` chạy hằng đêm và ghi vào `<SHOPONLINE_DATA_DIR>\logs\retention.log`. Nó luôn xóa file hết dùng theo quy tắc giữ file, và in danh sách file đã xóa. Phần dữ liệu khách trong tuần đầu chỉ liệt kê. Người quản trị đọc danh sách: chỉ được có đơn đã vào sổ gửi kế toán (hoặc đã hủy). Sau một tuần không thấy sai, đăng ký lại tác vụ với `-RetentionApply` (xem [security-and-data-retention.md](security-and-data-retention.md#thời-hạn-lưu)).
+
+## Rủi ro đã chấp nhận
+
+Những điểm đã rà soát (2026-11-23) và quyết định không sửa mã. Gặp thì xử lý như bên dưới.
+
+| Điểm | Khi nào gặp | Cách xử lý |
+|---|---|---|
+| Tải file đơn hàng hai lần trước khi đọc zrsd001: file thứ hai liệt kê lại đơn READY đã nhập SO | Bấm tải hai lần | Báo cáo lô bắt SO trùng sau khi đọc zrsd001 (mục "Một mã đơn có nhiều SO"); sales admin hủy SO thừa |
+| Không có UNIQUE trên `so_number` và `do_number`; hai người nối SO cùng lúc có thể gây lỗi 500 | Hai admin thao tác cùng một lô | Dữ liệu không hỏng; tải lại trang và làm lại |
+| Hai upload cùng nội dung gần như cùng lúc dùng chung một file `<sha256>.xlsx`; một bên có thể báo không còn file | Hai người tải cùng một file trong cùng một giây | Tải lên lại |
+| Tiền Vô và Tax Invoice Doc. đổi sau khi file lịch sử đã tải (sàn ghi "Tiền ra" muộn, hóa đơn bị thay) | File chưa dán thì tải lại; file đã dán thì sửa tay trong file lịch sử | Không tự cập nhật vào file đã dán |
+| Cột `Transaction` của file lịch sử gộp hai đơn cùng tên khách và cùng phút đặt | Hiếm; theo công thức có sẵn của file kế toán | Kiểm tay nếu kế toán thắc mắc |
+| Đơn chờ lâu (thiếu hóa đơn, tiền vô) không có cảnh báo tuổi; "giờ" luôn là giờ Việt Nam; Tiền Vô trong bản nháp là số tạm | Cuối tháng khi chốt file lịch sử | Xem hộp "Đơn bị chặn" và "Đơn chờ tiền vô" trước khi chốt tháng |
+| Đơn không bao giờ có hóa đơn kéo khoảng đọc zrsd003 lùi mãi và nằm ở "Đơn bị chặn" | DO bị hủy bên SAP hoặc lỗi | Kiểm DO trong SAP; xử lý tay |
+| Lệnh tay zrsd004 đang chờ bị đóng khi đợt kế toán bị hủy hoặc gỡ | Hủy đợt khi còn việc chờ | Đúng chủ ý; dấu vết ở nhật ký sự kiện, xếp lại việc nếu cần |
+| Đơn tách nhiều DO trên một SO: chỉ DO đầu được lưu và kiểm hóa đơn (chưa quyết định xử lý) | SO giao thành nhiều DO | Chưa kiểm trên production; làm plan riêng khi có dữ liệu |
+| DO của đơn đã hủy chỉ được cảnh báo, không bị chặn cứng | Đơn hủy mà SO còn trong SAP | Báo cáo lô nêu đơn; hủy SO trong SAP trước khi giao |
 
 ## Kế hoạch khi máy hỏng
 
