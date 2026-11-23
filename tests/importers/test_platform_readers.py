@@ -176,3 +176,30 @@ def test_lazada_bad_date_rejects_whole_file(tmp_path):
     with pytest.raises(FileRejected) as err:
         read_lazada_orders(path)
     assert "createTime" in str(err.value)
+
+
+def test_tiktok_rejects_rows_with_a_blank_or_non_numeric_order_id_and_names_the_line(tmp_path):
+    path = tiktok_orders_file(
+        tmp_path / "t.xlsx",
+        [
+            tiktok_row("587000000000000001"),
+            tiktok_row(""),
+            tiktok_row("58700000000000000X"),
+            tiktok_row("5.87E+17"),
+        ],
+    )
+
+    with pytest.raises(FileRejected) as caught:
+        read_tiktok_orders(path)
+
+    assert caught.value.details == [
+        "Dòng 4: mã đơn trống hoặc không phải số: ''",
+        "Dòng 5: mã đơn trống hoặc không phải số: '58700000000000000X'",
+        "Dòng 6: mã đơn trống hoặc không phải số: '5.87E+17'",
+    ]
+
+
+def test_tiktok_skips_only_the_description_row_and_blank_rows(tmp_path):
+    path = tiktok_orders_file(tmp_path / "t.xlsx", [tiktok_row("587000000000000001")])
+
+    assert [o.platform_order_id for o in read_tiktok_orders(path)] == ["587000000000000001"]

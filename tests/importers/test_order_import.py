@@ -229,3 +229,42 @@ def test_multi_product_order_becomes_one_order_in_order_file(db, tmp_path):
         (None, None),
         ("2", "530000000000004"),
     ]
+
+
+def _import(db, tmp_path, name, rows, day=D):
+    path = shopee_orders_file(tmp_path / name, rows)
+    return import_orders(db, read_shopee_orders(path), "SHOPEE", day, "test")
+
+
+def test_a_platform_change_to_an_order_that_has_an_so_is_reported_not_applied(db, tmp_path):
+    _map(db)
+    _import(db, tmp_path, "1.xlsx", [shopee_row("A1", quantity=1), shopee_row("A2")])
+    order = _order(db, "A1")
+    order.so_number = "5000000001"
+    states.transition(db, order, states.SO_LINKED, "test", None)
+    db.flush()
+
+    result = _import(db, tmp_path, "2.xlsx", [shopee_row("A1", quantity=3), shopee_row("A2")])
+
+    assert [o.platform_order_id for o in result.changed_after_so] == ["A1"]
+    assert result.unchanged == 2  # the data of an order with an SO is never overwritten
+    assert _order(db, "A1").items[0].quantity == 1
+    event = db.scalars(select(EventLog).where(EventLog.kind == "order_changed_after_so")).one()
+    assert event.platform_order_id == "A1"
+    again = _import(db, tmp_path, "3.xlsx", [shopee_row("A1", quantity=1), shopee_row("A2")])
+    assert again.changed_after_so == []
+
+
+def test_an_order_already_in_another_batch_is_counted_with_that_batch(db, tmp_path):
+    _map(db)
+    _import(db, tmp_path, "1.xlsx", [shopee_row("A1")], day=D)
+
+    result = _import(
+        db, tmp_path, "2.xlsx", [shopee_row("A1"), shopee_row("A2")], day=date(2026, 11, 12)
+    )
+
+    assert result.new == 1
+    assert [(o.platform_order_id, b.processing_date) for o, b in result.in_other_batch] == [
+        ("A1", D)
+    ]
+    assert _order(db, "A1").order_batch_id != result.batch.id

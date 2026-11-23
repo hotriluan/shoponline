@@ -10,6 +10,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from shoponline.db.models import (
+    EventLog,
     ImportBatch,
     OrderBatch,
     PlatformSetting,
@@ -206,11 +207,20 @@ class BatchReport:
     unmatched_sos: list[SapSoRef] = field(default_factory=list)
     duplicate_po: list[tuple[str, list[str]]] = field(default_factory=list)
     value_mismatch: list[ValueMismatch] = field(default_factory=list)
+    # MAPPING_ERROR and NEED_REVIEW orders: left out of the order file, and without an SO.
+    excluded_without_so: list[SalesOrder] = field(default_factory=list)
+    # Orders a later platform file described differently after they had an SO, DO or were cancelled.
+    changed_after_so: list[SalesOrder] = field(default_factory=list)
 
     @property
     def clean(self) -> bool:
         return not (
-            self.missing_so or self.unmatched_sos or self.duplicate_po or self.value_mismatch
+            self.missing_so
+            or self.unmatched_sos
+            or self.duplicate_po
+            or self.value_mismatch
+            or self.excluded_without_so
+            or self.changed_after_so
         )
 
 
@@ -264,6 +274,28 @@ def batch_report(session: Session, batch: OrderBatch) -> BatchReport:
     for ref in refs:
         by_po[ref.po_no].append(ref.so_number)
     report.duplicate_po = sorted((po, sorted(sos)) for po, sos in by_po.items() if len(sos) > 1)
+    # 6. never in the order file, so no SO will come unless someone fixes the order
+    report.excluded_without_so = sorted(
+        (
+            o
+            for o in orders
+            if o.status in (states.MAPPING_ERROR, states.NEED_REVIEW) and not o.so_number
+        ),
+        key=lambda o: o.ordered_at,
+    )
+    # 7. the platform changed the order after its SO, DO or cancellation
+    changed = set(
+        session.scalars(
+            select(EventLog.platform_order_id).where(
+                EventLog.kind == "order_changed_after_so",
+                EventLog.platform == batch.platform,
+                EventLog.platform_order_id.in_(order_ids),
+            )
+        )
+    )
+    report.changed_after_so = sorted(
+        (o for o in orders if o.platform_order_id in changed), key=lambda o: o.ordered_at
+    )
     # 4. value or material/quantity differs from the platform file
     for order in orders:
         if not order.so_number or order.status == states.CANCELLED:

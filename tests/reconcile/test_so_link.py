@@ -150,3 +150,27 @@ def test_delivered_from_zrsd004(db, tmp_path, batch):
     order = _order(db, "A1")
     assert (order.status, order.do_number) == (states.DELIVERED, "1900000001")
     assert db.get(SapSoRef, "210000001").po_no == "A1"
+
+
+def test_batch_report_lists_orders_that_cannot_reach_the_order_file_and_have_no_so(db, batch):
+    held = _order(db, "A2")
+    states.transition(db, held, states.MAPPING_ERROR, "t", "Thiếu ánh xạ")
+    review = _order(db, "A4")
+    states.transition(db, review, states.NEED_REVIEW, "t", "Xem lại")
+    db.flush()
+
+    report = batch_report(db, batch)
+
+    assert [o.platform_order_id for o in report.excluded_without_so] == ["A2", "A4"]
+    assert not report.clean
+
+
+def test_batch_report_lists_orders_the_platform_changed_after_the_so(db, batch):
+    states.log_event(db, "t", "order_changed_after_so", platform="SHOPEE", platform_order_id="A1")
+    states.log_event(db, "t", "order_changed_after_so", platform="SHOPEE", platform_order_id="A1")
+    db.flush()
+
+    report = batch_report(db, batch)
+
+    assert [o.platform_order_id for o in report.changed_after_so] == ["A1"]
+    assert not report.clean

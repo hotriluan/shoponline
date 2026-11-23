@@ -436,3 +436,14 @@ def test_autosave_refused_for_viewer_and_expired_login(app, db, tmp_path):
     resp = viewer.post("/customers/save", data=form, headers=AUTOSAVE)
     assert resp.status_code == 403 and resp.json()["ok"] is False
     assert 'data-autosave="/customers/save"' not in viewer.get("/customers?platform=SHOPEE").text
+
+
+def test_import_result_names_orders_that_already_belong_to_another_batch(app, db, tmp_path):
+    client = _client(app, "admin", "admin-password")
+    shopee = shopee_orders_file(tmp_path / "s.xlsx", [shopee_row("2611110AAAAAAA")])
+    _upload(client, "/imports", shopee, platform="SHOPEE", processing_date="2026-11-11")
+
+    resp = _upload(client, "/imports", shopee, platform="SHOPEE", processing_date="2026-11-12")
+
+    assert "1 đơn đã thuộc lô ngày khác" in resp.text
+    assert "2611110AAAAAAA" in resp.text and "11/11/2026" in resp.text

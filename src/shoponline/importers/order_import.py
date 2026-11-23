@@ -35,6 +35,10 @@ class ImportResult:
     updated: int = 0
     unchanged: int = 0
     problem_orders: list[SalesOrder] = field(default_factory=list)
+    # Orders kept as they are (SO, DO or cancelled) although this file says something different.
+    changed_after_so: list[SalesOrder] = field(default_factory=list)
+    # Orders already in a batch of another processing date: they stay there.
+    in_other_batch: list[tuple[SalesOrder, OrderBatch]] = field(default_factory=list)
     batch: OrderBatch | None = None
 
 
@@ -177,6 +181,11 @@ def import_orders(
             result.new += 1
         elif order.status not in states.OPEN_STATUSES:
             result.unchanged += 1  # SO already linked, delivered or cancelled: keep as is
+            if (
+                _item_signature(order.items) != _item_signature(parsed.items)
+                or order.ordered_at != parsed.ordered_at
+            ):
+                _report_change_after_so(session, order, actor, import_batch, result)
         elif (
             _item_signature(order.items) == _item_signature(parsed.items)
             and order.ordered_at == parsed.ordered_at
@@ -201,6 +210,8 @@ def import_orders(
 
         if order.status in (states.MAPPING_ERROR, states.NEED_REVIEW):
             result.problem_orders.append(order)
+        if order.order_batch_id != batch.id:
+            result.in_other_batch.append((order, session.get(OrderBatch, order.order_batch_id)))
         _ensure_customer(session, platform, parsed)
 
     if import_batch is not None:
@@ -217,10 +228,35 @@ def import_orders(
             "new": result.new,
             "updated": result.updated,
             "unchanged": result.unchanged,
+            "changed_after_so": len(result.changed_after_so),
+            "in_other_batch": len(result.in_other_batch),
         },
     )
     session.flush()
     return result
+
+
+def _report_change_after_so(
+    session: Session,
+    order: SalesOrder,
+    actor: str,
+    import_batch: ImportBatch | None,
+    result: ImportResult,
+) -> None:
+    """The platform now says something else about an order that already has an SO, a DO or was
+    cancelled. The order is not changed; an event is written and the batch report lists it."""
+    result.changed_after_so.append(order)
+    states.log_event(
+        session,
+        actor,
+        "order_changed_after_so",
+        platform=order.platform,
+        platform_order_id=order.platform_order_id,
+        detail={
+            "status": order.status,
+            "import_batch_id": import_batch.id if import_batch else None,
+        },
+    )
 
 
 def _ensure_customer(session: Session, platform: str, parsed: ParsedOrder) -> None:

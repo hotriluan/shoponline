@@ -61,6 +61,16 @@
 <div class="box"><strong class="bad">3. Một mã đơn có nhiều SO</strong>
   <ul>{% for po, sos in report.duplicate_po %}<li>{{ po }}: {{ sos|join(', ') }}</li>{% endfor %}</ul></div>
 {% endif %}
+{% if report.excluded_without_so %}
+<div class="box"><strong class="bad">6. Đơn bị loại khỏi file đơn hàng và chưa có SO ({{ report.excluded_without_so|length }})</strong>
+  <p>Thiếu ánh xạ hoặc cần xem lại nên không có trong file đơn hàng; không sửa thì sẽ không bao giờ có SO.</p>
+  <ul>{% for o in report.excluded_without_so %}<li><a href="/orders/{{ o.id }}">{{ o.platform_order_id }}</a>: {{ STATUS_LABELS[o.status] }}{% if o.status_reason %}. {{ o.status_reason }}{% endif %}</li>{% endfor %}</ul></div>
+{% endif %}
+{% if report.changed_after_so %}
+<div class="box"><strong class="bad">7. Sàn đổi nội dung đơn sau khi đã có SO, DO hoặc đã hủy ({{ report.changed_after_so|length }})</strong>
+  <p>Dữ liệu đơn trong hệ thống không bị đổi, nên so sánh với SO ở mục 4 không thấy lệch. Kiểm tra với sàn rồi sửa SO trong SAP nếu cần.</p>
+  <ul>{% for o in report.changed_after_so %}<li><a href="/orders/{{ o.id }}">{{ o.platform_order_id }}</a></li>{% endfor %}</ul></div>
+{% endif %}
 {% if report.value_mismatch %}
 <div class="box"><strong class="bad">4. SO khác file sàn</strong>
   <table><tr><th>Đơn</th><th>SO</th><th>Mong đợi</th><th>Trong SAP</th><th>Chi tiết</th></tr>

@@ -46,7 +46,11 @@ def cell_text(value: object) -> str:
     if isinstance(value, date):
         return value.isoformat()
     if isinstance(value, float):
-        return str(int(value)) if value.is_integer() else repr(value)
+        # Past 2**53 a float has already lost digits (an 18-digit id typed as a number): keep the
+        # exponent form so the reader sees it is not an id, instead of a wrong whole number.
+        if value.is_integer() and abs(value) < 2**53:
+            return str(int(value))
+        return repr(value)
     return str(value).strip()
 
 

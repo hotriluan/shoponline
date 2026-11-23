@@ -4,7 +4,7 @@ Dành cho admin shop online. Ở chế độ thủ công hệ thống không ghi
 
 ## Trong ngày D
 
-1. **Tải file sàn.** Trang **Tải file sàn**: chọn sàn (Shopee, TikTok hoặc Lazada), ngày xử lý D, chọn file "chờ giao hàng" tải từ trang quản lý sàn. Tải nhiều file trong một ngày được; đơn đã có không bị nhân đôi. Đơn có nhiều sản phẩm được gom thành một đơn: cùng một số ở cột `Đơn Hàng` trong file `ĐƠN HÀNG ONLINE`, nên sales admin tạo một SO và kế toán xuất một hóa đơn cho cả đơn. Lazada gom theo cột `orderNumber` (không phải `orderItemId`, là mã của từng sản phẩm).
+1. **Tải file sàn.** Trang **Tải file sàn**: chọn sàn (Shopee, TikTok hoặc Lazada), ngày xử lý D, chọn file "chờ giao hàng" tải từ trang quản lý sàn. Tải nhiều file trong một ngày được; đơn đã có không bị nhân đôi. File TikTok có dòng không có mã đơn hợp lệ (trống, không phải toàn chữ số) bị từ chối, kèm số dòng, thay vì bỏ dòng im lặng. Trang kết quả nêu riêng: đơn đã có SO, DO hoặc đã hủy mà file ghi nội dung khác (dữ liệu đơn không bị đổi) và đơn đã thuộc lô của ngày khác (ở lại lô cũ). Đơn có nhiều sản phẩm được gom thành một đơn: cùng một số ở cột `Đơn Hàng` trong file `ĐƠN HÀNG ONLINE`, nên sales admin tạo một SO và kế toán xuất một hóa đơn cho cả đơn. Lazada gom theo cột `orderNumber` (không phải `orderItemId`, là mã của từng sản phẩm).
 2. **Xử lý đơn lỗi.** Nếu kết quả báo đơn **Thiếu ánh xạ**, vào **Ánh xạ SAP**, điền mã SAP và tên SAP cho các sản phẩm còn thiếu. Dòng nào đủ hai ô thì tự lưu khi chuyển sang ô khác; nút **Lưu tất cả** lưu lại mọi dòng đã điền (dòng để trống được bỏ qua). Nhiều dòng thì bấm **tải danh sách này ra Excel**, điền cột Mã SAP và Tên SAP, rồi nhập lại ở mục **Nhập từ Excel**. Đơn tự chuyển sang **Sẵn sàng**. Đơn **Cần kiểm tra** (ví dụ trợ giá TikTok không chia đều cho số lượng): mở đơn, kiểm tra tay, bấm **Đã kiểm tra, cho đi tiếp**.
 3. **Kiểm tra ngày goods issue.** Màn hình lô đề xuất ngày làm việc kế tiếp (cuối tháng thì giữ ngày D). Gặp ngày lễ thì đổi ngày; ngày tự lưu và trang tải lại.
 4. **Tải file `ĐƠN HÀNG ONLINE`** trên màn hình lô và gửi sales admin. File chỉ gồm đơn **Sẵn sàng**; đơn không giảm giá đứng trước, đơn có giảm giá đứng sau, cột `Sale` ghi trợ giá cho một sản phẩm. Sales admin phải tạo SO không giảm giá trước.
@@ -20,6 +20,8 @@ Dành cho admin shop online. Ở chế độ thủ công hệ thống không ghi
    - **SO có PO No không khớp đơn nào**: thường do gõ sai mã đơn vào `PO No`. Chọn đúng đơn ở cột **Nối với đơn** rồi bấm **Nối**.
    - **Một mã đơn có nhiều SO**: báo sales admin hủy SO thừa trong SAP.
    - **SO khác file sàn**: giá trị hoặc mã vật tư, số lượng khác file sàn; kiểm tra SO trong SAP.
+   - **Đơn bị loại khỏi file đơn hàng và chưa có SO**: thiếu ánh xạ hoặc cần xem lại; không sửa thì không bao giờ có SO.
+   - **Sàn đổi nội dung đơn sau khi đã có SO, DO hoặc đã hủy**: hệ thống giữ dữ liệu cũ nên mục "SO khác file sàn" không thấy lệch; kiểm tra với sàn.
 
 ## Ngày goods issue
 
