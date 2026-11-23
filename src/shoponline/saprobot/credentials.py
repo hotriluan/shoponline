@@ -10,20 +10,11 @@ from __future__ import annotations
 import os
 from collections.abc import Mapping
 
+from shoponline import secrets_store
+from shoponline.secrets_store import CredentialStoreUnavailable  # noqa: F401 - re-exported
+
 TARGET_PREFIX = "shoponline-sap:"
 FALLBACK_VARIABLE = "SHOPONLINE_SAP_PASSWORD"
-
-
-class CredentialStoreUnavailable(RuntimeError):
-    """pywin32 is missing, so the Windows Credential Manager cannot be used."""
-
-
-def _win32cred():
-    try:
-        import win32cred
-    except ImportError as exc:
-        raise CredentialStoreUnavailable("Thiếu pywin32: chạy 'uv sync --extra robot'") from exc
-    return win32cred
 
 
 def target_name(user: str) -> str:
@@ -31,18 +22,7 @@ def target_name(user: str) -> str:
 
 
 def _stored(user: str) -> str | None:
-    try:
-        cred = _win32cred()
-    except CredentialStoreUnavailable:
-        return None
-    try:
-        record = cred.CredRead(target_name(user), cred.CRED_TYPE_GENERIC, 0)
-    except Exception:  # not found, or the store refused: treated as "no password stored"
-        return None
-    blob = record.get("CredentialBlob")
-    if isinstance(blob, bytes | bytearray):
-        blob = bytes(blob).decode("utf-16-le")
-    return blob or None
+    return secrets_store.read(target_name(user))
 
 
 def read_password(user: str, env: Mapping[str, str] | None = None) -> str | None:
@@ -56,15 +36,6 @@ def read_password(user: str, env: Mapping[str, str] | None = None) -> str | None
 
 
 def store_password(user: str, password: str) -> None:
-    cred = _win32cred()
-    cred.CredWrite(
-        {
-            "Type": cred.CRED_TYPE_GENERIC,
-            "TargetName": target_name(user),
-            "UserName": user.strip().upper(),
-            "CredentialBlob": password,
-            "Persist": cred.CRED_PERSIST_LOCAL_MACHINE,
-            "Comment": "shoponline SAP robot",
-        },
-        0,
+    secrets_store.write(
+        target_name(user), password, user.strip().upper(), "shoponline SAP robot"
     )

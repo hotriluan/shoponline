@@ -94,8 +94,67 @@ def _backup_context(args: argparse.Namespace, settings: Settings):
     )
 
 
-def _drive_place(_settings: Settings):
-    return None
+def _drive_place(settings: Settings):
+    from shoponline.backup.drive import DriveClient
+    from shoponline.db.session import session_factory
+
+    return DriveClient(session_factory(settings.database_url))
+
+
+def _cmd_drive(args: argparse.Namespace) -> int:
+    from shoponline.backup import drive as drive_module
+    from shoponline.secrets_store import CredentialStoreUnavailable
+
+    settings = load_settings()
+    client = _drive_place(settings)
+    actor = getpass.getuser()
+    try:
+        return _drive_action(args, client, actor, drive_module)
+    except CredentialStoreUnavailable as exc:
+        print(f"Credential Manager không dùng được: {exc}", file=sys.stderr)
+        return 1
+    except drive_module.DriveError as exc:
+        print(f"Lỗi: {exc}", file=sys.stderr)
+        return 1
+
+
+def _drive_action(args, client, actor: str, drive_module) -> int:
+    import time
+
+    if args.action == "set-client":
+        secret = getpass.getpass("Client Secret (để trống giữ giá trị đã lưu): ")
+        client.set_client(args.client_id, secret, actor)
+        print("Đã lưu Client ID và Secret (Secret nằm trong Windows Credential Manager).")
+    elif args.action == "status":
+        state = client.state()
+        if args.check:
+            try:
+                client.check()
+            except drive_module.DriveError as exc:
+                print(f"Kiểm tra lỗi: {exc}", file=sys.stderr)
+            state = client.state()
+        secret_text = "đã lưu" if state["has_secret"] else "chưa có"
+        print(f"Trạng thái: {state['status']}")
+        print(f"Client ID: {state['client_id'] or '-'} (Secret: {secret_text})")
+        print(f"Tài khoản: {state['email'] or '-'}; thư mục: {state['folder_id'] or '-'}")
+        if state["error"]:
+            print(f"Lỗi gần nhất: {state['error']}")
+    elif args.action == "connect":
+        device = client.start_device_flow(actor)
+        print(f"Mở {device['url']} và nhập mã: {device['user_code']}")
+        wait = device["interval"]
+        while True:
+            time.sleep(wait)
+            result = client.poll_device_flow()
+            wait = result["interval"]
+            if result["status"] in ("pending", "slow_down"):
+                continue
+            print(result["message"])
+            return 0 if result["status"] == "connected" else 1
+    elif args.action == "disconnect":
+        client.disconnect(actor)
+        print("Đã ngắt kết nối Google Drive (file trên Drive vẫn còn).")
+    return 0
 
 
 def _cmd_backup(args: argparse.Namespace) -> int:
@@ -391,6 +450,16 @@ def main(argv: list[str] | None = None) -> int:
         action.add_argument("--pg-bin", default=None, help="Thư mục PostgreSQL bin")
         action.add_argument("--seven-zip", default=None, help="Đường dẫn 7z.exe")
     backup.set_defaults(func=_cmd_backup)
+
+    drive = sub.add_parser("drive", help="Kết nối Google Drive để lưu bản sao lưu")
+    drive_actions = drive.add_subparsers(dest="action", required=True)
+    set_client = drive_actions.add_parser("set-client", help="Lưu OAuth Client ID và Secret")
+    set_client.add_argument("--client-id", required=True)
+    drive_actions.add_parser("connect", help="Kết nối bằng mã thiết bị (in mã và link)")
+    drive_status = drive_actions.add_parser("status", help="Xem trạng thái kết nối")
+    drive_status.add_argument("--check", action="store_true", help="Gọi Google để kiểm tra")
+    drive_actions.add_parser("disconnect", help="Thu hồi quyền và xóa token ở máy này")
+    drive.set_defaults(func=_cmd_drive)
 
     args = parser.parse_args(argv)
     try:

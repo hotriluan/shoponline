@@ -41,7 +41,7 @@ EXIT_OK, EXIT_NONE, EXIT_PARTIAL, EXIT_LOCKED = 0, 1, 2, 3
 SYSTEM = "system"
 # A failed scheduled run is tried again after this long, not on every 15-minute tick.
 RETRY_AFTER = timedelta(hours=1)
-QUEUE_ACTIONS = ("backup",)
+QUEUE_ACTIONS = ("backup", "retry_drive")
 
 
 class DrivePlace(Protocol):
@@ -406,7 +406,32 @@ def _handle_backup(ctx: Context, req_id: int):
     return status, outcome.message, {"run_id": outcome.run_id}, outcome.exit_code
 
 
-HANDLERS: dict[str, Callable] = {"backup": _handle_backup}
+def _handle_retry_drive(ctx: Context, req_id: int):
+    """Upload again a backup that is on this machine; no new backup is made."""
+    with ctx.session_factory() as db:
+        req = db.get(BackupRequest, req_id)
+        run = db.get(BackupRun, req.target_run_id) if req.target_run_id else None
+        if run is None:
+            return "failed", "Không có bản sao lưu này", None, EXIT_NONE
+        name, run_id = run.file_name, run.id
+    path = next((f / name for f in ctx.settings.backup_dirs if (f / name).is_file()), None)
+    if path is None:
+        return "failed", "File không còn ở máy chủ nên không tải lên lại được", None, EXIT_NONE
+    status, file_id, error = _upload(ctx, run_id, path, name, True)
+    with ctx.session_factory() as db:
+        run = db.get(BackupRun, run_id)
+        run.drive_requested, run.drive_status = True, status
+        run.drive_file_id, run.drive_error = file_id, error
+        db.commit()
+        rules = keep_rules(db)
+    if status == "ok":
+        rotate_drive(ctx, rules)
+        return "done", "Đã tải lên Google Drive", {"run_id": run_id}, EXIT_OK
+    message = error or "Google Drive chưa kết nối"
+    return "failed", message, {"run_id": run_id}, EXIT_NONE
+
+
+HANDLERS: dict[str, Callable] = {"backup": _handle_backup, "retry_drive": _handle_retry_drive}
 
 
 def last_scheduled_success(db: Session, now: datetime) -> dict[str, datetime | None]:

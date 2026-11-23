@@ -532,3 +532,29 @@ class BackupRequest(Base):
     message: Mapped[str | None] = mapped_column(Text)
     result: Mapped[dict | None] = mapped_column(JSONB)
     safety_run_id: Mapped[int | None] = mapped_column(ForeignKey("ops.backup_run.id"))
+
+
+class DriveConnection(Base):
+    """Single row (id=1): non-secret state of the Google Drive connection.
+
+    status: disconnected | connected | error. device_code and the fields next to it exist only
+    while a device flow waits for the person to approve on google.com/device.
+    """
+
+    __tablename__ = "drive_connection"
+    __table_args__ = {"schema": "ops"}
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    client_id: Mapped[str | None] = mapped_column(String(200))
+    folder_id: Mapped[str | None] = mapped_column(String(200))
+    account_email: Mapped[str | None] = mapped_column(String(200))
+    status: Mapped[str] = mapped_column(String(20), default="disconnected")
+    last_error: Mapped[str | None] = mapped_column(Text)
+    checked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    device_code: Mapped[str | None] = mapped_column(String(500))
+    user_code: Mapped[str | None] = mapped_column(String(50))
+    verification_url: Mapped[str | None] = mapped_column(String(200))
+    device_expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    poll_interval: Mapped[int | None] = mapped_column(Integer)
+    changed_by: Mapped[str | None] = mapped_column(String(50))
+    changed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))

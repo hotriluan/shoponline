@@ -2,6 +2,7 @@
 
 import pytest
 
+from shoponline import secrets_store
 from shoponline.saprobot import credentials
 
 FALLBACK = {"SHOPONLINE_SAP_PASSWORD": "from-env"}
@@ -26,7 +27,7 @@ class FakeWin32Cred:
 @pytest.fixture
 def store(monkeypatch):
     fake = FakeWin32Cred()
-    monkeypatch.setattr(credentials, "_win32cred", lambda: fake)
+    monkeypatch.setattr(secrets_store, "_win32cred", lambda: fake)
     return fake
 
 
@@ -58,9 +59,9 @@ def test_bytes_blob_is_decoded_from_utf16(store):
 
 def test_without_pywin32_only_the_environment_is_used(monkeypatch):
     def missing():
-        raise credentials.CredentialStoreUnavailable("no pywin32")
+        raise secrets_store.CredentialStoreUnavailable("no pywin32")
 
-    monkeypatch.setattr(credentials, "_win32cred", missing)
+    monkeypatch.setattr(secrets_store, "_win32cred", missing)
     assert credentials.read_password("AL17016", FALLBACK) == "from-env"
     with pytest.raises(credentials.CredentialStoreUnavailable):
         credentials.store_password("AL17016", "x")
