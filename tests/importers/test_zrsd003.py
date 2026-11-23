@@ -93,6 +93,43 @@ def test_ingest_writes_nothing_when_the_file_is_rejected(db, tmp_path):
     assert db.scalar(select(func.count()).select_from(SapTaxInvoice)) == 0
 
 
+def test_a_delivery_listed_twice_keeps_the_newest_invoice_whatever_the_row_order(db, tmp_path):
+    newer = zrsd003_row(
+        "1910061168", "7914", billing_date=date(2026, 11, 14), billing_doc="1930000009"
+    )
+    older = zrsd003_row(
+        "1910061168", "7000", billing_date=date(2026, 11, 13), billing_doc="1930000001"
+    )
+    for name, rows in (("a", [newer, older]), ("b", [older, newer])):
+        db.query(SapTaxInvoice).delete()
+        path = zrsd003_file(tmp_path / f"{name}.xlsx", rows)
+        result = ingest_zrsd003(db, _record(path), "t")
+        assert (result.kept, result.new) == (1, 1)
+        db.expire_all()
+        assert db.get(SapTaxInvoice, "1910061168").tax_invoice_doc == "7914"
+
+
+def test_an_older_file_read_later_does_not_replace_a_newer_invoice(db, tmp_path):
+    current = zrsd003_file(
+        tmp_path / "now.xlsx",
+        [zrsd003_row("1910061168", "7914", billing_date=date(2026, 11, 14))],
+    )
+    ingest_zrsd003(db, _record(current), "t")
+    stale = zrsd003_file(
+        tmp_path / "old.xlsx",
+        [
+            zrsd003_row("1910061168", "7000", billing_date=date(2026, 11, 13)),
+            zrsd003_row("1910061169", "7001", billing_date=date(2026, 11, 13)),
+        ],
+    )
+    record = _record(stale)
+    result = ingest_zrsd003(db, record, "t")
+    assert (result.new, result.updated) == (1, 0)
+    db.expire_all()
+    assert db.get(SapTaxInvoice, "1910061168").tax_invoice_doc == "7914"
+    assert db.get(SapTaxInvoice, "1910061169").tax_invoice_doc == "7001"
+
+
 def test_a_broken_row_of_a_customer_outside_the_platforms_does_not_reject_the_file(db, tmp_path):
     path = zrsd003_file(
         tmp_path / "mixed.xlsx",

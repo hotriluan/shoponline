@@ -14,6 +14,7 @@ from shoponline.db.models import (
     EventLog,
     GeneratedFile,
     SapJob,
+    SapSoRef,
 )
 from shoponline.domain import states
 from shoponline.importers.excel_table import FileRejected
@@ -343,6 +344,37 @@ def test_a_delivery_of_no_web_order_is_reported_as_unknown(db, tmp_path):
     rec = runs.reconcile(db, run, TODAY)
 
     assert rec.unknown == [("1900000777", "299999999")]
+
+
+def test_a_delivery_of_a_cancelled_order_is_flagged_but_still_listed(db, tmp_path):
+    run, _ = _ready(db, tmp_path)
+    batch = make_batch(db, processing=date(2026, 11, 10))
+    make_order(db, batch, "C1", so="299999998", status=states.CANCELLED)
+    make_order(db, batch, "C2", status=states.CANCELLED)  # cancelled, SO only known by its PO No
+    db.add(
+        SapSoRef(
+            so_number="299999997",
+            po_no="C2",
+            sold_to=SHOPEE,
+            doc_date=date(2026, 11, 10),
+            net_value_incl=0,
+        )
+    )
+    record = make_source(
+        db,
+        tmp_path / "c.xlsx",
+        [delivery_row("1900000888", "299999998"), delivery_row("1900000889", "299999997")],
+        imported_by="luan",
+    )
+    runs.attach_upload(db, run, record, "admin")
+
+    before = runs.reconcile(db, run, TODAY)
+    assert before.cancelled == [
+        ("1900000888", "299999998", "C1"),
+        ("1900000889", "299999997", "C2"),
+    ]
+    assert {"1900000888", "1900000889"} <= before.deliveries  # a real delivery is not hidden
+    assert runs.reconcile(db, run, TODAY).fingerprint == before.fingerprint
 
 
 def test_finalize_records_the_deliveries_and_closes_the_run(db, tmp_path, settings):

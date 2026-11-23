@@ -61,6 +61,10 @@
 <div class="box"><strong class="bad">3. Một mã đơn có nhiều SO</strong>
   <ul>{% for po, sos in report.duplicate_po %}<li>{{ po }}: {{ sos|join(', ') }}</li>{% endfor %}</ul></div>
 {% endif %}
+{% if report.cancelled_with_so %}
+<div class="box"><strong class="bad">5. Đơn đã hủy trên sàn nhưng SO còn trong SAP ({{ report.cancelled_with_so|length }})</strong>
+  <ul>{% for o, sos in report.cancelled_with_so %}<li><a href="/orders/{{ o.id }}">{{ o.platform_order_id }}</a>: SO {{ sos|join(', ') }}. Hủy hoặc đóng SO trong SAP; nếu đã có DO thì DO vẫn vào file kế toán.</li>{% endfor %}</ul></div>
+{% endif %}
 {% if report.excluded_without_so %}
 <div class="box"><strong class="bad">6. Đơn bị loại khỏi file đơn hàng và chưa có SO ({{ report.excluded_without_so|length }})</strong>
   <p>Thiếu ánh xạ hoặc cần xem lại nên không có trong file đơn hàng; không sửa thì sẽ không bao giờ có SO.</p>

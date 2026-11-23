@@ -43,6 +43,7 @@ from shoponline.exports.accounting_workbook import (
 )
 from shoponline.importers.excel_table import FileRejected
 from shoponline.importers.sap_reports import read_zrsd004
+from shoponline.reconcile.so_link import cancelled_order_for_sos
 from shoponline.sapjobs import queue
 from shoponline.sapjobs.queue import SapTarget
 from shoponline.sapjobs.report_requests import request_zrsd004, zrsd004_key
@@ -464,6 +465,8 @@ class Reconciliation:
     pending: int
     missing: list[MissingOrder]
     unknown: list[tuple[str, str]]  # (delivery, SO) of deliveries no web order belongs to
+    # (delivery, SO, order id) of deliveries whose order was cancelled on the platform
+    cancelled: list[tuple[str, str, str]]
     warnings: list[str]
     old_warnings: list[str]
     fingerprint: str
@@ -565,12 +568,20 @@ def reconcile(session: Session, run: AccountingRun, today: date | None = None) -
         for delivery, so in (merged.delivery_so.items() if merged else [])
         if so not in known
     )
+    delivery_so = merged.delivery_so if merged else {}
+    cancelled_sos = cancelled_order_for_sos(session, set(delivery_so.values()))
+    cancelled = sorted(
+        (delivery, so, cancelled_sos[so])
+        for delivery, so in delivery_so.items()
+        if so in cancelled_sos
+    )
     due = due_pairs(session, today)
     payload = {
         "sources": sorted(b.id for b in batches),
         "deliveries": sorted(merged.deliveries) if merged else [],
         "incomplete": sorted(f"{s.name}:{s.state}" for s in statuses if s.state in INCOMPLETE),
         "missing": sorted(f"{m.platform}:{m.order_id}:{m.so_number}" for m in missing),
+        "cancelled": [f"{d}:{so}" for d, so, _ in cancelled],
     }
     fingerprint = hashlib.sha256(json.dumps(payload, sort_keys=True).encode()).hexdigest()[:16]
     return Reconciliation(
@@ -580,6 +591,7 @@ def reconcile(session: Session, run: AccountingRun, today: date | None = None) -
         pending=len(pending),
         missing=missing,
         unknown=unknown,
+        cancelled=cancelled,
         warnings=merged.warnings if merged else [],
         old_warnings=due.warnings,
         fingerprint=fingerprint,

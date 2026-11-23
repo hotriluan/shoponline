@@ -207,6 +207,8 @@ class BatchReport:
     unmatched_sos: list[SapSoRef] = field(default_factory=list)
     duplicate_po: list[tuple[str, list[str]]] = field(default_factory=list)
     value_mismatch: list[ValueMismatch] = field(default_factory=list)
+    # Cancelled orders of the batch that still have a sales order in SAP: (order, SO numbers).
+    cancelled_with_so: list[tuple[SalesOrder, list[str]]] = field(default_factory=list)
     # MAPPING_ERROR and NEED_REVIEW orders: left out of the order file, and without an SO.
     excluded_without_so: list[SalesOrder] = field(default_factory=list)
     # Orders a later platform file described differently after they had an SO, DO or were cancelled.
@@ -219,6 +221,7 @@ class BatchReport:
             or self.unmatched_sos
             or self.duplicate_po
             or self.value_mismatch
+            or self.cancelled_with_so
             or self.excluded_without_so
             or self.changed_after_so
         )
@@ -274,6 +277,18 @@ def batch_report(session: Session, batch: OrderBatch) -> BatchReport:
     for ref in refs:
         by_po[ref.po_no].append(ref.so_number)
     report.duplicate_po = sorted((po, sorted(sos)) for po, sos in by_po.items() if len(sos) > 1)
+    # 5. cancelled on the platform but still alive in SAP: a delivery for it would be real
+    sos_by_po: dict[str, set[str]] = defaultdict(set)
+    for ref in refs:
+        sos_by_po[ref.po_no].add(ref.so_number)
+    for order in sorted(orders, key=lambda o: o.ordered_at):
+        if order.status != states.CANCELLED:
+            continue
+        sos = set(sos_by_po.get(order.platform_order_id, ()))
+        if order.so_number:
+            sos.add(order.so_number)
+        if sos:
+            report.cancelled_with_so.append((order, sorted(sos)))
     # 6. never in the order file, so no SO will come unless someone fixes the order
     report.excluded_without_so = sorted(
         (
@@ -327,6 +342,30 @@ def batch_report(session: Session, batch: OrderBatch) -> BatchReport:
                 )
             )
     return report
+
+
+def cancelled_order_for_sos(session: Session, so_numbers: set[str]) -> dict[str, str]:
+    """SO number -> platform order id, for the SOs that belong to a cancelled order, whether the
+    order was linked to the SO or only carries it as the PO No."""
+    if not so_numbers:
+        return {}
+    customers = platform_by_customer(session)
+    found: dict[str, str] = {}
+    refs = session.scalars(select(SapSoRef).where(SapSoRef.so_number.in_(so_numbers))).all()
+    by_key = {(customers.get(r.sold_to), r.po_no): r.so_number for r in refs}
+    cancelled = session.scalars(
+        select(SalesOrder).where(
+            SalesOrder.status == states.CANCELLED,
+            (SalesOrder.so_number.in_(so_numbers))
+            | SalesOrder.platform_order_id.in_({r.po_no for r in refs}),
+        )
+    )
+    for order in cancelled:
+        so = order.so_number if order.so_number in so_numbers else None
+        so = so or by_key.get((order.platform, order.platform_order_id))
+        if so:
+            found[so] = order.platform_order_id
+    return found
 
 
 # ---------------------------------------------------------------- zrsd004 deliveries

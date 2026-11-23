@@ -7,6 +7,7 @@ gives exactly the result of the same file uploaded by the admin.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import date
 from pathlib import Path
 
 from sqlalchemy import func, select
@@ -27,6 +28,7 @@ from shoponline.exports.accounting_workbook import (
 )
 from shoponline.importers.sap_reports import (
     DeliveryRow,
+    TaxInvoiceRow,
     read_zrsd001,
     read_zrsd003,
     read_zrsd004,
@@ -65,6 +67,10 @@ def ingest_zrsd004(session: Session, record: ImportBatch, actor: str) -> Deliver
     return DeliveryImport(rows=rows, delivered=delivered, preview=preview)
 
 
+def _invoice_order(row: TaxInvoiceRow) -> tuple[date, str, str]:
+    return (row.billing_date, row.billing_doc, row.tax_invoice_doc)
+
+
 @dataclass
 class TaxInvoiceImport:
     kept: int
@@ -78,13 +84,25 @@ def ingest_zrsd003(session: Session, record: ImportBatch, actor: str) -> TaxInvo
     (business customers, with names and tax codes) are dropped, never stored."""
     customers = set(session.scalars(select(PlatformSetting.sap_customer)))
     rows = read_zrsd003(Path(record.stored_path), customers)
-    kept = {row.delivery: row for row in rows if row.bill_to in customers}
+    # One invoice per DO. When a file lists a DO twice, the newest invoice wins whatever the row
+    # order, so a cancelled or superseded invoice listed after it cannot take its place.
+    kept: dict[str, TaxInvoiceRow] = {}
+    for row in rows:
+        if row.bill_to not in customers:
+            continue
+        current = kept.get(row.delivery)
+        if current is None or _invoice_order(row) > _invoice_order(current):
+            kept[row.delivery] = row
     session.add(record)
     session.flush()
-    existing: set[str] = set()
+    existing: dict[str, date] = {}
     if kept:
-        existing = set(
-            session.scalars(select(SapTaxInvoice.delivery).where(SapTaxInvoice.delivery.in_(kept)))
+        existing = dict(
+            session.execute(
+                select(SapTaxInvoice.delivery, SapTaxInvoice.billing_date).where(
+                    SapTaxInvoice.delivery.in_(kept)
+                )
+            ).all()
         )
         stmt = insert(SapTaxInvoice)
         # A list of rows runs as executemany, which SQLAlchemy splits into multi-row INSERTs of
@@ -100,6 +118,8 @@ def ingest_zrsd003(session: Session, record: ImportBatch, actor: str) -> TaxInvo
                     "import_batch_id": stmt.excluded.import_batch_id,
                     "updated_at": func.now(),
                 },
+                # An older file read later never replaces a newer invoice.
+                where=SapTaxInvoice.billing_date <= stmt.excluded.billing_date,
             ),
             [
                 {
@@ -113,8 +133,11 @@ def ingest_zrsd003(session: Session, record: ImportBatch, actor: str) -> TaxInvo
                 for row in kept.values()
             ],
         )
+    replaced = sum(
+        1 for d, row in kept.items() if d in existing and existing[d] <= row.billing_date
+    )
     record.new_count = len(kept) - len(existing)
-    record.updated_count = len(existing)
+    record.updated_count = replaced
     return TaxInvoiceImport(
         kept=len(kept),
         skipped_other_customers=len(rows) - len(kept),

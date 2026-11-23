@@ -95,6 +95,12 @@
   <p>{% for delivery, so in rec.unknown %}{{ delivery }} (SO {{ so }}){% if not loop.last %}, {% endif %}{% endfor %}</p>
   {% endif %}
 
+  {% if rec.cancelled %}
+  <div class="flash error"><strong>DO của đơn đã hủy trên sàn ({{ rec.cancelled|length }})</strong>:
+    SAP đã giao hàng cho đơn này nên DO vẫn nằm trong file. Kiểm tra với sales admin trước khi chốt.
+    <ul>{% for delivery, so, order_id in rec.cancelled %}<li>{{ delivery }} (SO {{ so }}, đơn {{ order_id }})</li>{% endfor %}</ul></div>
+  {% endif %}
+
   {% if rec.dropped %}
   <h2>Dòng không vào file</h2>
   <ul>{% for reason, n in rec.dropped.items() %}<li>{{ n }} dòng: {{ reason }}</li>{% endfor %}</ul>

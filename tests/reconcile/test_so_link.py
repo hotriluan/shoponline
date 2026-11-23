@@ -152,6 +152,28 @@ def test_delivered_from_zrsd004(db, tmp_path, batch):
     assert db.get(SapSoRef, "210000001").po_no == "A1"
 
 
+def test_a_cancelled_order_whose_so_is_still_in_sap_is_reported_and_never_linked(
+    db, tmp_path, batch
+):
+    order = _order(db, "A4")
+    states.transition(db, order, states.CANCELLED, "t", "Khách hủy")
+    _load(db, tmp_path, [zrsd001_row("210000010", "A4", "100000001", 1, 100000)])
+
+    assert order.so_number is None and order.status == states.CANCELLED
+    report = batch_report(db, batch)
+
+    assert [(o.platform_order_id, sos) for o, sos in report.cancelled_with_so] == [
+        ("A4", ["210000010"])
+    ]
+    assert not report.clean
+
+
+def test_a_cancelled_order_without_an_so_in_sap_is_not_reported(db, batch):
+    states.transition(db, _order(db, "A4"), states.CANCELLED, "t", "Khách hủy")
+
+    assert batch_report(db, batch).cancelled_with_so == []
+
+
 def test_batch_report_lists_orders_that_cannot_reach_the_order_file_and_have_no_so(db, batch):
     held = _order(db, "A2")
     states.transition(db, held, states.MAPPING_ERROR, "t", "Thiếu ánh xạ")
