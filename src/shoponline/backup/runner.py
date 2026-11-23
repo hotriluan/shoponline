@@ -41,7 +41,8 @@ EXIT_OK, EXIT_NONE, EXIT_PARTIAL, EXIT_LOCKED = 0, 1, 2, 3
 SYSTEM = "system"
 # A failed scheduled run is tried again after this long, not on every 15-minute tick.
 RETRY_AFTER = timedelta(hours=1)
-QUEUE_ACTIONS = ("backup", "retry_drive")
+QUEUE_ACTIONS = ("backup", "retry_drive", "drill", "verify")  # restore has its own task
+RESTORE_ACTIONS = ("restore",)
 
 
 class DrivePlace(Protocol):
@@ -368,6 +369,10 @@ def worst(codes: list[int]) -> int:
 
 def process_requests(ctx: Context, actions: tuple[str, ...] = QUEUE_ACTIONS) -> list[int]:
     """Work through pending requests of `actions`, oldest first. The caller holds the lock."""
+    from shoponline.backup import restore  # registers the drill, verify and restore handlers
+
+    if "restore" in actions:
+        restore.expire_stale_restores(ctx)
     codes = []
     while True:
         with ctx.session_factory() as db:

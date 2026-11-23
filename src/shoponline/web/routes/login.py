@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, Form, Request
 from sqlalchemy.orm import Session
 
-from shoponline.web.app import get_db, redirect, render
+from shoponline.web.app import get_db, redirect, render, session_epoch
 from shoponline.web.auth import authenticate
 
 router = APIRouter()
@@ -24,6 +24,7 @@ def login(
         return render(request, "login.html", None, error="Sai tên đăng nhập hoặc mật khẩu.")
     request.session.clear()
     request.session["user_id"] = user.id
+    request.session["epoch"] = session_epoch(db)
     return redirect("/batches")
 
 

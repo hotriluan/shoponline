@@ -157,6 +157,49 @@ def _drive_action(args, client, actor: str, drive_module) -> int:
     return 0
 
 
+def _cmd_restore(args: argparse.Namespace, ctx) -> int:
+    from datetime import timedelta
+    from pathlib import Path
+
+    from shoponline.backup import restore, runner, staging
+
+    if args.drill:
+        # A drill needs no lock: it only writes the scratch database.
+        path = restore.fetch(ctx, args.target)
+        with staging.staging_dir(ctx.settings.backup_work_dir, "drill") as work:
+            result = restore.drill(ctx, restore.prepare(ctx, path, work))
+        for warning in result["warnings"]:
+            print(f"Cảnh báo: {warning}")
+        print(f"Revision trong database diễn tập: {result['revision']}")
+        if result["ok"]:
+            print(
+                "Diễn tập khớp số dòng với manifest."
+                if not result["legacy"]
+                else "Diễn tập xong (bản cũ không có manifest nên không so số dòng)."
+            )
+            return 0
+        for table, (want, got) in result["diff"].items():
+            print(f"  {table}: manifest {want}, sau phục hồi {got}", file=sys.stderr)
+        return 1
+    name = Path(args.target).name
+    if not args.yes:
+        typed = input(f"Phục hồi hệ thống thật từ {name}? Gõ lại tên file để xác nhận: ")
+        if typed.strip() != name:
+            print("Tên không khớp, hủy.", file=sys.stderr)
+            return 1
+    with runner.backup_lock(ctx.engine, timedelta(minutes=5)) as lock:
+        if lock is None:
+            print("Đang có sao lưu hoặc phục hồi khác chạy.", file=sys.stderr)
+            return runner.EXIT_LOCKED
+        try:
+            result = restore.production(ctx, args.target, getpass.getuser(), force=args.force)
+        except restore.RestoreError as exc:
+            print(f"Từ chối: {exc}", file=sys.stderr)
+            return 1
+    print(result.message, file=sys.stdout if result.status == "done" else sys.stderr)
+    return 0 if result.status == "done" else 1
+
+
 def _cmd_backup(args: argparse.Namespace) -> int:
     from shoponline.backup import runner
 
@@ -164,13 +207,16 @@ def _cmd_backup(args: argparse.Namespace) -> int:
     _setup_logging(settings, "backup.log")
     ctx = _backup_context(args, settings)
     if args.action == "process-queue":
+        actions = runner.RESTORE_ACTIONS if args.restore else runner.QUEUE_ACTIONS
         with runner.backup_lock(ctx.engine) as lock:
             if lock is None:
                 print("Đang có tiến trình sao lưu khác chạy.", file=sys.stderr)
                 return runner.EXIT_LOCKED
             with ctx.session_factory() as db:
                 runner.mark_interrupted(db)
-            return runner.worst(runner.process_requests(ctx))
+            return runner.worst(runner.process_requests(ctx, actions))
+    if args.action == "restore":
+        return _cmd_restore(args, ctx)
     if args.action == "verify":
         from shoponline.backup import verify
 
@@ -434,9 +480,7 @@ def main(argv: list[str] | None = None) -> int:
     backup_actions = backup.add_subparsers(dest="action", required=True)
     backup_run = backup_actions.add_parser("run", help="Tạo một bản sao lưu")
     backup_run.add_argument("--kind", choices=("db", "app", "full"), default="db")
-    backup_run.add_argument(
-        "--reason", choices=("manual", "deploy", "migration"), default="manual"
-    )
+    backup_run.add_argument("--reason", choices=("manual", "deploy", "migration"), default="manual")
     backup_run.add_argument(
         "--if-due",
         action="store_true",
@@ -445,8 +489,20 @@ def main(argv: list[str] | None = None) -> int:
     backup_run.add_argument("--no-drive", action="store_true", help="Không tải lên Google Drive")
     backup_verify = backup_actions.add_parser("verify", help="Kiểm tra một bản sao lưu")
     backup_verify.add_argument("target", help="Số bản (#id), tên file hoặc đường dẫn")
-    backup_actions.add_parser("process-queue", help="Xử lý các yêu cầu sao lưu đang chờ")
-    for action in (backup_run, backup_verify):
+    queue = backup_actions.add_parser("process-queue", help="Xử lý các yêu cầu đang chờ")
+    queue.add_argument(
+        "--restore",
+        action="store_true",
+        help="Chỉ xử lý yêu cầu phục hồi (tác vụ shoponline-restore)",
+    )
+    backup_restore = backup_actions.add_parser("restore", help="Phục hồi từ một bản sao lưu")
+    backup_restore.add_argument("target", help="Số bản (#id), tên file hoặc đường dẫn")
+    mode = backup_restore.add_mutually_exclusive_group(required=True)
+    mode.add_argument("--drill", action="store_true", help="Phục hồi vào database diễn tập")
+    mode.add_argument("--production", action="store_true", help="Phục hồi hệ thống thật")
+    backup_restore.add_argument("--force", action="store_true")
+    backup_restore.add_argument("--yes", action="store_true", help="Không hỏi xác nhận")
+    for action in (backup_run, backup_verify, queue, backup_restore):
         action.add_argument("--pg-bin", default=None, help="Thư mục PostgreSQL bin")
         action.add_argument("--seven-zip", default=None, help="Đường dẫn 7z.exe")
     backup.set_defaults(func=_cmd_backup)

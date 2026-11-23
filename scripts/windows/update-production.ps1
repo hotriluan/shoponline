@@ -9,6 +9,8 @@
   2. Stop the shoponline-robot task (the robot holds pywin32 files that uv sync replaces) and
      the shoponline-web task, and wait until the web port is free.
   3. Back up the database (backup-db.ps1) before any schema change.
+  Web and robot are stopped and started through service-control.ps1. While a deploy works it
+  keeps a marker file (maintenance.json) and refuses to start when a restore is running.
   4. Disable and stop the backup and restore tasks (their Python processes hold files of the
      venv that uv sync replaces), fast-forward to the commit, uv sync without dev tools,
      migrate. The tasks are enabled again when the deploy ends, also when it fails.
@@ -35,64 +37,35 @@ param(
 $ErrorActionPreference = "Stop"
 . (Join-Path $PSScriptRoot "settings.ps1")
 Set-Location $script:RepoRoot
-$port = [int](Get-Setting "SHOPONLINE_WEB_PORT" "8750")
-$webHost = Get-Setting "SHOPONLINE_WEB_HOST" "127.0.0.1"
-if ($webHost -eq "0.0.0.0") { $webHost = "127.0.0.1" }
-$loginUrl = "http://${webHost}:$port/login"
 $me = "$env:USERDOMAIN\$env:USERNAME"
-$robotPattern = 'shoponline(\.exe)?"?\s+robot(\s|$)'
+
+. (Join-Path $PSScriptRoot "service-control.ps1") -WaitSeconds $WaitSeconds
 
 function Invoke-Native([string]$what) {
     if ($LASTEXITCODE -ne 0) { throw "$what lỗi (mã $LASTEXITCODE)" }
 }
 
-function Test-WebUp {
-    try { return (Invoke-WebRequest $loginUrl -UseBasicParsing -TimeoutSec 5).StatusCode -eq 200 }
-    catch { return $false }
+# A deploy and a restore must never run together. Each writes a marker file while it works
+# (shoponline.backup.maintenance reads the same file); a marker older than 2 hours is stale.
+$maintenanceFile = Join-Path (Get-Setting "SHOPONLINE_DATA_DIR" (Join-Path $script:RepoRoot "data")) "maintenance.json"
+
+function Test-RestoreRunning {
+    if (-not (Test-Path $maintenanceFile)) { return $false }
+    try { $marker = Get-Content $maintenanceFile -Raw -Encoding UTF8 | ConvertFrom-Json } catch { return $false }
+    if ($marker.kind -ne "restore") { return $false }
+    return ([DateTime]::UtcNow - [DateTime]::Parse($marker.started_at).ToUniversalTime()) -lt [TimeSpan]::FromHours(2)
 }
 
-function Stop-Web {
-    Stop-ScheduledTask -TaskName "shoponline-web"
-    # Stopping the task ends only its wrapper; the Python processes it started keep the port.
-    # Stop the web processes of this checkout's venv (the venv launcher and its child).
-    $venvWeb = [regex]::Escape((Join-Path $script:RepoRoot ".venv\Scripts\shoponline.exe")) + '"?\s+web(\s|$)'
-    $deadline = (Get-Date).AddSeconds($WaitSeconds)
-    while ((Get-Date) -lt $deadline) {
-        Get-CimInstance Win32_Process -Filter "Name = 'python.exe'" |
-            Where-Object { $_.CommandLine -match $venvWeb } |
-            ForEach-Object { Stop-Process -Id $_.ProcessId -ErrorAction SilentlyContinue }
-        if (-not (Get-NetTCPConnection -LocalPort $port -State Listen -ErrorAction SilentlyContinue)) { return }
-        Start-Sleep -Seconds 1
-    }
-    throw "Cổng $port vẫn bị giữ sau $WaitSeconds giây; kiểm tra tiến trình đang nghe cổng đó"
+function Set-DeployMarker {
+    New-Item -ItemType Directory -Force -Path (Split-Path $maintenanceFile) | Out-Null
+    @{ kind = "deploy"; pid = $PID; started_at = [DateTime]::UtcNow.ToString("o") } |
+        ConvertTo-Json | Set-Content -Path $maintenanceFile -Encoding UTF8
 }
 
-function Start-Web {
-    Start-ScheduledTask -TaskName "shoponline-web"
-    $deadline = (Get-Date).AddSeconds($WaitSeconds)
-    while ((Get-Date) -lt $deadline) {
-        if (Test-WebUp) { return }
-        Start-Sleep -Seconds 2
-    }
-    throw "Web không trả lời $loginUrl sau $WaitSeconds giây"
-}
-
-function Get-RobotProcess {
-    Get-CimInstance Win32_Process -Filter "Name = 'python.exe' OR Name = 'uv.exe'" |
-        Where-Object { $_.CommandLine -match $robotPattern }
-}
-
-function Stop-Robot {
-    if (Get-ScheduledTask -TaskName "shoponline-robot" -ErrorAction SilentlyContinue) {
-        Stop-ScheduledTask -TaskName "shoponline-robot"
-    }
-    # A job cut off here goes back to the queue when the robot starts again.
-    $deadline = (Get-Date).AddSeconds($WaitSeconds)
-    while ($running = Get-RobotProcess) {
-        if ((Get-Date) -gt $deadline) { throw "Robot vẫn chạy sau $WaitSeconds giây (PID $($running.ProcessId -join ', '))" }
-        $running | ForEach-Object { Stop-Process -Id $_.ProcessId -ErrorAction SilentlyContinue }
-        Start-Sleep -Seconds 1
-    }
+function Clear-DeployMarker {
+    if (-not (Test-Path $maintenanceFile)) { return }
+    try { $marker = Get-Content $maintenanceFile -Raw -Encoding UTF8 | ConvertFrom-Json } catch { return }
+    if ($marker.kind -eq "deploy") { Remove-Item $maintenanceFile -ErrorAction SilentlyContinue }
 }
 
 # The backup and restore tasks run the venv's Python, which uv sync replaces. Stop them for the
@@ -134,18 +107,6 @@ function Register-MissingTasks {
     Invoke-Native "Cập nhật tác vụ runner"
 }
 
-# The robot always runs: it starts without SAP settings and reports on the web page "Kết nối SAP"
-# what is missing. Returns $false when it exits right after being started.
-function Start-Robot {
-    if (Get-RobotProcess) { Write-Host "Robot đang chạy"; return $true }
-    Start-ScheduledTask -TaskName "shoponline-robot"
-    # A robot that cannot start (bad settings, a second robot) exits within seconds.
-    Start-Sleep -Seconds 20
-    if (Get-RobotProcess) { Write-Host "Đã khởi động robot"; return $true }
-    $dataDir = Get-Setting "SHOPONLINE_DATA_DIR" (Join-Path $script:RepoRoot "data")
-    Write-Warning "Robot dừng ngay sau khi khởi động; xem $(Join-Path $dataDir 'logs\robot.log') hoặc chạy tay: uv run --no-dev --extra robot shoponline robot"
-    return $false
-}
 
 function Complete-Deploy {
     Register-MissingTasks
@@ -154,6 +115,7 @@ function Complete-Deploy {
     if (-not (Start-Robot)) { throw "Robot không khởi động được" }
 }
 
+if (Test-RestoreRunning) { throw "Đang có phục hồi dữ liệu chạy (xem $maintenanceFile); không triển khai lúc này, thử lại sau" }
 if (git status --porcelain --untracked-files=no) { throw "Thư mục $script:RepoRoot có sửa đổi cục bộ; không cập nhật" }
 git fetch --quiet origin main; Invoke-Native "git fetch"
 $target = (git rev-parse --verify "$Commit^{commit}"); Invoke-Native "git rev-parse"
@@ -170,6 +132,7 @@ git merge-base --is-ancestor HEAD $target
 if ($LASTEXITCODE -ne 0) { throw "Commit $Commit cũ hơn bản đang chạy $previous; không lùi phiên bản tự động" }
 
 Write-Host "Cập nhật $previous -> $target"
+Set-DeployMarker
 try {
     Stop-Robot
     Stop-Web
@@ -193,4 +156,7 @@ catch {
     }
     try { $null = Start-Robot } catch { Write-Warning "Không khởi động lại được robot: $_" }
     throw
+}
+finally {
+    Clear-DeployMarker
 }

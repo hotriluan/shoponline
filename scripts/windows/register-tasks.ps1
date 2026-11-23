@@ -115,11 +115,16 @@ $dailySettings = New-TaskSettings -StartWhenAvailable -ExecutionTimeLimit (New-T
 $backupSettings = New-TaskSettings -StartWhenAvailable -MultipleInstances IgnoreNew -ExecutionTimeLimit (New-TimeSpan -Hours 3)
 $webAction = New-HiddenTaskAction -Execute $Uv -Argument "run --no-dev shoponline web" -WorkingDirectory $repoRoot
 $backupAction = New-HiddenTaskAction -Execute $Uv -Argument "run --no-dev --extra robot shoponline backup run --if-due" -WorkingDirectory $repoRoot
+# Started on demand by the web page Sao lưu (schtasks /Run), never by a trigger. It takes the
+# backup lock and works through one restore request, so the web that asked can be stopped.
+$restoreSettings = New-TaskSettings -StartWhenAvailable -MultipleInstances IgnoreNew -ExecutionTimeLimit (New-TimeSpan -Hours 1)
+$restoreAction = New-HiddenTaskAction -Execute $Uv -Argument "run --no-dev --extra robot shoponline backup process-queue --restore" -WorkingDirectory $repoRoot
 $retentionAction = New-HiddenTaskAction -Execute $Uv -Argument "run --no-dev shoponline $retentionArgs" -WorkingDirectory $repoRoot
 
 $tasks = @(
     @{ Name = "shoponline-web"; Action = $webAction; Settings = $settings },
     @{ Name = "shoponline-backup"; Action = $backupAction; Settings = $backupSettings },
+    @{ Name = "shoponline-restore"; Action = $restoreAction; Settings = $restoreSettings },
     @{ Name = "shoponline-retention"; Action = $retentionAction; Settings = $dailySettings }
 )
 foreach ($task in $tasks) {
@@ -174,6 +179,13 @@ if ($isNew["shoponline-backup"]) {
     Register-ScheduledTask -TaskName "shoponline-backup" -Action $backupAction -Trigger (New-BackupTrigger) `
         -Settings $backupSettings @account -Force | Out-Null
     Write-Host "Đã đăng ký shoponline-backup (mỗi 15 phút; giờ sao lưu đặt trên trang Sao lưu)"
+}
+
+if ($isNew["shoponline-restore"]) {
+    # No trigger: the task only runs when the web asks for it.
+    Register-ScheduledTask -TaskName "shoponline-restore" -Action $restoreAction `
+        -Settings $restoreSettings @account -Force | Out-Null
+    Write-Host "Đã đăng ký shoponline-restore (chạy khi admin bấm phục hồi trên web)"
 }
 
 if ($isNew["shoponline-retention"]) {

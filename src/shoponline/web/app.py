@@ -15,7 +15,7 @@ from sqlalchemy.orm import Session
 from starlette.middleware.sessions import SessionMiddleware
 
 from shoponline.config import Settings
-from shoponline.db.models import AppUser
+from shoponline.db.models import AppUser, SystemState
 from shoponline.db.session import session_factory as default_session_factory
 from shoponline.domain import states
 from shoponline.sapjobs import sap_settings
@@ -50,11 +50,28 @@ def get_db(request: Request) -> Iterator[Session]:
         session.close()
 
 
+SEEN_EVERY = timedelta(minutes=1)
+
+
+def session_epoch(db: Session) -> int:
+    """Goes up after every restore; a session from before it is no longer valid."""
+    state = db.get(SystemState, 1)
+    return state.session_epoch if state else 0
+
+
 def current_user(request: Request, db: Session = Depends(get_db)) -> AppUser:
     user_id = request.session.get("user_id")
     user = db.get(AppUser, user_id) if user_id else None
     if user is None or not user.active:
         raise LoginRequired()
+    # Sessions made before epochs existed carry none and count as epoch 0.
+    if request.session.get("epoch", 0) != session_epoch(db):
+        request.session.clear()
+        raise LoginRequired()
+    now = datetime.now(UTC)
+    if user.last_seen_at is None or now - user.last_seen_at > SEEN_EVERY:
+        user.last_seen_at = now  # at most once a minute: a restore asks who is working
+        db.commit()
     return user
 
 
