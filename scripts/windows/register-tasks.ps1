@@ -43,7 +43,7 @@ param(
     # The daily retention task only lists what is past SHOPONLINE_RETENTION_DAYS until this is
     # passed; turn it on after someone has reviewed a week of data\logs\retention.log.
     [switch]$RetentionApply,
-    [string]$RetentionTime = "23:30",
+    [string]$RetentionTime = "12:30",
     [switch]$OnlyMissing,
     [int]$WebPort = 8750,
     [string]$Uv = (Get-Command uv -ErrorAction SilentlyContinue).Source

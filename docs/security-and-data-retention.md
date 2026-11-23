@@ -43,7 +43,7 @@ Lượt quét hằng đêm dừng và không xóa gì trong hai trường hợp,
 Gỡ xác nhận một file lịch sử Shop Online bị từ chối khi tên khách của đơn nào trong file đã bị xóa theo thời hạn lưu: nếu cho gỡ, đơn đó sẽ bị chặn mãi vì thiếu tên khách.
 - File Shop Online: khi mọi đơn trong file đã được xác nhận, kể cả xác nhận qua file khác.
 
-Lệnh `shoponline retention` (tác vụ `shoponline-retention`, 23:30 hằng đêm) **luôn** xóa file theo bảng trên, không cần `--apply`. Nó bỏ qua file mới hơn 1 giờ, vì file có thể được ghi trước khi dòng giữ nó được lưu. File không xóa được (ví dụ còn mở trong SAP hoặc Excel) chỉ được ghi log và để lượt sau. Số file đã xóa được ghi vào `retention.log` và một dòng `retention_files` trong `event_log`.
+Lệnh `shoponline retention` (tác vụ `shoponline-retention`, 12:30 hằng ngày) **luôn** xóa file theo bảng trên, không cần `--apply`. Nó bỏ qua file mới hơn 1 giờ, vì file có thể được ghi trước khi dòng giữ nó được lưu. File không xóa được (ví dụ còn mở trong SAP hoặc Excel) chỉ được ghi log và để lượt sau. Số file đã xóa được ghi vào `retention.log` và một dòng `retention_files` trong `event_log`.
 
 ### Dữ liệu khách
 
@@ -71,7 +71,7 @@ Chỉ `admin` được tải về, xóa, tải lên và phục hồi bản sao l
 
 ### Bật xóa thật dữ liệu khách
 
-1. `register-tasks.ps1` đăng ký tác vụ `shoponline-retention` chạy 23:30 hằng ngày; phần dữ liệu khách ở chế độ **chỉ liệt kê**. Kết quả ghi vào `<SHOPONLINE_DATA_DIR>\logs\retention.log` (xoay vòng 10 × 5 MB).
+1. `register-tasks.ps1` đăng ký tác vụ `shoponline-retention` chạy 12:30 hằng ngày; phần dữ liệu khách ở chế độ **chỉ liệt kê**. Kết quả ghi vào `<SHOPONLINE_DATA_DIR>\logs\retention.log` (xoay vòng 10 × 5 MB).
 2. Trong một tuần, người quản trị đọc log: chỉ có đơn đã gửi kế toán và đã vào file lịch sử Shop Online, và đơn đã hủy.
 3. Đăng ký lại với `-RetentionApply` (thêm cùng các tham số đã dùng lần đầu, ví dụ `-AtLogOn`):
 
