@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import os
 from collections.abc import Callable, Iterator, Mapping
 from dataclasses import dataclass
@@ -11,9 +12,12 @@ from pathlib import Path
 from fastapi import Depends, FastAPI, Request
 from fastapi.responses import JSONResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 from starlette.middleware.sessions import SessionMiddleware
 
+from shoponline.backup import status as backup_status
+from shoponline.backup.drive import DriveClient
 from shoponline.config import Settings
 from shoponline.db.models import AppUser, SystemState
 from shoponline.db.session import session_factory as default_session_factory
@@ -29,7 +33,7 @@ TEMPLATES.env.filters["money"] = lambda v: "" if v is None else f"{int(v):,}".re
 TEMPLATES.env.filters["localtime"] = lambda v, fmt="%d/%m/%Y %H:%M": (
     "" if v is None else (v.astimezone() if v.tzinfo else v).strftime(fmt)
 )
-BACKUP_MAX_AGE = timedelta(hours=36)
+log = logging.getLogger(__name__)
 
 
 class LoginRequired(Exception):
@@ -85,17 +89,15 @@ def flash(request: Request, message: str, kind: str = "info") -> None:
     request.session.setdefault("flash", []).append({"kind": kind, "message": message})
 
 
-def backup_warning(settings: Settings) -> str | None:
-    marker = settings.backup_marker
+def backup_warning(request: Request) -> str | None:
+    """From the backup records in the database only: this runs on every page and must never
+    wait for Google. A broken ops schema must not take every page down with it."""
     try:
-        last = datetime.fromisoformat(marker.read_text(encoding="utf-8").strip())
-    except (OSError, ValueError):
-        return "Chưa có bản sao lưu database nào được ghi nhận."
-    if last.tzinfo is None:
-        last = last.replace(tzinfo=UTC)
-    if datetime.now(UTC) - last > BACKUP_MAX_AGE:
-        return f"Bản sao lưu gần nhất lúc {last.astimezone():%d/%m/%Y %H:%M}, đã quá 36 giờ."
-    return None
+        with request.app.state.session_factory() as db:
+            return backup_status.banner(db)
+    except SQLAlchemyError:
+        log.exception("Không đọc được trạng thái sao lưu")
+        return None
 
 
 @dataclass(frozen=True)
@@ -146,7 +148,6 @@ def render(
     request: Request, template: str, user: AppUser | None, status_code: int = 200, **context
 ):
     messages = request.session.pop("flash", [])
-    settings: Settings = request.app.state.settings
     robot = robot_state(request) if user else RobotState()
     return TEMPLATES.TemplateResponse(
         request,
@@ -154,7 +155,7 @@ def render(
         {
             "user": user,
             "messages": messages,
-            "backup_warning": backup_warning(settings) if user else None,
+            "backup_warning": backup_warning(request) if user else None,
             "robot_warning": robot.warning,
             "robot_enabled": robot.enabled,
             "robot_verified": robot.verified,
@@ -184,6 +185,7 @@ def create_app(
 ) -> FastAPI:
     from shoponline.web.routes import (
         accounting,
+        backup,
         batches,
         customers,
         imports,
@@ -201,6 +203,7 @@ def create_app(
     # The SAP settings in the database fall back to these environment values.
     app.state.env = dict(os.environ if env is None else env)
     app.state.session_factory = session_factory or default_session_factory(settings.database_url)
+    app.state.drive = DriveClient(app.state.session_factory)
     app.add_middleware(
         SessionMiddleware,
         secret_key=settings.secret_key,
@@ -238,6 +241,7 @@ def create_app(
         accounting,
         sales_history,
         robot,
+        backup,
     ):
         app.include_router(module.router)
     return app

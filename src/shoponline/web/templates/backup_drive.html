@@ -1,0 +1,86 @@
+<h2>Kết nối Google Drive</h2>
+<div class="box">
+  <p>
+    {% if drive.status == 'connected' %}<span class="tag j-DONE">Đã kết nối: {{ drive.email }}</span>
+    {% elif drive.status == 'error' %}<span class="tag j-FAILED">Lỗi: {{ drive.error }}</span>
+    {% else %}<span class="tag">Chưa kết nối</span>{% endif %}
+    {% if drive.checked_at %}<span class="muted">kiểm tra lần cuối {{ drive.checked_at|localtime('%d/%m/%Y %H:%M') }}</span>{% endif %}
+  </p>
+
+  <details>
+    <summary>Hướng dẫn tạo OAuth Client (4 bước)</summary>
+    <ol>
+      <li>Vào <a href="https://console.cloud.google.com/projectcreate" target="_blank" rel="noopener">Google Cloud Console</a> và tạo một project.</li>
+      <li>Bật <strong>Google Drive API</strong> cho project đó.</li>
+      <li>Tạo <strong>OAuth consent screen</strong> loại External, thêm scope <code>https://www.googleapis.com/auth/drive.file</code>, rồi bấm <strong>Publish to production</strong>.
+        <strong>Để ở chế độ Testing thì quyền hết hạn sau 7 ngày và Drive ngừng nhận bản sao lưu.</strong></li>
+      <li>Vào Credentials, tạo <strong>OAuth client ID</strong> loại <strong>TVs and Limited Input devices</strong>, rồi chép Client ID và Client Secret vào ô bên dưới (và vào kho bí mật của công ty).</li>
+    </ol>
+  </details>
+
+  {% if user.role == 'admin' %}
+  <form method="post" action="/backup/drive/client" style="margin-top:12px">
+    <strong>Bước A. OAuth Client</strong>
+    <div class="row">
+      <label>Client ID
+        <input type="text" name="client_id" value="{{ drive.client_id or '' }}" size="60" autocomplete="off">
+      </label>
+      <label>Client Secret {% if drive.has_secret %}<span class="ok">Đã lưu (được mã hóa)</span>{% endif %}
+        <input type="password" name="client_secret" value="" size="30" autocomplete="new-password" placeholder="{% if drive.has_secret %}để trống để giữ giá trị cũ{% endif %}">
+      </label>
+      <button>Lưu</button>
+    </div>
+    <p class="muted">Đổi Client ID hoặc Secret thì kết nối cũ bị bỏ (Drive chỉ cho thấy file do chính project đó tạo).</p>
+  </form>
+  {% else %}
+  <p class="muted">Client ID: {{ drive.client_id or 'chưa nhập' }}</p>
+  {% endif %}
+
+  <div style="margin-top:12px">
+    <strong>Bước B. Kết nối và kiểm tra</strong>
+    <p>Tài khoản: {{ drive.email or '—' }}; thư mục <code>shoponline-backup</code>{% if drive.folder_id %} (ID <code>{{ drive.folder_id }}</code>){% endif %}.</p>
+
+    {% if drive.device and user.role == 'admin' %}
+    <div class="box" style="background:#f0f6ff">
+      <p>Mở <a href="{{ drive.device.url }}" target="_blank" rel="noopener">{{ drive.device.url }}</a> và nhập mã:</p>
+      <p style="font-size:28px; letter-spacing:4px; font-weight:700; margin:4px 0" id="user-code">{{ drive.device.user_code }}</p>
+      <button type="button" class="secondary" onclick="navigator.clipboard && navigator.clipboard.writeText(document.getElementById('user-code').textContent)">Chép mã</button>
+      <p class="muted">Mã hết hạn lúc {{ drive.device.expires_at|localtime('%H:%M:%S') }}. <span id="device-status">Đang chờ bạn xác nhận…</span></p>
+    </div>
+    <script>
+    (function () {
+      var interval = {{ drive.device.interval }} * 1000;
+      var status = document.getElementById('device-status');
+      function poll() {
+        fetch('/backup/drive/poll', {method: 'POST', headers: {'x-autosave': '1'}})
+          .then(function (r) { return r.json(); })
+          .then(function (d) {
+            if (d.status === 'pending' || d.status === 'slow_down') {
+              if (d.interval) interval = d.interval * 1000;
+              status.textContent = d.message;
+              setTimeout(poll, interval);
+            } else { location.reload(); }
+          })
+          .catch(function () { status.textContent = 'Mất kết nối tới máy chủ, đang thử lại…'; setTimeout(poll, interval); });
+      }
+      setTimeout(poll, interval);
+    })();
+    </script>
+    {% endif %}
+
+    {% if user.role == 'admin' %}
+    <div class="row">
+      {% if drive.has_secret and drive.client_id %}
+      <form class="inline" method="post" action="/backup/drive/connect"><button>{% if drive.status == 'connected' %}Kết nối lại bằng mã thiết bị{% else %}Kết nối bằng mã thiết bị{% endif %}</button></form>
+      {% else %}
+      <span class="muted">Lưu Client ID và Secret (bước A) trước khi kết nối.</span>
+      {% endif %}
+      {% if drive.has_token %}
+      <form class="inline" method="post" action="/backup/drive/check"><button class="secondary">Kiểm tra kết nối</button></form>
+      <a class="button secondary" href="/backup/drive/files">Xem các bản trên Drive</a>
+      <form class="inline" method="post" action="/backup/drive/disconnect" onsubmit="return confirm('Ngắt kết nối Google Drive? File trên Drive vẫn còn, nhưng bản sao lưu mới sẽ chỉ ở máy chủ cho tới khi kết nối lại.')"><button class="danger">Ngắt kết nối</button></form>
+      {% endif %}
+    </div>
+    {% endif %}
+  </div>
+</div>

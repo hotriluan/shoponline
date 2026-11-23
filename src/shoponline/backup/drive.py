@@ -60,6 +60,8 @@ class DriveError(Exception):
 def friendly_error(exc: Exception) -> str:
     if isinstance(exc, DriveError):
         return str(exc)
+    if isinstance(exc, secrets_store.CredentialStoreUnavailable):
+        return "Credential Manager không dùng được trên máy này (thiếu pywin32)"
     if isinstance(exc, httpx.TransportError):
         return MSG_NETWORK
     return "Google Drive gặp lỗi không rõ; xem log để biết chi tiết"

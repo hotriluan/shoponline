@@ -40,10 +40,6 @@ class Settings:
         return self.data_dir / "exports"
 
     @property
-    def backup_marker(self) -> Path:
-        return self.data_dir / "last-backup.txt"
-
-    @property
     def backup_work_dir(self) -> Path:
         """Decrypted backup contents are staged here, never in %TEMP%."""
         return self.data_dir / "backup-work"

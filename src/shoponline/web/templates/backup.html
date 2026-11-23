@@ -1,0 +1,111 @@
+{% extends "base.html" %}
+{% block title %}Sao lưu{% endblock %}
+{% block head %}{% if busy or runs and runs[0].local_status == 'running' %}<meta http-equiv="refresh" content="5">{% endif %}{% endblock %}
+{% block content %}
+{% set admin = user.role == 'admin' %}
+<h1>Sao lưu</h1>
+
+<div class="box">
+  <table>
+    <thead><tr><th>Loại</th><th>Máy chủ: lần thành công gần nhất</th><th>Google Drive: lần thành công gần nhất</th></tr></thead>
+    <tbody>
+    {% for p in places %}
+      <tr>
+        <td>{{ p.label }}</td>
+        <td>{% if p.local %}{{ p.local|localtime('%d/%m/%Y %H:%M') }}{% else %}<span class="muted">chưa có</span>{% endif %}</td>
+        <td>{% if p.drive %}{{ p.drive|localtime('%d/%m/%Y %H:%M') }}{% elif drive.status == 'connected' %}<span class="muted">chưa có</span>{% else %}<span class="muted">chưa kết nối</span>{% endif %}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  <p class="muted">Lần chạy kế tiếp theo lịch:
+    Database {% if next_runs.db %}{{ next_runs.db|localtime('%d/%m/%Y %H:%M') }}{% endif %};
+    Toàn bộ {% if next_runs.full %}{{ next_runs.full|localtime('%d/%m/%Y %H:%M') }}{% endif %}.
+    Bản trước mỗi lần deploy chỉ lưu ở máy chủ.</p>
+</div>
+
+<h2>Sao lưu ngay</h2>
+{% if admin %}
+<form method="post" action="/backup/run" class="box">
+  <div class="row" style="align-items:stretch">
+    {% for kind, title, text in cards %}
+    <div class="box" style="flex:1; min-width:240px; margin:0">
+      <strong>{{ title }}</strong>
+      <p class="muted">{{ text }}</p>
+      <button name="kind" value="{{ kind }}" {% if busy %}disabled{% endif %}>Sao lưu ngay</button>
+    </div>
+    {% endfor %}
+  </div>
+  <p>
+    <label>
+      <input type="checkbox" name="to_drive" value="1" {% if drive.status == 'connected' %}checked{% else %}disabled{% endif %}>
+      Lưu thêm 1 bản lên Google Drive
+    </label>
+    {% if drive.status != 'connected' %}<span class="muted">— Chưa kết nối Google Drive</span>{% endif %}
+  </p>
+  {% if busy %}<p class="muted"><strong>Đang có bản sao lưu chạy</strong>; các nút mở lại khi xong (trang tự tải lại mỗi 5 giây).</p>{% endif %}
+</form>
+{% else %}
+<div class="box muted">Tài khoản xem chỉ xem được trạng thái sao lưu.</div>
+{% endif %}
+
+{% include "backup_drive.html" %}
+
+<h2>Lịch và số bản giữ</h2>
+<form method="post" action="/backup/settings" class="box">
+  <fieldset {% if not admin %}disabled{% endif %} style="border:0; padding:0; margin:0">
+    <div class="row">
+      <label>Giờ sao lưu Database (hằng ngày)
+        <input type="text" name="db_time" value="{{ form.db_time }}" size="6" placeholder="16:30">
+      </label>
+      <label>Sao lưu Toàn bộ vào
+        <select name="full_weekday">
+          {% for n, label in weekdays %}<option value="{{ n }}" {% if n == settings.full_weekday %}selected{% endif %}>{{ label }}</option>{% endfor %}
+        </select>
+      </label>
+      <label>lúc
+        <input type="text" name="full_time" value="{{ form.full_time }}" size="6" placeholder="16:30">
+      </label>
+    </div>
+    <div class="row" style="margin-top:8px">
+      <label>Giữ bản Database
+        <input type="text" name="keep_db" value="{{ settings.keep_db }}" size="4" inputmode="numeric">
+      </label>
+      <label>Giữ bản Ứng dụng
+        <input type="text" name="keep_app" value="{{ settings.keep_app }}" size="4" inputmode="numeric">
+      </label>
+      <label>Giữ bản Toàn bộ tối đa (ngày)
+        <input type="text" name="full_max_days" value="{{ settings.full_max_days }}" size="4" inputmode="numeric">
+      </label>
+      <label style="flex-direction:row; align-items:center; gap:6px">
+        <input type="checkbox" name="drive_on_schedule" value="1" {% if settings.drive_on_schedule %}checked{% endif %}>
+        Bản theo lịch lên Google Drive
+      </label>
+    </div>
+    <p class="muted">Số bản giữ áp dụng như nhau cho máy chủ và Drive. Bản Toàn bộ giữ theo tuổi (7–90 ngày), kể cả khi chỉ còn một bản.
+      {% if settings.changed_by %}Sửa lần cuối bởi {{ settings.changed_by }} lúc {{ settings.changed_at|localtime('%d/%m/%Y %H:%M') }}.{% endif %}</p>
+    {% if admin %}<button>Lưu</button>{% endif %}
+  </fieldset>
+</form>
+
+<h2>Các lần sao lưu gần đây</h2>
+<div class="scroll">
+<table>
+  <thead><tr><th>Loại</th><th>Tên file</th><th>Nguồn</th><th>Lúc</th><th>Máy chủ</th><th>Google Drive</th></tr></thead>
+  <tbody>
+  {% for r in runs %}
+    <tr>
+      <td>{{ kind_labels[r.kind] }}</td>
+      <td><code>{{ r.file_name }}</code></td>
+      <td>{{ source_labels.get(r.source, r.source) }}{% if r.actor != 'system' %} · {{ r.actor }}{% endif %}</td>
+      <td>{{ r.started_at|localtime('%d/%m/%Y %H:%M:%S') }}</td>
+      <td>{{ local_labels.get(r.local_status, r.local_status) }}{% if r.local_error %}<br><span class="bad">{{ r.local_error }}</span>{% endif %}</td>
+      <td>{{ drive_labels.get(r.drive_status, r.drive_status) }}{% if r.drive_error %}<br><span class="bad">{{ r.drive_error }}</span>{% endif %}</td>
+    </tr>
+  {% else %}
+    <tr><td colspan="6" class="muted">Chưa có lần sao lưu nào.</td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+</div>
+{% endblock %}

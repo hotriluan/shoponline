@@ -262,9 +262,6 @@ def _make_and_place(
     rotate_local(ctx, reached, rules)
     if drive_status == "ok":
         rotate_drive(ctx, rules)
-    # The web banner is about the database, so only backups that contain it move the marker.
-    if exit_code == EXIT_OK and kind in ("db", "full"):
-        _write_marker(settings)
 
     parts = [f"Sao lưu {kind} xong: {name}"]
     if errors:
@@ -348,11 +345,6 @@ def rotate_drive(ctx: Context, rules: KeepRules) -> list[str]:
             )
             db.commit()
     return removed
-
-
-def _write_marker(settings: Settings) -> None:
-    settings.data_dir.mkdir(parents=True, exist_ok=True)
-    settings.backup_marker.write_text(datetime.now(UTC).isoformat(), encoding="utf-8")
 
 
 def worst(codes: list[int]) -> int:

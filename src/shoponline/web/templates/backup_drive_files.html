@@ -1,0 +1,24 @@
+{% extends "base.html" %}
+{% block title %}Bản sao lưu trên Drive{% endblock %}
+{% block content %}
+<h1>Bản sao lưu trên Google Drive</h1>
+<p><a href="/backup">← Về trang Sao lưu</a></p>
+{% if files_error %}<div class="flash error">{{ files_error }}</div>{% endif %}
+<div class="scroll">
+<table>
+  <thead><tr><th>Tên file</th><th>Dung lượng</th><th>Tải lên lúc</th><th>Trong sổ sao lưu</th></tr></thead>
+  <tbody>
+  {% for f in files %}
+    <tr>
+      <td><code>{{ f.name }}</code></td>
+      <td class="num">{{ ((f.size|int) / 1048576)|round(1) }} MB</td>
+      <td>{{ f.createdTime }}</td>
+      <td>{% if f.name in known %}bản #{{ known[f.name].id }}{% else %}<span class="muted">chưa có</span>{% endif %}</td>
+    </tr>
+  {% else %}
+    <tr><td colspan="4" class="muted">Không có bản sao lưu nào trên Drive.</td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+</div>
+{% endblock %}
