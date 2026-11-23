@@ -11,7 +11,7 @@ Một gói Python `shoponline`, một database PostgreSQL, một máy Windows. H
 | `web` | `shoponline web` | tài khoản hệ thống | FastAPI + Jinja2, render phía máy chủ; nhập file, sinh file, xếp việc cho robot |
 | `robot` | `shoponline robot` | phiên đăng nhập của tài khoản robot (cần màn hình cho SAP GUI) | Nhận việc từ hàng đợi, đọc `ZRSD001`, `ZRSD004` trên Production bằng SAP GUI Scripting |
 
-Ba tác vụ định kỳ: `shoponline-backup` (sao lưu mã hóa), `shoponline-retention` (xóa file hết dùng, liệt kê hoặc xóa dữ liệu khách quá hạn), và runner deploy `shoponline-deploy-runner`. Đăng ký bằng [register-tasks.ps1](../scripts/windows/register-tasks.ps1) và [install-deploy-runner.ps1](../scripts/windows/install-deploy-runner.ps1).
+Các tác vụ: `shoponline-backup` (mỗi 15 phút, làm việc đang chờ rồi bản tới lịch), `shoponline-restore` (không có lịch; web gọi nó khi admin bấm phục hồi), `shoponline-retention` (xóa file hết dùng, liệt kê hoặc xóa dữ liệu khách quá hạn), và runner deploy `shoponline-deploy-runner`. Đăng ký bằng [register-tasks.ps1](../scripts/windows/register-tasks.ps1) và [install-deploy-runner.ps1](../scripts/windows/install-deploy-runner.ps1).
 
 Hệ thống không ghi gì vào SAP. Không có API sàn, không Docker, không LLM trong đường nghiệp vụ.
 
@@ -72,6 +72,20 @@ Trang `/sales-history` dựng dòng nối tiếp cho file lịch sử của kế
 
 Bảng `sales_history_file_order` ghi các đơn có trong từng file đã tải (`generated_file` kind `sales_history`); `sales_history_exported` (khóa chính `sales_order_id`) ghi đơn đã được xác nhận là đã dán, kèm file đã xác nhận. Xác nhận chép danh sách đơn của file sang sổ, bỏ qua đơn đã có; gỡ xác nhận xóa đúng các dòng của file đó.
 
+## Sao lưu, khôi phục và chuyển máy
+
+Mã ở [src/shoponline/backup/](../src/shoponline/backup/). Trang **Sao lưu** trên web và các lệnh `uv run shoponline backup ...` dùng chung một lõi; Task Scheduler chỉ gọi lệnh, không có logic riêng.
+
+- **Ba loại bản:** `db` (`pg_dump` cả hai schema), `app` (`git bundle` của commit đang chạy, `.env` bỏ mật khẩu sao lưu, `config/`, thư mục dữ liệu trừ `logs`, `robot-work`, `backup-work`), `full` (cả hai; là gói chuyển máy). Một file `.7z` AES-256 ẩn tên file, kèm `manifest.json` (commit, revision alembic, số dòng từng bảng `public` lấy trong cùng snapshot với dump, SHA-256 từng phần). Tên `shoponline-<loại>-<database>-yyyyMMdd-HHmmss.7z`; tên cũ không có loại là bản `db`.
+- **Schema `ops`:** tài khoản web (`ops.app_user`), sổ sao lưu (`backup_run`), hàng đợi (`backup_request`), lịch (`backup_settings`), kết nối Drive (`drive_connection`) và `system_state.session_epoch` nằm riêng khỏi dữ liệu nghiệp vụ (`public`). Phục hồi trên cùng máy chỉ thay `public`, nên tài khoản không lùi theo bản sao lưu. **Mọi migration đụng `ops` phải viết idempotent** (`CREATE ... IF NOT EXISTS`, kiểm tra cột trước khi thêm): phục hồi một bản cũ đưa `public.alembic_version` lùi lại, rồi `migrate` chạy lại các migration đó trong khi `ops` đã ở bản mới nhất.
+- **Một việc một lúc:** `pg_advisory_lock` giữ trong suốt một lần sao lưu hoặc phục hồi. Mã thoát 3 nghĩa là không lấy được khóa và không có bản nào (không bao giờ 0). Hàng `running` mà không ai giữ khóa là hàng mồ côi; lần chạy sau đánh nó `interrupted`.
+- **Lịch trong database:** tác vụ 15 phút hỏi `schedule.py` cái gì tới hạn, nên đổi giờ trên web không cần đăng ký lại tác vụ; máy tắt qua giờ thì chạy bù một lần. `db` hằng ngày, `full` một ngày trong tuần (hai loại cùng tới hạn thì `db` trước), `app` chỉ bấm tay, cộng bản `db` trước mỗi deploy (chỉ ở máy chủ, không lên Drive). Giữ: `db` và `app` theo số bản mới nhất, `full` theo tuổi; xoay vòng riêng từng nơi và chỉ sau khi bản mới đã tới nơi đó.
+- **Web không tự chạy `pg_dump`:** nó ghi `ops.backup_request` rồi gọi `schtasks /Run` cho tác vụ tương ứng. Không gọi được thì yêu cầu nằm lại và tác vụ 15 phút làm. Cảnh báo cam đọc từ `backup_run`, không bao giờ gọi Google trên đường xử lý request.
+- **Google Drive:** gọi trực tiếp API Drive v3 bằng `httpx`, scope `drive.file`, đăng nhập bằng OAuth device flow. Client Secret và refresh token nằm trong Windows Credential Manager ([secrets_store.py](../src/shoponline/secrets_store.py)) của tài khoản chạy hệ thống, nên web, các tác vụ và lệnh `drive` phải chạy cùng một tài khoản Windows; database chỉ giữ Client ID, thư mục đích, email và trạng thái.
+- **Phục hồi thật:** nút trên web ghi yêu cầu `restore` rồi chạy tác vụ `shoponline-restore` (`backup process-queue --restore`). Thứ tự: mở và kiểm bản sao lưu (mã hóa, SHA-256, revision không mới hơn mã) → ghi đánh dấu bảo trì `restore` → dừng robot và web ([service-control.ps1](../scripts/windows/service-control.ps1)) → bản an toàn `full` → thay file dữ liệu (bản `full`) và schema `public` → so số dòng với manifest → `migrate` → tăng `session_epoch` (mọi người đăng nhập lại) → bật web và robot. Lỗi sau bản an toàn thì tự lùi về nó (`rolled_back`); lùi cũng lỗi thì giữ đánh dấu bảo trì và in lệnh chạy tay. Kết quả ghi ở `restore-status.json` và hiện thành banner cho admin đầu tiên đăng nhập lại.
+- **Deploy và phục hồi loại trừ nhau** bằng file `maintenance.json` (cũ quá 2 giờ thì coi là bỏ). `update-production.ps1` còn tạm tắt `shoponline-backup` và `shoponline-restore` trong lúc `uv sync`.
+- **Chuyển máy:** [server-export.ps1](../scripts/windows/server-export.ps1) trên máy cũ, `setup-production-machine.ps1 -Bundle` trên máy mới (`backup restore --new-machine`: thay `public`, lấy `ops.app_user` và `ops.backup_settings` từ gói, chép thư mục dữ liệu, thêm dòng `.env` còn thiếu, so số dòng). Quy trình: [deployment-guide.md](deployment-guide.md#chuyển-máy-chạy-thật-sang-máy-khác).
+
 ## Robot
 
 Vòng lặp của `worker.py`: kiểm tra công tắc → nhận một việc → kiểm tra phiên SAP đúng hệ thống, client, user của việc → bọc phiên bằng lớp chặn → chạy thao tác → ghi kết quả. Một robot duy nhất nhờ khóa advisory của PostgreSQL. Lỗi liên tiếp quá ngưỡng, sai hệ thống, hoặc lớp chặn bắt được thao tác lạ thì robot tự tạm dừng; chỉ `admin` bật lại.
@@ -88,14 +102,15 @@ Dưới `SHOPONLINE_DATA_DIR`:
 | `exports/` | File hệ thống sinh ra | File kế toán của đợt: giữ. File Shop Online: tới khi xác nhận hết đơn. File đơn hàng: xóa sau khi tải |
 | `robot-work/job-<n>/` | File báo cáo robot vừa xuất từ SAP | Xóa khi việc `DONE`; việc lỗi giữ tới hết hạn ảnh màn hình |
 | `robot-evidence/` | Ảnh màn hình khi việc lỗi | `SHOPONLINE_ROBOT_EVIDENCE_KEEP_DAYS` (30) |
-| `logs/` | `web.log`, `robot.log`, `retention.log` | Mỗi file xoay vòng 10 × 5 MB |
+| `logs/` | `web.log`, `robot.log`, `retention.log`, `backup.log` | Mỗi file xoay vòng 10 × 5 MB |
+| `backup-work/` | Thư mục làm việc của sao lưu, phục hồi, tải lên (nội dung giải mã); `before-restore-<giờ>` là file bị thay thế khi phục hồi bản `full` | Xóa ngay khi xong; sót lại thì xóa sau 1 ngày, riêng `before-restore-*` sau 7 ngày |
+| `maintenance.json`, `restore-status.json`, `released.json` | Đánh dấu deploy/phục hồi/chuyển máy đang chạy; kết quả phục hồi gần nhất; máy đã nhả sau `server-export.ps1` | Xóa khi xong (`restore-status.json` giữ tới lần phục hồi sau) |
 
 Quy tắc giữ file chi tiết: [security-and-data-retention.md](security-and-data-retention.md#file).
-| `last-backup.txt` | Thời điểm sao lưu gần nhất; web cảnh báo sau 36 giờ | — |
 
 ## Triển khai
 
-Push lên `main` → GitHub Actions chạy test → runner trên máy chạy thật gọi [update-production.ps1](../scripts/windows/update-production.ps1): sao lưu, cập nhật mã, `migrate`, khởi động lại web. Chi tiết: [deployment-guide.md](deployment-guide.md).
+Push lên `main` → GitHub Actions chạy test → runner trên máy chạy thật gọi [update-production.ps1](../scripts/windows/update-production.ps1): sao lưu `db` (chỉ máy chủ), tạm tắt tác vụ sao lưu và phục hồi, cập nhật mã, `migrate`, khởi động lại web. Chi tiết: [deployment-guide.md](deployment-guide.md).
 
 Hiện tại (từ 2026-11-12) máy phát triển kiêm máy chạy thật, bản chạy thật ở `C:\shoponline`. Chuyển sang máy riêng là một bước của phase 9.
 

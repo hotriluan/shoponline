@@ -67,6 +67,11 @@ def warnings(db: Session, now: datetime | None = None) -> list[str]:
                 "Bản sao lưu database gần nhất chưa lên Google Drive"
                 + (f" (bản trên Drive lúc {_fmt(on_drive)})." if on_drive else ".")
             )
+    elif settings.drive_on_schedule and _scheduled_run_missed_drive(db):
+        problems.append(
+            "Google Drive chưa kết nối: bản sao lưu theo lịch gần nhất chỉ ở máy chủ "
+            "(kết nối ở trang Sao lưu, hoặc bỏ ô lên Drive trong lịch nếu không dùng Drive)."
+        )
     full = last_success(db, "full", "local")
     if full is None or now - full > FULL_MAX_AGE:
         problems.append(
@@ -74,6 +79,17 @@ def warnings(db: Session, now: datetime | None = None) -> list[str]:
             f"{settings.full_max_days} ngày."
         )
     return problems
+
+
+def _scheduled_run_missed_drive(db: Session) -> bool:
+    """The latest scheduled database backup wanted Drive and found it not connected."""
+    latest = db.scalar(
+        select(BackupRun.drive_status)
+        .where(BackupRun.source == "schedule", BackupRun.kind.in_(DB_KINDS))
+        .order_by(BackupRun.started_at.desc())
+        .limit(1)
+    )
+    return latest == "not_connected"
 
 
 def banner(db: Session) -> str | None:

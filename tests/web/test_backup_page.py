@@ -351,3 +351,20 @@ def test_pages_render_without_calling_google(login, app, db):
     assert client.get("/batches").status_code == 200
     assert client.get("/backup").status_code == 200
     assert db.scalar(select(func.count()).select_from(BackupRun)) >= 0
+
+
+def test_banner_when_scheduled_backups_find_drive_disconnected(db):
+    db.execute(text("DELETE FROM ops.backup_run"))
+    db.execute(text("UPDATE ops.drive_connection SET status = 'disconnected', last_error = NULL"))
+    db.execute(text("UPDATE ops.backup_settings SET drive_on_schedule = true"))
+    _run(db, "db", 1, drive="not_connected")
+    _run(db, "full", 1, drive="not_connected")
+    assert any("Google Drive chưa kết nối" in m for m in status.warnings(db, FRIDAY_EVENING))
+    # The owner turned Drive off for scheduled backups: nothing to warn about.
+    db.execute(text("UPDATE ops.backup_settings SET drive_on_schedule = false"))
+    assert status.warnings(db, FRIDAY_EVENING) == []
+    # Once Drive is back and the latest backup reached it, the warning is gone too.
+    db.execute(text("UPDATE ops.backup_settings SET drive_on_schedule = true"))
+    db.execute(text("UPDATE ops.drive_connection SET status = 'connected'"))
+    _run(db, "db", 0, drive="ok")
+    assert status.warnings(db, FRIDAY_EVENING) == []

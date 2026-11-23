@@ -15,6 +15,7 @@ Bước 4 và 5 có thể do robot SAP làm thay (chỉ đọc báo cáo trên P
 - Windows, Python 3.12 trở lên (máy phát triển dùng 3.14), [uv](https://docs.astral.sh/uv/).
 - PostgreSQL 16 cài trực tiếp trên Windows, chỉ nghe `localhost`.
 - 7-Zip (`C:\Program Files\7-Zip\7z.exe`) cho sao lưu mã hóa.
+- `pywin32` (`uv sync --extra robot`) để cất khóa Google Drive trong Windows Credential Manager.
 
 ## Dựng môi trường phát triển
 
@@ -41,8 +42,8 @@ uv run shoponline web
 | `SHOPONLINE_WEB_HOST`, `SHOPONLINE_WEB_PORT` | Địa chỉ và cổng web (mặc định `127.0.0.1:8750`) |
 | `SHOPONLINE_BACKUP_PASSWORD` | Mật khẩu mã hóa bản sao lưu (7-Zip AES-256) |
 | `SHOPONLINE_BACKUP_DIRS` | Các thư mục nhận bản sao lưu, cách nhau bằng `;` |
-| `SHOPONLINE_BACKUP_KEEP_DAYS` | Số ngày trước hôm nay còn giữ một bản sao lưu mỗi ngày (mặc định 14); hôm nay giữ mọi bản |
-| `SHOPONLINE_RESTORE_DATABASE_URL` | Database dùng cho diễn tập khôi phục |
+| `SHOPONLINE_BACKUP_KEEP_DAYS` | Không còn tác dụng. Giờ sao lưu và số bản giữ đặt ở trang **Sao lưu** trên web |
+| `SHOPONLINE_RESTORE_DATABASE_URL` | Database tạm dùng cho diễn tập khôi phục (không bao giờ là database đang chạy) |
 | `SHOPONLINE_SAP_SYSTEM`, `SHOPONLINE_SAP_CLIENT` | Hệ thống SAP robot làm việc; để trống thì không xếp việc cho robot |
 | `SHOPONLINE_SAP_CONNECTION`, `SHOPONLINE_SAP_USER`, `SHOPONLINE_SAP_PASSWORD`, `SHOPONLINE_SAP_LANGUAGE` | Đăng nhập lại SAP trên máy robot |
 | `SHOPONLINE_ROBOT_MAX_FAILURES`, `SHOPONLINE_ROBOT_EVIDENCE_KEEP_DAYS` | Ngưỡng lỗi liên tiếp để robot tự dừng (3); số ngày giữ ảnh lỗi (30) |
@@ -62,9 +63,16 @@ Bí mật (mật khẩu database, khóa phiên, mật khẩu sao lưu) nằm tro
 | `uv run shoponline retention [--apply]` | Xóa file hết dùng; liệt kê (hoặc xóa với `--apply`) dữ liệu khách quá thời hạn lưu |
 | `uv run pytest` | Chạy test (test cần database bị bỏ qua khi thiếu `SHOPONLINE_TEST_DATABASE_URL`) |
 | `uv run ruff check` | Kiểm tra mã |
-| `pwsh -File scripts\windows\backup-db.ps1` | Sao lưu mã hóa ra các thư mục trong `SHOPONLINE_BACKUP_DIRS` |
+| `uv run shoponline backup run --kind db\|app\|full [--no-drive]` | Sao lưu mã hóa ra các thư mục trong `SHOPONLINE_BACKUP_DIRS` và lên Google Drive (mã thoát 0 đủ nơi, 2 một phần, 1 không nơi nào, 3 không lấy được khóa) |
+| `uv run shoponline backup run --if-due` | Việc của tác vụ `shoponline-backup` (15 phút một lần): xử lý yêu cầu từ web rồi chạy bản tới lịch |
+| `uv run shoponline backup verify <#id\|tên file>` | Kiểm tra mã hóa, `7z t` và SHA-256 |
+| `uv run shoponline backup restore <bản> --drill\|--production [--force]` | Diễn tập vào `SHOPONLINE_RESTORE_DATABASE_URL`, hoặc phục hồi hệ thống thật (có bản an toàn và tự lùi lại) |
+| `uv run shoponline backup restore <gói> --new-machine`, `backup fetch-latest --kind full --to <thư mục>` | Nạp gói chuyển máy vào máy mới; tải bản mới nhất từ Google Drive |
+| `uv run shoponline drive set-client\|connect\|status\|disconnect` | Kết nối Google Drive bằng mã thiết bị (cùng việc với khối **Kết nối Google Drive** trên web) |
+| `pwsh -File scripts\windows\backup-db.ps1` | Sao lưu `db` trước deploy (vỏ gọi lệnh trên; `update-production.ps1` dùng nó) |
+| `pwsh -File scripts\windows\server-export.ps1 [-Prepare\|-Rollback]` | Chuyển máy chạy thật: xuất gói và nhả máy cũ; xem [deployment-guide.md](docs/deployment-guide.md#chuyển-máy-chạy-thật-sang-máy-khác) |
 | `pwsh -File scripts\windows\restore-db.ps1 -Archive <file.7z>` | Khôi phục vào `SHOPONLINE_RESTORE_DATABASE_URL` |
-| `pwsh -File scripts\windows\register-tasks.ps1 -User <tài khoản> [-RetentionApply]` | Đăng ký web, sao lưu và xóa theo thời hạn trong Task Scheduler (máy chạy thật) |
+| `pwsh -File scripts\windows\register-tasks.ps1 -User <tài khoản> [-RetentionApply]` | Đăng ký web, sao lưu (mỗi 15 phút), phục hồi (chạy khi web gọi) và xóa theo thời hạn trong Task Scheduler (máy chạy thật) |
 | `pwsh -File scripts\windows\register-tasks.ps1 -RobotUser <tài khoản>` | Đăng ký robot chạy khi tài khoản robot đăng nhập |
 | `uv run python tests/fixtures/build_fixtures.py <thư mục>` | Sinh bộ file mẫu tự dựng để thử web |
 
@@ -82,6 +90,7 @@ src/shoponline/
   sapjobs/     hàng đợi việc SAP trong PostgreSQL, công tắc dừng robot
   saprobot/    robot SAP GUI Scripting: lớp chặn T-code, phiên, thanh trạng thái, popup, ảnh lỗi, vòng lặp
   maintenance/ xóa dữ liệu khách quá thời hạn lưu
+  backup/      sao lưu mã hóa, lịch, xoay vòng, Google Drive, khôi phục, chuyển máy
   web/         FastAPI + Jinja2
 config/        ID phần tử màn hình SAP và danh sách popup đã biết (từ bản ghi recorder)
 migrations/    Alembic

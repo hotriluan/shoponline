@@ -11,7 +11,7 @@ Dành cho người quản trị hệ thống và chủ dự án. Kiến trúc: [
 | Ảnh màn hình SAP khi robot lỗi | `SHOPONLINE_DATA_DIR\robot-evidence` | Có thể có |
 | Đơn, dòng hàng, số SO, số DO, số hóa đơn của DO các sàn, ánh xạ SKU, tiền sàn đã trả theo đơn (`platform_settlement`: mã đơn, số tiền, ngày) | các bảng còn lại | Không có dữ liệu cá nhân; `sap_tax_invoice` chỉ giữ dòng có Bill-to là khách SAP của sàn, không giữ tên, mã số thuế hay giá trị tiền |
 | Nhật ký sự kiện | bảng `event_log` | Không: mã nguồn cấm ghi tên, địa chỉ vào đây |
-| Bản sao lưu database | ổ mạng công ty, Google Drive | Có, mã hóa AES-256 |
+| Bản sao lưu: database, thư mục dữ liệu (trừ log) và `.env` (không gồm mật khẩu sao lưu) | thư mục sao lưu trên máy chủ hoặc ổ mạng, Google Drive | Có, mã hóa AES-256 (tên file cũng ẩn). `.env` trong bản `app`/`full` có mật khẩu database và khóa phiên, nên ai có mật khẩu sao lưu có thêm hai thứ đó; rủi ro tăng ít vì mật khẩu sao lưu vốn đã mở được toàn bộ dữ liệu khách |
 
 ## Thời hạn lưu
 
@@ -50,7 +50,17 @@ Không có `--apply` thì lệnh chỉ liệt kê dữ liệu khách sẽ bị x
 
 ### Bản sao lưu
 
-Ở mỗi thư mục đích, [backup-rotation.ps1](../scripts/windows/backup-rotation.ps1) giữ mọi bản của hôm nay (bản sao lưu lúc deploy là điểm lùi của lần migrate đó) và bản mới nhất của mỗi ngày trong `SHOPONLINE_BACKUP_KEEP_DAYS` (mặc định 14) ngày trước; bản cũ hơn bị xóa. Chỉ thư mục mà bản mới đã chép tới mới được dọn. Dữ liệu đã xóa vì vậy còn trong bản sao lưu tối đa 14 ngày nữa.
+Xoay vòng ([retention.py](../src/shoponline/backup/retention.py)) áp dụng như nhau cho từng thư mục đích và cho Google Drive, và chỉ nơi nào đã nhận bản mới mới được dọn. Mặc định (đổi trên trang **Sao lưu**):
+
+| Loại | Giữ |
+|---|---|
+| `db` | 15 bản mới nhất (1 bản mỗi ngày cộng bản trước mỗi deploy: khoảng 1–2 tuần) |
+| `app` | 15 bản mới nhất |
+| `full` | Theo tuổi: tối đa 30 ngày (web chỉ cho đặt 7–90 ngày). Bản `full` cuối cùng cũng bị xóa khi quá hạn; web cảnh báo khi 8 ngày không có bản `full` thành công |
+
+Mọi mặc định và mức tối đa đều nằm trong thời hạn 90 ngày, nên dữ liệu khách đã xóa không còn trong bản sao lưu quá 90 ngày. Bản sao lưu trước deploy chỉ ở máy chủ, không lên Drive. Bản thành công mới nhất của mỗi loại và bản an toàn của lần phục hồi gần nhất không xóa tay được. Phục hồi trả `public` (gồm `customer_info` và `event_log`) về thời điểm của bản sao lưu nhưng **không lùi tài khoản web**, lịch sao lưu và kết nối Drive; mọi người phải đăng nhập lại.
+
+Chỉ `admin` được tải về, xóa, tải lên và phục hồi bản sao lưu. Mỗi lần tải về, xóa, tải lên ghi một dòng `event_log` (ai, bản nào, không có nội dung). File tải về vẫn là `.7z` mã hóa nhưng chứa dữ liệu khách rời khỏi máy chủ, nên chỉ tải khi cần.
 
 ### Bật xóa thật dữ liệu khách
 
@@ -98,7 +108,11 @@ Từ 2026-11-16 máy chạy thật là Windows 10 không mua Extended Security U
 | Bí mật | Nằm ở |
 |---|---|
 | Mật khẩu database, khóa phiên web | `.env` của máy chạy thật; kho bí mật của chủ dự án |
-| Mật khẩu mã hóa sao lưu | `.env` của máy chạy thật; kho bí mật. Không đặt cạnh bản sao lưu |
+| Mật khẩu mã hóa sao lưu | `.env` của máy chạy thật; kho bí mật. Không đặt cạnh bản sao lưu, và không bao giờ nằm trong bản sao lưu |
+| Client ID và Client Secret của OAuth client Google Drive | Client Secret trong Windows Credential Manager của tài khoản chạy hệ thống; **cả hai phải có trong kho bí mật của chủ dự án** (máy mới nhập lại để thấy các bản cũ). Client ID còn nằm trong database (không bí mật) |
+| Refresh token Google Drive | Windows Credential Manager của tài khoản chạy hệ thống. Không nằm trong database, bản sao lưu, log hay trang web; mất máy thì kết nối lại bằng mã thiết bị |
+
+**Bản sao lưu trên Drive phụ thuộc một tài khoản Gmail cá nhân** (Drive, OAuth client trong Google Cloud project của tài khoản đó). Ghi tên người giữ tài khoản vào kho bí mật cùng thủ tục chuyển giao khi người đó rời vai trò: tạo project và OAuth client mới trên tài khoản kế nhiệm, kết nối lại, rồi chạy **Sao lưu ngay** loại Toàn bộ; Drive chỉ thấy file do chính project tạo, nên các bản cũ ở Drive của tài khoản cũ không tự theo sang.
 | Mật khẩu `AL17016` | Windows Credential Manager của tài khoản chạy robot; kho bí mật |
 
 Repo không chứa bí mật nào. `.gitignore` loại `.env` và `docs/sap-recordings/` (bản ghi recorder có dữ liệu khách thật). Trước khi bàn giao, quét lịch sử git một lần, ví dụ bằng `gitleaks detect`.
@@ -108,3 +122,4 @@ Repo không chứa bí mật nào. `.gitignore` loại `.env` và `docs/sap-reco
 1. Khóa tài khoản web: `uv run shoponline create-user <tên> --role viewer` rồi đặt một mật khẩu ngẫu nhiên không báo cho ai.
 2. Đổi những bí mật họ từng biết theo bảng trên. Đổi mật khẩu sao lưu thì bản sao lưu cũ vẫn mở bằng mật khẩu cũ; giữ mật khẩu cũ trong kho bí mật cho tới khi các bản đó hết hạn.
 3. Gỡ quyền Remote Desktop vào máy chạy thật.
+4. Nếu người đó giữ tài khoản Gmail của Drive sao lưu hoặc biết Client Secret: bấm **Ngắt kết nối** ở khối Google Drive (thu hồi quyền phía Google), đổi mật khẩu và Client Secret của tài khoản đó, rồi chuyển giao như đoạn **Bản sao lưu trên Drive** ở mục Bí mật.

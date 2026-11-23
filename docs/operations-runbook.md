@@ -126,9 +126,18 @@ Web, robot, sao lưu và runner chạy ẩn, không có cửa sổ để xem. Mu
 
 ### Cảnh báo sao lưu màu cam
 
-- **Dấu hiệu:** dòng cam trên web: bản sao lưu gần nhất đã quá 36 giờ.
-- **Việc cần làm:** Task Scheduler → `shoponline-backup` → **Run**. Kiểm tra ổ mạng công ty và thư mục Google Drive còn truy cập được.
-- **Gọi lập trình viên khi:** chạy tay vẫn lỗi.
+- **Dấu hiệu:** dòng cam trên web. Có bốn loại: chưa có bản database từ lịch gần nhất (lịch + 2 giờ), bản gần nhất chưa lên Google Drive, Google Drive báo lỗi kết nối, hoặc chưa có bản Toàn bộ trong 8 ngày.
+- **Việc cần làm:** mở trang **Sao lưu**. Bảng cuối trang cho thấy lần nào lỗi và vì sao (cột Máy chủ, cột Google Drive).
+  - Lỗi Drive "Google đã thu hồi quyền truy cập": bấm **Kết nối lại bằng mã thiết bị**; nếu tái diễn sau 7 ngày thì OAuth client đang ở chế độ Testing, chuyển sang **Publish to production**.
+  - Lỗi Drive khác (mạng, hết dung lượng): xử lý nguyên nhân rồi bấm **Thử lại** ở dòng đó (chỉ tải lại file, không tạo bản mới).
+  - Lỗi máy chủ hoặc không có bản theo lịch: kiểm tra Task Scheduler → `shoponline-backup` còn Enabled, ổ mạng công ty còn truy cập được, rồi bấm **Sao lưu ngay**.
+- **Gọi lập trình viên khi:** bấm Sao lưu ngay vẫn lỗi, hoặc dòng "Đang chạy" không bao giờ xong (xem `<SHOPONLINE_DATA_DIR>\logs\backup.log`).
+
+### Phục hồi dữ liệu
+
+- **Diễn tập (an toàn):** trang **Sao lưu** → dòng của bản cần thử → **Phục hồi…** → Diễn tập. Hệ thống khôi phục vào database tạm và so số dòng với manifest; không đụng hệ thống đang chạy.
+- **Phục hồi hệ thống thật:** chỉ khi dữ liệu đang sai thật. Làm ngoài giờ xử lý đơn, sau khi diễn tập khớp. Hộp thoại nêu rõ phục hồi thay gì, đòi nhập lại mật khẩu của bạn và gõ lại tên file. Web và robot dừng 1–3 phút, mọi người phải đăng nhập lại (tài khoản không đổi), và admin đầu tiên đăng nhập sẽ thấy banner kết quả: thành công, đã tự lùi về bản an toàn, hoặc lỗi kèm lệnh chạy tay.
+- Web không lên lại sau phục hồi: xem `restore-status.json` trong thư mục dữ liệu và `logs\backup.log`; phục hồi tay bằng `uv run --no-dev --extra robot shoponline backup restore <bản an toàn> --production --force --yes`.
 
 ### Xem danh sách xóa theo thời hạn
 

@@ -19,13 +19,15 @@ powershell -ExecutionPolicy Bypass -File $env:TEMP\setup.ps1 -Archive <file .7z>
 2. Lấy mã về `C:\shoponline`. Thư mục đã có thì phải sạch, và được fast-forward tới `origin/main`.
 3. Chạy tiếp dưới `pwsh`: `uv sync`, tạo database và `.env` ([`create-databases.ps1`](../scripts/windows/create-databases.ps1)), rồi hỏi những dòng `.env` còn thiếu: IP web trong mạng nội bộ, thư mục sao lưu, mật khẩu sao lưu.
 4. Giới hạn quyền `.env` và thư mục dữ liệu cho tài khoản này, Administrators và SYSTEM.
-5. Chép thư mục dữ liệu cũ (`-DataSource`) bằng `robocopy`. Khôi phục bản sao lưu (`-Archive`) khi database `shoponline` còn trống; database đã có dữ liệu thì không ghi đè.
+5. Chép thư mục dữ liệu cũ (`-DataSource`) bằng `robocopy`. Khôi phục bản sao lưu (`-Archive`) khi database `shoponline` còn trống; database đã có dữ liệu thì không ghi đè. (Chuyển máy dùng `-Bundle` thay cho hai tham số này, sau `migrate`.)
 6. `migrate`, đăng ký các tác vụ ẩn (mục 5), rồi một lần UAC để mở cổng web trên tường lửa (Domain, Private) và tắt chế độ ngủ khi cắm điện. Nếu mạng của máy đang là **Public** (`Get-NetConnectionProfile`), quy tắc này không có tác dụng và máy khác không mở được web: chuyển mạng nội bộ sang Private bằng `Set-NetConnectionProfile -InterfaceAlias <tên> -NetworkCategory Private`.
 7. Cài runner deploy (mục 5b; `gh auth login` nếu chưa đăng nhập), bật web và robot.
 
 Cuối cùng script in bảng kiểm tra: mục đã xong, và việc tay còn lại kèm hướng dẫn. Script chạy lại được bất cứ lúc nào: bước đã xong thì bỏ qua, không hỏi lại mật khẩu đã có trong `.env`.
 
 `-Prepare` dựng máy trước ngày chuyển máy chạy thật từ máy cũ sang: không cài runner, và tác vụ robot để Disabled vì robot trên máy cũ còn dùng user SAP.
+
+`-Bundle <file | drive:latest>` thay cho `-Archive` và `-DataSource` khi chuyển máy: nạp gói do `server-export.ps1` tạo (database, tài khoản web và lịch sao lưu, thư mục dữ liệu, dòng `.env` còn thiếu), so số dòng với manifest, và từ chối cài runner hoặc bật robot khi GitHub còn một runner nhãn `shoponline-prod` khác. `drive:latest` hỏi Client ID, Secret của OAuth client Google (cùng project máy cũ), kết nối Drive bằng mã thiết bị rồi tải bản `full` mới nhất. Xem [Chuyển máy chạy thật](#chuyển-máy-chạy-thật-sang-máy-khác).
 
 ## 2. Việc tay sau script
 
@@ -56,8 +58,10 @@ Script ghi sẵn các dòng chính. Bảng dưới để tra cứu và sửa tay
 | `SHOPONLINE_WEB_HOST` | Địa chỉ IP nội bộ của máy (để máy khác trong mạng mở được web) |
 | `SHOPONLINE_WEB_PORT` | Mặc định `8750`; đổi nếu cổng đã bị chiếm |
 | `SHOPONLINE_BACKUP_PASSWORD` | Mật khẩu mã hóa bản sao lưu, lấy từ kho bí mật |
-| `SHOPONLINE_BACKUP_DIRS` | Ví dụ `\\fileserver\it\shoponline-backup;G:\My Drive\shoponline-backup` |
-| `SHOPONLINE_RESTORE_DATABASE_URL` | Một database tạm để diễn tập khôi phục, không bao giờ là `shoponline`; thêm tay |
+| `SHOPONLINE_BACKUP_DIRS` | Thư mục nhận bản sao lưu, ví dụ `\\fileserver\it\shoponline-backup;D:\backup`. Google Drive không khai ở đây mà kết nối trên trang **Sao lưu** (mục 6b) |
+| `SHOPONLINE_RESTORE_DATABASE_URL` | Một database tạm để diễn tập khôi phục, không bao giờ là `shoponline`; thêm tay (cần tạo database này bằng quyền `postgres`: role ứng dụng không có quyền tạo database) |
+
+`SHOPONLINE_BACKUP_KEEP_DAYS` không còn tác dụng: giờ sao lưu và số bản giữ đặt trên trang **Sao lưu**.
 
 Thư mục dữ liệu chứa file sàn, file gửi kế toán có tên và địa chỉ khách, nên chỉ tài khoản hệ thống và quản trị viên đọc được. Mật khẩu sao lưu chỉ nằm trong `.env` của máy chạy thật và trong kho bí mật, không đặt cạnh bản sao lưu.
 
@@ -66,13 +70,14 @@ Thư mục dữ liệu chứa file sàn, file gửi kế toán có tên và đ�
 Chạy trong PowerShell 7 với quyền quản trị:
 
 ```powershell
-pwsh -ExecutionPolicy Bypass -File scripts\windows\register-tasks.ps1 -User MAYCHU\shoponline -BackupTime 23:00
+pwsh -ExecutionPolicy Bypass -File scripts\windows\register-tasks.ps1 -User MAYCHU\shoponline
 ```
 
-Script dừng lại nếu cổng web đang có tiến trình khác giữ; khi đó dừng tiến trình cũ hoặc đổi `SHOPONLINE_WEB_PORT`, không chạy thêm bản thứ hai. Script đăng ký ba tác vụ:
+Script dừng lại nếu cổng web đang có tiến trình khác giữ; khi đó dừng tiến trình cũ hoặc đổi `SHOPONLINE_WEB_PORT`, không chạy thêm bản thứ hai. Script đăng ký các tác vụ:
 
 - `shoponline-web`: chạy `uv run shoponline web` khi máy khởi động, tự chạy lại nếu dừng.
-- `shoponline-backup`: chạy `backup-db.ps1` hằng ngày.
+- `shoponline-backup`: chạy `uv run shoponline backup run --if-due` **mỗi 15 phút** (tối đa 3 giờ một lần chạy, không chạy chồng). Nó làm các yêu cầu admin bấm trên web, rồi chạy bản tới lịch. Giờ chạy đặt trên trang **Sao lưu**, không cần đăng ký lại. `-BackupTime` không còn tác dụng.
+- `shoponline-restore`: không có lịch; chạy khi admin bấm phục hồi hệ thống thật trên web (`backup process-queue --restore`).
 - `shoponline-retention`: hằng ngày lúc 23:30 (`-RetentionTime`), xóa file hết dùng và liệt kê dữ liệu khách quá thời hạn lưu vào `<SHOPONLINE_DATA_DIR>\logs\retention.log`. Dữ liệu khách chỉ bị xóa thật khi đăng ký với `-RetentionApply`, sau một tuần xem log (xem [security-and-data-retention.md](security-and-data-retention.md#thời-hạn-lưu)).
 
 Mọi tác vụ chạy ẩn, không mở cửa sổ nào để người khác lỡ tay đóng:
@@ -82,6 +87,10 @@ Mọi tác vụ chạy ẩn, không mở cửa sổ nào để người khác l�
 - Tác vụ được phép chạy khi máy dùng pin và không dừng khi rút sạc.
 
 Muốn biết web và robot có đang chạy không, xem cột Status trong Task Scheduler hoặc trang **Robot SAP**. Log của web ở `<SHOPONLINE_DATA_DIR>\logs\web.log` (lỗi và log ứng dụng; truy cập chỉ ghi từ mức WARNING), log của robot ở `logs\robot.log`.
+
+Web, `shoponline-backup`, `shoponline-restore` và lệnh `uv run shoponline drive ...` phải chạy dưới **cùng một tài khoản Windows**: Client Secret và refresh token của Google Drive nằm trong Windows Credential Manager của tài khoản đó. Chế độ `-AtLogOn` đáp ứng điều này; với tài khoản riêng (`-User MAYCHU\shoponline`) thì chạy `drive connect` bằng chính tài khoản đó.
+
+`register-tasks.ps1 -OnlyMissing` (deploy gọi mỗi lần) giữ trigger của mọi tác vụ có sẵn, trừ `shoponline-backup`: nếu nó còn trigger hằng ngày cũ thì được đổi sang lặp 15 phút. Lùi tính năng này: chạy lại `register-tasks.ps1` **không** có `-OnlyMissing` từ commit trước (trả trigger hằng ngày), và `Unregister-ScheduledTask shoponline-restore`.
 
 Mở cổng web trên Windows Firewall cho mạng nội bộ (profile Domain hoặc Private), không mở ra Internet.
 
@@ -95,7 +104,7 @@ pwsh -ExecutionPolicy Bypass -File scripts\windows\register-tasks.ps1 -User $env
 
 ## 5b. Tự động triển khai khi push `main`
 
-[`.github/workflows/deploy.yml`](../.github/workflows/deploy.yml) chạy test trên GitHub (PostgreSQL 16), sau đó giao bước deploy cho self-hosted runner có nhãn `shoponline-prod` trên máy chạy thật. Runner gọi [`update-production.ps1`](../scripts/windows/update-production.ps1) trong `C:\shoponline`. Script dừng robot và web, sao lưu database, fast-forward tới commit vừa push, chạy `uv sync --frozen --no-dev --extra robot` và `migrate`. Sau đó nó đăng ký các tác vụ còn thiếu cho tài khoản chạy runner (`register-tasks.ps1 -AtLogOn -OnlyMissing`: web, sao lưu, retention, robot), khởi động lại web, chờ trang `/login` trả lời và bật robot. Tác vụ đã có mà lệnh chạy hoặc cài đặt pin khác bản script đang đăng ký thì được cập nhật (log deploy in "Cập nhật cách chạy …"); trigger, tài khoản và chế độ `--apply` của retention được giữ nguyên. Deploy cũng cập nhật như vậy cho tác vụ `shoponline-deploy-runner` (`install-deploy-runner.ps1 -TaskOnly`); runner đang chạy job giữ cách chạy cũ tới lần đăng nhập sau. Robot luôn được bật khi deploy: nó khởi động được cả khi cấu hình SAP chưa đủ, và trang **Kết nối SAP** báo thiếu gì (cấu hình SAP nằm trong database, mật khẩu trong Windows Credential Manager của tài khoản chạy robot; xem [robot-machine-setup.md](robot-machine-setup.md)). Nếu robot thoát ngay sau khi bật, job deploy báo lỗi. Nếu lỗi giữa chừng, script in commit cũ để lùi lại và vẫn cố khởi động web và robot.
+[`.github/workflows/deploy.yml`](../.github/workflows/deploy.yml) chạy test trên GitHub (PostgreSQL 16), sau đó giao bước deploy cho self-hosted runner có nhãn `shoponline-prod` trên máy chạy thật. Runner gọi [`update-production.ps1`](../scripts/windows/update-production.ps1) trong `C:\shoponline`. Script từ chối chạy khi đang có phục hồi hoặc chuyển máy, rồi dừng robot và web, sao lưu database (bản `db` chỉ ở máy chủ, không lên Drive; mã thoát 0 hoặc 2 thì đi tiếp, 1 hoặc 3 thì dừng), tạm tắt tác vụ sao lưu và phục hồi, fast-forward tới commit vừa push, chạy `uv sync --frozen --no-dev --extra robot` và `migrate`. Sau đó nó đăng ký các tác vụ còn thiếu cho tài khoản chạy runner (`register-tasks.ps1 -AtLogOn -OnlyMissing`: web, sao lưu, retention, robot), khởi động lại web, chờ trang `/login` trả lời và bật robot. Tác vụ đã có mà lệnh chạy hoặc cài đặt pin khác bản script đang đăng ký thì được cập nhật (log deploy in "Cập nhật cách chạy …"); trigger, tài khoản và chế độ `--apply` của retention được giữ nguyên. Deploy cũng cập nhật như vậy cho tác vụ `shoponline-deploy-runner` (`install-deploy-runner.ps1 -TaskOnly`); runner đang chạy job giữ cách chạy cũ tới lần đăng nhập sau. Robot luôn được bật khi deploy: nó khởi động được cả khi cấu hình SAP chưa đủ, và trang **Kết nối SAP** báo thiếu gì (cấu hình SAP nằm trong database, mật khẩu trong Windows Credential Manager của tài khoản chạy robot; xem [robot-machine-setup.md](robot-machine-setup.md)). Nếu robot thoát ngay sau khi bật, job deploy báo lỗi. Nếu lỗi giữa chừng, script in commit cũ để lùi lại và vẫn cố khởi động web và robot.
 
 Cài runner một lần, bằng tài khoản sở hữu `C:\shoponline` (cần `gh` đăng nhập với quyền admin repo):
 
@@ -115,25 +124,38 @@ Ràng buộc an toàn:
 ## 6. Kiểm tra sau khi triển khai
 
 1. Mở `http://<IP máy>:8750` từ máy admin, đăng nhập được.
-2. Chạy tay tác vụ `shoponline-backup` trong Task Scheduler; kiểm tra file `.7z` xuất hiện ở cả hai thư mục đích và web không còn dòng cảnh báo sao lưu.
-3. Diễn tập khôi phục một bản sao lưu vào database tạm:
+2. Trang **Sao lưu** → **Sao lưu ngay** → Database: dòng "Đang chạy" hiện trong bảng, rồi thành "Thành công"; file `.7z` xuất hiện ở mọi thư mục đích và dòng cam cảnh báo sao lưu hết.
+3. Kết nối Google Drive (mục 6b), rồi sao lưu lại với ô "Lưu thêm 1 bản lên Google Drive": cột Google Drive báo "Đã lên Drive (MD5 khớp)".
+4. Diễn tập khôi phục: dòng của bản vừa tạo → **Phục hồi…** → Diễn tập (cần `SHOPONLINE_RESTORE_DATABASE_URL`). Số dòng phải khớp manifest. Dòng lệnh: `uv run shoponline backup restore <bản> --drill`. Bản sao lưu cũ làm bằng `backup-db.ps1` trước đây (không có manifest) vẫn diễn tập được, chỉ không so được số dòng; `restore-db.ps1 -Archive <file .7z>` vẫn dùng như trước.
 
-   ```powershell
-   pwsh -File scripts\windows\restore-db.ps1 -Archive <đường dẫn file .7z>
-   ```
+## 6b. Kết nối Google Drive
 
-   Script đọc database đích từ `SHOPONLINE_RESTORE_DATABASE_URL` và từ chối ghi vào `shoponline` nếu thiếu `-AllowProduction`.
+Cần một lần, bởi người có Gmail cá nhân sẽ giữ các bản sao lưu (bản sao lưu phụ thuộc tài khoản đó; xem [security-and-data-retention.md](security-and-data-retention.md#bí-mật)):
+
+1. Trang **Sao lưu** → khối **Kết nối Google Drive** → **Hướng dẫn tạo OAuth Client (4 bước)**: tạo project, bật Google Drive API, consent screen loại External với scope `drive.file` rồi **Publish to production** (để ở Testing thì kết nối mất sau 7 ngày), tạo OAuth client ID loại **TVs and Limited Input devices**. Cất Client ID và Secret vào kho bí mật.
+2. **Bước A**: dán Client ID và Secret, **Lưu**. Secret chỉ nằm trong Windows Credential Manager và không hiện lại.
+3. **Bước B**: **Kết nối bằng mã thiết bị**, mở `google.com/device` trên máy bất kỳ, nhập mã, đồng ý. Trang hiện "Đã kết nối: <email>"; thư mục `shoponline-backup` được tạo đúng một lần.
+4. **Kiểm tra kết nối** báo hoạt động, quyền bị thu hồi, hoặc thư mục bị xóa. **Ngắt kết nối** thu hồi quyền phía Google; file trên Drive còn nguyên.
+
+Không dùng web: `uv run --extra robot shoponline drive set-client --client-id <id>`, rồi `drive connect`, `drive status --check`, `drive disconnect`.
+
+## 7. Sao lưu và phục hồi hằng ngày
+
+- **Lịch mặc định:** `db` mỗi ngày 16:30, `full` thứ Sáu 16:30 (ngay sau bản `db` cùng ngày), `app` chỉ khi bấm tay, cộng một bản `db` trước mỗi deploy. Sao lưu không dừng web hay robot nên chạy được trong giờ làm việc. Giờ và ngày sửa trên trang **Sao lưu**.
+- **Giữ lại:** `db` 15 bản, `app` 15 bản, `full` tối đa 30 ngày (đặt được 7–90), như nhau ở máy chủ và Drive. Bản mới tới nơi nào thì nơi đó mới dọn bản cũ.
+- **Bản của người khác gửi, hay bản từ máy cũ:** **Tải lên bản sao lưu** (tối đa 1 GB, chỉ file `.7z` của hệ thống này, phải mở được bằng mật khẩu sao lưu); file sai mật khẩu, bị sửa hay không mã hóa bị từ chối và xóa ngay.
+- **Phục hồi:** xem [operations-runbook.md](operations-runbook.md#phục-hồi-dữ-liệu). Phục hồi thật chạy qua tác vụ `shoponline-restore`; lần đầu trên máy thật, kiểm tra tiến trình web quyền thường có chạy được `schtasks /Run` cho tác vụ đăng ký bằng quyền quản trị không. Nếu không, yêu cầu nằm lại và trang báo "tác vụ phục hồi không chạy" sau 2 phút: bấm chạy tay tác vụ trong Task Scheduler hoặc dùng dòng lệnh.
 
 ## Cập nhật phiên bản
 
-Khi đã cài runner (mục 5b), chỉ cần push lên `main`. Cập nhật tay, khi không có runner:
+Khi đã cài runner (mục 5b), chỉ cần push lên `main`. Cập nhật tay, khi không có runner (nhớ tạm tắt `shoponline-backup` nếu nó đang chạy, vì nó giữ file trong `.venv`):
 
 ```powershell
 Stop-ScheduledTask shoponline-web
 cd C:\shoponline
 git pull
 uv sync
-pwsh -File scripts\windows\backup-db.ps1   # sao lưu trước khi đổi schema
+pwsh -File scripts\windows\backup-db.ps1   # sao lưu trước khi đổi schema (mã thoát 0 hoặc 2 mới đi tiếp)
 uv run shoponline migrate
 Start-ScheduledTask shoponline-web
 ```
@@ -149,41 +171,29 @@ Hai điều không được xảy ra cùng lúc:
 - **Hai runner nhãn `shoponline-prod`.** GitHub giao job deploy cho runner nào đang rảnh, nên một push có thể lên nhầm máy.
 - **Hai robot dùng `AL17016`.** Khóa robot nằm trong database của từng máy, nên hai robot ở hai máy không chặn nhau.
 
-**Chuẩn bị** (máy cũ vẫn chạy): dựng máy mới theo mục 1 với `-Prepare`, `-Archive` là một bản sao lưu mới và `-DataSource` là bản chép thư mục dữ liệu; làm mục 2 trừ bước **Kiểm tra** SAP. Mở web máy mới từ máy admin, nhưng không nhập liệu ở đó.
+Việc chuyển gói thành hai lệnh dùng chung một bản `full` (database, tài khoản web và lịch sao lưu, thư mục dữ liệu, `.env` không có mật khẩu sao lưu), lưu ở máy chủ và trên Google Drive. Credential Manager không đi theo bản sao lưu, nên trên máy mới phải nhập lại **cùng** Client ID và Secret rồi kết nối lại Drive (cùng project thì thấy lại mọi bản cũ), và đặt lại mật khẩu SAP bằng `sap-password set`.
+
+**Chuẩn bị** (máy cũ vẫn chạy):
+
+1. Máy cũ: `pwsh -File scripts\windows\server-export.ps1 -Prepare` tạo một bản `full` (nguồn "Chuyển máy") và in đường dẫn ở máy chủ cùng tên trên Drive. Không dừng gì.
+2. Máy mới: dựng theo mục 1 với `-Bundle <đường dẫn | drive:latest> -Prepare`. Không cài runner, robot để Disabled. Mở web máy mới từ máy admin để xem, nhưng không nhập liệu ở đó.
 
 **Ngày chuyển** (ngoài giờ xử lý đơn):
 
-1. Máy cũ: dừng và Disable theo thứ tự `shoponline-deploy-runner` (dừng cả `Runner.Listener`), `shoponline-robot`, `shoponline-web`. Tab Actions không có job nào đang chạy.
-2. Máy cũ: đếm dòng mọi bảng và lưu ra file, chạy tay `backup-db.ps1`, rồi Disable `shoponline-backup` và `shoponline-retention`. Câu đếm, chạy bằng `psql` với role `shoponline_app`:
+1. Máy cũ: `pwsh -File scripts\windows\server-export.ps1`. Dừng ngay ở bước lỗi và in bước kế tiếp. Các bước: không có job Actions đang chạy → dừng và Disable runner, robot, web, sao lưu, phục hồi → bản `full` cuối **phải tới cả máy chủ lẫn Google Drive** → Disable retention → gỡ runner khỏi repo và kiểm GitHub không còn runner của máy này → ghi `released.json` vào thư mục dữ liệu.
+2. Máy mới: `setup-production-machine.ps1 -Bundle drive:latest` (không `-Prepare`). Script cài công cụ, `migrate`, kết nối Drive, tải bản `full` mới nhất, nạp gói và so số dòng với manifest (lệch thì dừng trước khi cài runner), kiểm tra GitHub không còn runner nhãn `shoponline-prod` nào khác (kể cả offline), rồi cài runner và bật web, robot.
+3. Làm các việc tay in ở bảng kiểm tra cuối: Autologon, SAP GUI, `sap-password set`, trang **Robot SAP → Kết nối SAP** bấm **Kiểm tra** (robot cũ đã tắt). Đăng nhập web bằng tài khoản cũ và xem trang **Sao lưu**.
+4. Push một commit lên `main`: job `deploy` phải chạy xanh trên runner máy mới. Gửi admin địa chỉ `http://<IP máy mới>:8750`.
 
-   ```sql
-   SELECT table_name,
-          (xpath('/row/c/text()', query_to_xml(format('SELECT count(*) AS c FROM public.%I', table_name), false, true, '')))[1]::text::int AS rows
-   FROM information_schema.tables
-   WHERE table_schema = 'public' AND table_type = 'BASE TABLE'
-   ORDER BY 1;
-   ```
+Máy cũ chỉ tắt, không xóa: các tác vụ để Disabled, `C:\shoponline`, `C:\actions-runner` và database giữ nguyên làm bản lùi lại. Xóa bản chép dữ liệu tạm sau khi máy mới ổn, vì nó chứa dữ liệu khách.
 
-3. Máy cũ: gỡ runner khỏi repo, rồi kiểm tra `gh api repos/hotriluan/shoponline/actions/runners` không còn tên máy cũ:
-
-   ```powershell
-   $t = gh api -X POST repos/hotriluan/shoponline/actions/runners/remove-token -q .token
-   C:\actions-runner\config.cmd remove --token $t
-   ```
-
-4. Máy mới: dừng `shoponline-web`, chép lại thư mục dữ liệu bằng `robocopy /E /COPY:DAT`, khôi phục đè bản sao lưu cuối (`restore-db.ps1 -Archive <bản cuối> -TargetSetting SHOPONLINE_DATABASE_URL -AllowProduction`), `uv run --no-dev shoponline migrate`.
-5. Máy mới: chạy lại script mục 1 **không** có `-Prepare`. Script cài runner và bật web, robot.
-6. Trang **Robot SAP → Kết nối SAP**: robot chạy trên máy mới, mật khẩu "đã có", **Kiểm tra** thành công với `AEP/300/AL17016`.
-7. Đếm lại trên máy mới; kết quả phải giống file ở bước 2.
-8. Push một commit lên `main`: job `deploy` phải chạy xanh trên runner máy mới. Gửi admin địa chỉ `http://<IP máy mới>:8750`.
-
-Máy cũ chỉ tắt, không xóa: các tác vụ để Disabled, `C:\shoponline`, `C:\actions-runner` và database giữ nguyên làm bản lùi lại. Xóa bản chép dữ liệu tạm sau khi bước 7 khớp, vì nó chứa dữ liệu khách.
-
-**Lùi lại**, khi admin chưa nhập liệu trên máy mới: trên máy mới dừng và Disable mọi tác vụ, gỡ runner bằng `config.cmd remove`. Trên máy cũ Enable năm tác vụ, chạy `install-deploy-runner.ps1`, rồi `Start-ScheduledTask` web và robot. Nếu admin đã nhập liệu trên máy mới, trước đó sao lưu máy mới, khôi phục bản đó vào máy cũ bằng `restore-db.ps1 -AllowProduction` và chép lại thư mục dữ liệu.
+**Lùi lại**, khi admin chưa nhập liệu trên máy mới: dừng và Disable mọi tác vụ trên máy mới, gỡ runner của nó (`config.cmd remove`), rồi trên máy cũ `pwsh -File scripts\windows\server-export.ps1 -Rollback`: lệnh từ chối nếu GitHub còn runner nhãn `shoponline-prod` của máy khác, rồi Enable lại tác vụ, cài lại runner, bật web và robot. Nếu admin đã nhập liệu trên máy mới, trước đó sao lưu máy mới (bản `full`) và nạp vào máy cũ bằng `backup restore <bản> --production`, hoặc `--new-machine` trên một cài đặt trống.
 
 ## Khi máy hỏng
 
-Admin quay lại làm file Excel bằng tay như trước. Dựng máy mới theo mục 1 và 2, truyền `-Archive` là bản sao lưu gần nhất trong thư mục sao lưu: script khôi phục nó vào database `shoponline` còn trống. Nếu máy cũ có runner, gỡ nó khỏi repo (GitHub → Settings → Actions → Runners) để chỉ còn một runner nhãn `shoponline-prod`.
+Admin quay lại làm file Excel bằng tay như trước. Trên máy mới: `setup-production-machine.ps1 -Bundle drive:latest`, nhập Client ID và Secret từ kho bí mật; script dùng bản `full` mới nhất trên Drive (dữ liệu sau bản đó mất; không có sao lưu liên tục). Script dừng ở bước kiểm runner khi GitHub còn runner cũ. Máy cũ đã hỏng nên không chạy được `server-export.ps1`: gỡ runner cũ ở GitHub (Settings → Actions → Runners), và **rào máy cũ trước khi bật nó lên lần nào nữa** (rút mạng, đăng nhập, Disable mọi tác vụ `shoponline-*`), vì nếu máy cũ bật lên với runner và robot còn nguyên, deploy và robot sẽ chạy ở hai nơi. Sau đó chạy lại script.
+
+Không có Google Drive hay Gmail đó nữa: dùng bản `full` trong thư mục sao lưu ở ổ mạng công ty (`-Bundle <đường dẫn>`).
 
 ## Phụ lục: dựng máy tay (máy không có `winget`)
 

@@ -63,7 +63,7 @@ Mọi bảng có dòng tiêu đề đều bấm được vào tên cột để s
 ## Khi có sự cố
 
 - **Web không mở được hoặc máy chạy thật hỏng:** làm file Excel bằng tay như trước, báo người quản trị hệ thống.
-- **Thanh cảnh báo sao lưu màu cam:** bản sao lưu gần nhất đã quá 36 giờ; báo người quản trị.
+- **Thanh cảnh báo sao lưu màu cam:** trang **Sao lưu** (mục trên cùng của menu) nói rõ nơi nào hỏng hoặc bản nào quá hạn. Người xem chỉ đọc; admin bấm **Sao lưu ngay** hoặc báo người quản trị.
 - **File bị từ chối:** thông báo nêu cột thiếu hoặc dòng lỗi. Sàn có thể đã đổi mẫu file; không sửa tay file sàn, báo người quản trị.
 
 ## Biên bản chạy song song (cổng G1)
