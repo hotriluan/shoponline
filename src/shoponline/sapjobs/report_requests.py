@@ -7,13 +7,16 @@ from datetime import date, timedelta
 
 from sqlalchemy.orm import Session
 
+from shoponline.clock import today_vn
 from shoponline.db.models import OrderBatch, PlatformSetting, SapJob
 from shoponline.sapjobs import queue
 from shoponline.sapjobs.queue import SapTarget
 
 
 def request_zrsd001(session: Session, target: SapTarget, batch: OrderBatch, actor: str) -> SapJob:
-    """zrsd001 with "Complete", filtered to the platform's SAP customer and the batch day."""
+    """zrsd001 with "Complete", filtered to the platform's SAP customer and the document dates
+    from the batch day up to today: sales admin may create an SO days after the batch day, and
+    reading again must find it. One job per batch whatever the range."""
     setting = session.get(PlatformSetting, batch.platform)
     day = batch.processing_date.isoformat()
     return queue.enqueue(
@@ -26,7 +29,7 @@ def request_zrsd001(session: Session, target: SapTarget, batch: OrderBatch, acto
             "platform": batch.platform,
             "sold_to": setting.sap_customer,
             "date_from": day,
-            "date_to": day,
+            "date_to": max(batch.processing_date, today_vn()).isoformat(),
             "selection": "complete",
         },
         actor,

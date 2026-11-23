@@ -98,7 +98,7 @@ def test_saving_the_same_values_again_writes_no_event(db):
 def test_changing_system_or_client_clears_the_verification_but_other_fields_do_not(db):
     configure_sap(db, SapTarget("AEP", "300"))
     assert sap_settings.load(db, NO_ENV).target_verified
-    sap_settings.save(db, "admin", NO_ENV, sap_user="OTHER", language="VI")
+    sap_settings.save(db, "admin", NO_ENV, language="VI")
     assert sap_settings.load(db, NO_ENV).target_verified
     sap_settings.save(db, "admin", NO_ENV, client="400")
     config = sap_settings.load(db, NO_ENV)
@@ -122,3 +122,12 @@ def test_robot_alive_needs_a_heartbeat_newer_than_thirty_seconds(db):
     control.last_seen_at = now - timedelta(seconds=31)
     assert not sap_settings.robot_alive(control, now)
     assert isinstance(control, RobotControl)
+
+
+def test_changing_the_sap_user_clears_the_verification(db):
+    configure_sap(db, SapTarget("AEP", "300"))
+    assert sap_settings.load(db, NO_ENV).target_verified
+
+    sap_settings.save(db, "admin", NO_ENV, sap_user="LESS-RIGHTS")
+
+    assert not sap_settings.load(db, NO_ENV).target_verified

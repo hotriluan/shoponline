@@ -211,8 +211,9 @@ def _normalized(values: dict) -> dict:
 def save(db: Session, actor: str, env: Mapping[str, str], **fields) -> dict:
     """Validate and store the given fields; returns {field: [old, new]} for what changed.
 
-    Changing the system or the client drops the verification: the robot reads no report until a
-    connection check succeeds for the new target.
+    Changing the system, the client or the user drops the verification: the robot reads no report
+    until a connection check succeeds for the new target (a user with fewer rights gets fewer
+    rows from SAP without any error).
     """
     clean = _clean(fields)
     row = _row(db, env)
@@ -222,7 +223,7 @@ def save(db: Session, actor: str, env: Mapping[str, str], **fields) -> dict:
     changes = {name: [before[name], merged[name]] for name in clean if before[name] != merged[name]}
     for name in clean:
         setattr(row, name, merged[name])
-    if "system" in changes or "client" in changes:
+    if {"system", "client", "sap_user"} & changes.keys():
         row.verified_system = row.verified_client = row.verified_at = None
     if changes:
         row.changed_by, row.changed_at = actor, datetime.now(UTC)

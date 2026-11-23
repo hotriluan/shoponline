@@ -106,7 +106,18 @@ def _stored_report(settings: Settings, out: TransactionResult, kind: str):
     return record
 
 
-def _after_zrsd001(db: Session, job: SapJob, out: TransactionResult, settings: Settings) -> dict:
+def _after_zrsd001(
+    db: Session, job: SapJob, out: TransactionResult | None, settings: Settings
+) -> dict:
+    if out is None:  # SAP listed no SO for the filter yet: a valid answer, nothing to import
+        return {
+            "new": 0,
+            "updated": 0,
+            "unchanged": 0,
+            "linked": 0,
+            "warnings": [],
+            "no_data": True,
+        }
     record = _stored_report(settings, out, "zrsd001")
     batch_id = queue.payload_of(job).get("batch_id")
     batch = db.get(OrderBatch, batch_id) if batch_id else None
@@ -361,8 +372,8 @@ class Worker:
         except UnknownPopup as exc:
             outcome = Outcome(queue.NEED_REVIEW, str(exc), self._capture(gui, job_id))
         except NoReportData as exc:
-            if kind in (queue.READ_ZRSD003, queue.READ_ZRSD004):
-                # No delivery or invoice yet for the filter: a result, not a failure.
+            if kind in (queue.READ_ZRSD001, queue.READ_ZRSD003, queue.READ_ZRSD004):
+                # No SO, delivery or invoice yet for the filter: a result, not a failure.
                 outcome = Outcome(queue.DONE)
             else:
                 outcome = Outcome(queue.FAILED, f"NoReportData: {exc}", self._capture(gui, job_id))
@@ -481,6 +492,29 @@ class RobotAlreadyRunning(RuntimeError):
     pass
 
 
+class RobotLockLost(RuntimeError):
+    pass
+
+
+def lock_still_held(connection: Connection) -> bool:
+    """Whether this connection still owns the single-robot lock. The lock lives and dies with the
+    connection: after a network drop or a database restart it is gone and a second robot may
+    already hold it."""
+    try:
+        held = connection.execute(
+            text(
+                "SELECT EXISTS (SELECT 1 FROM pg_locks WHERE locktype = 'advisory' "
+                "AND pid = pg_backend_pid() "
+                "AND ((classid::bigint << 32) | objid::bigint) = :key)"
+            ),
+            {"key": ADVISORY_LOCK_KEY},
+        ).scalar()
+        connection.commit()
+    except Exception:
+        return False
+    return bool(held)
+
+
 def acquire_single_robot_lock(engine: Engine) -> Connection:
     """Keep the returned connection open while the robot runs; closing it releases the lock."""
     connection = engine.connect()
@@ -514,6 +548,8 @@ def run_forever(
         evidence.prune(worker.settings.evidence_dir, keep_days)
         log.info("Robot bắt đầu; Ctrl+C để dừng")
         while True:
+            if not lock_still_held(lock):
+                raise RobotLockLost("Robot mất khóa chạy duy nhất (kết nối database bị ngắt)")
             try:
                 worker.heartbeat()
             except Exception:  # a missed heartbeat must not stop the jobs

@@ -359,17 +359,19 @@ def test_no_data_neither_counts_nor_clears_failures(db, settings, batch):
     assert not queue.control(db).paused
 
 
-def test_zrsd001_without_data_is_still_a_failure(db, settings, batch):
-    job = request_zrsd001(db, QA, batch, "admin")
+def test_zrsd001_without_data_is_done_and_neutral_so_it_never_pauses_the_robot(db, settings, batch):
     worker = _worker(
         db, settings, _qa_session(), {queue.READ_ZRSD001: Transaction(_no_data, False)}
     )
+    jobs = []
+    for _ in range(4):  # more than the failure threshold of three
+        jobs.append(request_zrsd001(db, QA, batch, "admin"))
+        assert worker.run_once() is True
 
-    worker.run_once()
-
-    job = _job(db, job.id)
-    assert job.status == queue.FAILED and "không có dữ liệu" in job.error
-    assert _failures(db) == 1
+    job = _job(db, jobs[0].id)
+    assert job.status == queue.DONE and job.error is None
+    assert queue.result_of(job)["no_data"] is True
+    assert _failures(db) == 0 and not queue.control(db).paused
 
 
 # ---------------------------------------------------------------- files once the job is done
@@ -479,3 +481,33 @@ def test_failed_job_keeps_its_work_folder(db, settings, batch, tmp_path):
     for job_id in (import_failed.id, sap_failed.id):
         assert _job(db, job_id).status == queue.FAILED
         assert any((settings.robot_work_dir / f"job-{job_id}").iterdir())
+
+
+# ---------------------------------------------------------------- scope of a re-read and the lock
+
+
+def test_reading_zrsd001_again_covers_the_days_after_the_batch_day(db, batch, frozen_today):
+    job = request_zrsd001(db, QA, batch, "admin")
+
+    payload = queue.payload_of(job)
+
+    assert payload["date_from"] == "2026-11-11" and payload["date_to"] == "2026-11-13"
+    assert job.dedupe_key == f"read_zrsd001:batch:{batch.id}"  # still one job per batch
+
+
+def test_the_single_robot_lock_is_checked_and_reported_lost(db_engine):
+    from sqlalchemy import text
+
+    from shoponline.saprobot import worker as robot
+
+    lock = robot.acquire_single_robot_lock(db_engine)
+    try:
+        assert robot.lock_still_held(lock)
+        with pytest.raises(robot.RobotAlreadyRunning):
+            robot.acquire_single_robot_lock(db_engine)
+        # What a dropped connection amounts to: the session no longer owns the lock.
+        lock.execute(text("SELECT pg_advisory_unlock_all()"))
+        lock.commit()
+        assert not robot.lock_still_held(lock)
+    finally:
+        lock.close()

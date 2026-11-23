@@ -303,7 +303,7 @@ def _cmd_robot(_args: argparse.Namespace) -> int:
     from shoponline.saprobot.popups import load_rules
     from shoponline.saprobot.screen import Screens
     from shoponline.saprobot.session import logoff_sessions_of, scripting_engine
-    from shoponline.saprobot.worker import RobotAlreadyRunning, Worker, run_forever
+    from shoponline.saprobot.worker import RobotAlreadyRunning, RobotLockLost, Worker, run_forever
 
     settings = load_settings()
     env = dict(os.environ)
@@ -335,7 +335,7 @@ def _cmd_robot(_args: argparse.Namespace) -> int:
 
     try:
         run_forever(worker, get_engine(settings.database_url), on_start=log_off_leftovers)
-    except RobotAlreadyRunning as exc:
+    except (RobotAlreadyRunning, RobotLockLost) as exc:
         print(f"Lỗi: {exc}", file=sys.stderr)
         return 3
     except KeyboardInterrupt:
