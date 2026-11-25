@@ -101,6 +101,11 @@ class Preview:
     fingerprint: str
 
 
+def _plain(quantity: Decimal) -> str:
+    """1, Decimal('1') and Decimal('1.000') are the same quantity: one text for all three."""
+    return format(Decimal(quantity).normalize(), "f")
+
+
 def _fingerprint(preview: dict) -> str:
     """Everything the admin approves on screen except the buyer, whom the form carries itself."""
     text = json.dumps(preview, sort_keys=True, default=str, ensure_ascii=False)
@@ -254,8 +259,8 @@ def build_preview(
                 line.sap_name,
                 line.invoice_unit,
                 line.stock_unit,
-                str(line.invoice_qty),
-                str(line.return_qty),
+                _plain(line.invoice_qty),
+                _plain(line.return_qty),
                 line.unit_price,
                 line.amount_before,
                 line.amount_returned,
