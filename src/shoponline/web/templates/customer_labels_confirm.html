@@ -5,7 +5,7 @@
 {{ page_header('Xác nhận khách theo phiếu vận đơn', 'Các đơn dưới đây khác với dữ liệu đang lưu nên chưa được ghi. Chọn dòng nào lấy theo phiếu vận đơn.', '/customers', 'Khách hàng') }}
 <form method="post" action="/customers/labels/confirm">
   <div class="scroll"><table>
-    <tr><th>Ghi đè</th><th>Sàn</th><th>Mã đơn</th><th>Tên hiện có</th><th>Tên trên phiếu</th><th>Địa chỉ hiện có</th><th>Địa chỉ trên phiếu</th></tr>
+    <tr><th><input type="checkbox" id="pick-all" aria-label="Chọn tất cả để ghi đè"> Ghi đè</th><th>Sàn</th><th>Mã đơn</th><th>Tên hiện có</th><th>Tên trên phiếu</th><th>Địa chỉ hiện có</th><th>Địa chỉ trên phiếu</th></tr>
     {% for p in pending %}
     <tr>
       <td><input type="checkbox" name="pick" value="{{ loop.index0 }}" aria-label="Ghi đè đơn {{ p.order_id }}">
@@ -27,4 +27,21 @@
     <a class="button secondary" href="/customers">Giữ nguyên tất cả</a>
   </div>
 </form>
+<script>
+/* The header box ticks or clears every row's box (all pages, not only the visible one) and shows a
+   mixed state when only some rows are ticked. It must not trigger the header's click-to-sort. */
+(function () {
+  var all = document.getElementById('pick-all');
+  var boxes = Array.prototype.slice.call(document.querySelectorAll('input[name=pick]'));
+  function sync() {
+    var n = boxes.filter(function (b) { return b.checked; }).length;
+    all.checked = n > 0 && n === boxes.length;
+    all.indeterminate = n > 0 && n < boxes.length;
+  }
+  ['click', 'keydown'].forEach(function (t) { all.addEventListener(t, function (e) { e.stopPropagation(); }); });
+  all.addEventListener('change', function () { boxes.forEach(function (b) { b.checked = all.checked; }); });
+  boxes.forEach(function (b) { b.addEventListener('change', sync); });
+  sync();
+})();
+</script>
 {% endblock %}
