@@ -104,7 +104,7 @@ def test_a_missing_zrsd003_money_offers_the_robot_read(db, login):
 def test_an_unnumbered_system_shows_the_cli_command(db, login):
     unnumbered = factory.delivered_order(db, "NONUMBER")
     page = login("admin").get(f"/orders/{unnumbered.id}/return").text
-    assert "return-number start" in page
+    assert "Nhập số của biên bản đầu tiên" in page
 
 
 def test_the_full_flow_pdf_preview_issue_download_void_reissue(db, login, order, read_pdf):
@@ -332,3 +332,19 @@ def test_a_download_whose_file_is_gone_is_a_404_not_a_crash(db, login, order, re
     (created,) = _issued(db)
     Path(db.get(GeneratedFile, created.docx_file_id).stored_path).unlink()
     assert admin.get(f"/returns/{created.id}/docx").status_code == 404
+
+
+def test_admin_enters_the_start_number_once_on_the_returns_page(db, login):
+    admin = login("admin")
+    page = admin.get("/returns").text
+    assert "Chưa có số bắt đầu" in page and 'action="/returns/start-number"' in page
+    assert 'action="/returns/start-number"' not in login("viewer").get("/returns").text
+
+    login("viewer").post("/returns/start-number", data={"start": "5", "year": "2026"})
+    assert not numbering.is_configured(db)
+
+    done = admin.post("/returns/start-number", data={"start": "80", "year": "2026"})
+    assert "phiếu đầu tiên của năm 2026 sẽ là số 080" in done.text
+    assert 'action="/returns/start-number"' not in done.text
+    again = admin.post("/returns/start-number", data={"start": "5", "year": "2026"})
+    assert "không nhập lại" in again.text

@@ -38,7 +38,7 @@ from shoponline.db.models import (
 from shoponline.exports.invoice_adjustment_doc import DOCX_MEDIA_TYPE
 from shoponline.importers.excel_table import FileRejected
 from shoponline.importers.invoice_pdf import MAX_BYTES, read_invoice_pdf
-from shoponline.returns import master, service
+from shoponline.returns import master, numbering, service
 from shoponline.returns.amounts import Blocked
 from shoponline.sapjobs.queue import DuplicateJob
 from shoponline.sapjobs.report_requests import MAX_READ_DAYS, request_zrsd003, split_range
@@ -337,7 +337,36 @@ def returns_list(
         SalesOrder.platform_order_id,
         SalesReturn.tax_invoice_doc,
     )
-    return render(request, "returns.html", user, page=page, rows=page.items, reasons=REASONS)
+    return render(
+        request,
+        "returns.html",
+        user,
+        page=page,
+        rows=page.items,
+        reasons=REASONS,
+        numbered=numbering.is_configured(db),
+        this_year=today_vn().year,
+    )
+
+
+@router.post("/returns/start-number")
+def start_number(
+    request: Request,
+    start: int = Form(...),
+    year: int = Form(...),
+    db: Session = Depends(get_db),
+    user: AppUser = Depends(require_admin),
+):
+    """Enter the number of the first document, once; the number cannot be changed afterwards."""
+    try:
+        numbering.set_start(db, year, start, user.username)
+    except ValueError as exc:
+        db.rollback()
+        flash(request, str(exc), "error")
+        return redirect("/returns")
+    db.commit()
+    flash(request, f"Đã đặt số bắt đầu: phiếu đầu tiên của năm {year} sẽ là số {start:03d}.")
+    return redirect("/returns")
 
 
 def _return(db: Session, return_id: int) -> SalesReturn:

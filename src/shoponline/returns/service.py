@@ -261,9 +261,7 @@ def build_preview(
     if existing is not None:
         reasons.append(f"Đơn đã có phiếu {existing.doc_no}; hủy phiếu đó trước khi lập lại")
     if not numbering.is_configured(session):
-        reasons.append(
-            "Chưa nhập số bắt đầu của biên bản: chạy `shoponline return-number start <số>`"
-        )
+        reasons.append("Chưa nhập số bắt đầu của biên bản: nhập ở trang Phiếu trả hàng")
         codes.add("numbering")
 
     chosen = returned(

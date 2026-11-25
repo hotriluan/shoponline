@@ -53,7 +53,9 @@ def _read_zip(source: bytes | str | Path) -> zipfile.ZipFile:
 
 # --------------------------------------------------------------------------- Word
 
-_RUN_NOISE = {_q("w:color"), _q("w:lang"), _q("w:noProof")}
+# The sample highlights the buyer name in yellow; the issued form does not, so highlight is
+# ignored along with the colour of the dynamic fields.
+_RUN_NOISE = {_q("w:color"), _q("w:highlight"), _q("w:lang"), _q("w:noProof")}
 _CONTENT = {_q("w:t"), _q("w:tab"), _q("w:br"), _q("w:sym"), _q("w:drawing"), _q("w:pict")}
 
 

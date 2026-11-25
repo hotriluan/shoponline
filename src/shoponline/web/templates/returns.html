@@ -4,6 +4,21 @@
 {% block title %}Phiếu trả hàng{% endblock %}
 {% block content %}
 {{ page_header('Phiếu trả hàng', 'Biên bản điều chỉnh hóa đơn và REQUEST to RETURN GOODS đã lập. Lập phiếu mới từ trang của đơn đã giao.') }}
+{% if not numbered %}
+<div class="card warn">
+  <div class="card-head"><h2>Chưa có số bắt đầu</h2></div>
+  {% if user.role == 'admin' %}
+  <p>Nhập số của biên bản điều chỉnh <b>đầu tiên</b> sẽ lập bằng hệ thống (ví dụ 80). Chỉ nhập được một lần; từ đó hệ thống tự cấp số kế tiếp, sang năm mới tự về 001.</p>
+  <form method="post" action="/returns/start-number" class="row" onsubmit="return confirm('Đặt số bắt đầu? Không đổi lại được.')">
+    <label>Số bắt đầu<input type="number" name="start" min="1" required size="6"></label>
+    <label>Năm<input type="number" name="year" value="{{ this_year }}" min="2000" required size="6"></label>
+    <button>Đặt số bắt đầu</button>
+  </form>
+  {% else %}
+  <p>Admin cần nhập số bắt đầu trước khi lập được phiếu.</p>
+  {% endif %}
+</div>
+{% endif %}
 {{ search(page, 'Tìm theo số biên bản, mã đơn, số hóa đơn…') }}
 <div class="scroll"><table data-server>
   <tr><th>Số biên bản</th><th>Ngày lập</th><th>Sàn</th><th>Mã đơn</th><th>Hóa đơn</th><th>Lý do</th><th class="num">Tổng điều chỉnh</th><th>Trạng thái</th></tr>

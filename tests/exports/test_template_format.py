@@ -76,6 +76,10 @@ def test_template_has_no_hidden_parts_or_authors(path):
         assert not re.search(r"<(Company|Manager)>[^<]+<", app)
 
 
+def test_docx_template_has_no_highlight():
+    assert "w:highlight" not in _all_parts(DOCX)["word/document.xml"].decode("utf-8")
+
+
 def test_templates_have_no_red_text():
     document = _all_parts(DOCX)["word/document.xml"].decode("utf-8").upper()
     assert "FF0000" not in document

@@ -148,7 +148,7 @@ Không dùng web: `uv run --extra robot shoponline drive set-client --client-id 
 
 ## Phiếu trả hàng: việc một lần khi bật
 
-- Nhập số của biên bản đầu tiên, lấy từ người dùng: `uv run shoponline return-number start <số>` (một lần duy nhất; `return-number show` để xem). Số thử trên máy phát triển không mang sang.
+- Nhập số của biên bản đầu tiên, lấy từ người dùng: ô **Số bắt đầu** ở đầu trang Phiếu trả hàng (admin, một lần duy nhất), hoặc `uv run shoponline return-number start <số>`; `return-number show` để xem. Số thử trên máy phát triển không mang sang.
 - Ký hiệu hóa đơn suy ra từ biến `SHOPONLINE_INVOICE_SYMBOL_PATTERN` (mặc định `1C{yy}TAL`, `yy` là hai số cuối năm hóa đơn); sai mẫu thì ứng dụng không khởi động.
 - Hóa đơn nhập trước khi có cột tiền thì thiếu tiền: đọc lại zrsd003 của các tháng có hóa đơn cần trả.
 - **Không `downgrade` migration `0012` khi đã có phiếu**: bảng bị xóa thì số đã in có thể bị cấp lại. Khôi phục bản sao lưu cũ thì chạy `uv run shoponline return-number repair` rồi so với số cao nhất đã in.

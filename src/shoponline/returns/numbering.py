@@ -62,7 +62,8 @@ def next_number(session: Session, issued_on: date) -> tuple[int, int, str]:
     year = issued_on.year
     if not is_configured(session):
         raise NumberingNotConfigured(
-            "Chưa nhập số bắt đầu của biên bản. Chạy `shoponline return-number start <số>`."
+            "Chưa nhập số bắt đầu của biên bản. Nhập ở trang Phiếu trả hàng "
+            "(hoặc `shoponline return-number start <số>`)."
         )
     row = _locked_row(session, year)
     if row is None:
