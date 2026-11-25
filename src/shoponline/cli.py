@@ -390,7 +390,7 @@ def _cmd_robot_switch(args: argparse.Namespace) -> int:
 
 
 def _cmd_retention(args: argparse.Namespace) -> int:
-    """Files are always swept by the keep rules; --apply decides only the customer data."""
+    """Sweep the files no keep rule holds. Customer data is kept, so --apply changes nothing."""
     from shoponline.backup import maintenance
     from shoponline.db.session import session_scope
     from shoponline.maintenance import retention
@@ -404,24 +404,16 @@ def _cmd_retention(args: argparse.Namespace) -> int:
         log.info("Bỏ qua lượt dọn: đang bảo trì (%s), không xóa gì", marker.get("kind"))
         return 0
     actor = getpass.getuser()
+    if args.apply:
+        log.info("--apply không còn tác dụng: dữ liệu khách được giữ")
     refused: retention.ForeignStoredPaths | None = None
     with session_scope(settings.database_url) as session:
-        plan = retention.find_expired(session, settings)
-        if args.apply:
-            retention.apply(session, plan, actor)
         keep_days = sap_settings.load(session, os.environ).evidence_keep_days
         try:
             swept = retention.sweep_files(session, settings, keep_days, actor)
         except retention.ForeignStoredPaths as exc:
             refused, swept = exc, retention.SweepResult()
-    verb = "Đã xóa" if args.apply else "Sẽ xóa (chế độ liệt kê, thêm --apply để xóa thật)"
     lines = [
-        f"Thời hạn {settings.retention_days} ngày, mốc {plan.cutoff:%Y-%m-%d}",
-        f"{verb}: tên và địa chỉ của {len(plan.customer_orders)} đơn",
-        *(f"  đơn {platform} {order_id}" for platform, order_id in plan.customer_orders),
-        f"Giữ lại vì chưa có DO trong sổ gửi kế toán hoặc chưa vào file Shop Online: "
-        f"{len(plan.held_orders)} đơn",
-        *(f"  đơn {platform} {order_id}" for platform, order_id in plan.held_orders),
         f"Đã xóa {len(swept.files)} file hết dùng và {swept.screenshots} ảnh màn hình robot",
         *(f"  file {path}" for path in swept.files),
     ]
@@ -484,6 +476,53 @@ def _cmd_accounting_run(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_history_import(args: argparse.Namespace) -> int:
+    from pathlib import Path
+
+    from shoponline.db.session import session_scope
+    from shoponline.importers.excel_table import FileRejected
+    from shoponline.reports import history_import
+
+    path = Path(args.file)
+    if not path.is_file():
+        print(f"Không có file {path}")
+        return 1
+    settings = load_settings()
+    actor = getpass.getuser()
+    try:
+        with session_scope(settings.database_url) as session:
+            if args.apply:
+                result = history_import.apply(
+                    session, settings, path, actor, skip_backup_check=args.skip_backup_check
+                )
+            else:
+                result = history_import.plan(session, path)
+    except FileRejected as exc:
+        print(f"File bị từ chối: {exc}")
+        return 1
+    except history_import.BackupMissing as exc:
+        print(str(exc))
+        return 1
+    verb = "Đã nạp" if args.apply else "Sẽ nạp (chạy thử, thêm --apply để ghi)"
+    print(f"{verb} {len(result.new_lines)} dòng; {result.existing} dòng đã có từ trước.")
+    print(f"Bị loại {len(result.rejected)} dòng:")
+    for rejected in result.rejected:
+        print(f"  dòng {rejected.row}: {rejected.reason}")
+    print("Customer paid theo năm và shop (dòng nhận):")
+    for (year, shop), total in sorted(result.totals.items()):
+        print(f"  {year} {shop}: {total:,}")
+    if result.unresolved_cities:
+        print(
+            f"{len(result.unresolved_cities)} tên tỉnh/huyện chưa quy đổi được "
+            "(trang /province-aliases):"
+        )
+        for city, count in result.unresolved_cities.most_common(20):
+            print(f"  {city}: {count} dòng")
+    if not args.apply:
+        print("Trước --apply: chạy `shoponline backup run --kind db`.")
+    return 0
+
+
 def _cmd_return_number(args: argparse.Namespace) -> int:
     from shoponline.clock import today_vn
     from shoponline.db.session import session_scope
@@ -535,10 +574,10 @@ def main(argv: list[str] | None = None) -> int:
     sap_secret.set_defaults(func=_cmd_sap_secret)
     keep = sub.add_parser(
         "retention",
-        help="Xóa file hết dùng; liệt kê (hoặc xóa với --apply) dữ liệu khách quá thời hạn lưu",
+        help="Xóa file hết dùng (dữ liệu khách được giữ vĩnh viễn)",
     )
     keep.add_argument(
-        "--apply", action="store_true", help="Xóa thật dữ liệu khách thay vì chỉ liệt kê"
+        "--apply", action="store_true", help="Không còn tác dụng, giữ để tác vụ cũ không lỗi"
     )
     keep.set_defaults(func=_cmd_retention)
     book = sub.add_parser("accounting-ledger", help="Sổ DO đã gửi kế toán (sổ nền và mốc ngày)")
@@ -556,6 +595,20 @@ def main(argv: list[str] | None = None) -> int:
     revoke.add_argument("run_id", type=int)
     revoke.add_argument("--yes", action="store_true", help="Gỡ thật thay vì chỉ xem")
     run.set_defaults(func=_cmd_accounting_run)
+
+    history = sub.add_parser(
+        "history-import", help="Nạp file Shop Online 2022-2026 của kế toán để làm báo cáo"
+    )
+    history.add_argument("file", help="Đường dẫn file .xlsx")
+    history.add_argument(
+        "--apply", action="store_true", help="Ghi vào database (mặc định: chạy thử)"
+    )
+    history.add_argument(
+        "--skip-backup-check",
+        action="store_true",
+        help="Bỏ qua kiểm tra bản sao lưu 2 giờ (chỉ máy phát triển)",
+    )
+    history.set_defaults(func=_cmd_history_import)
 
     number = sub.add_parser("return-number", help="Số biên bản điều chỉnh hóa đơn (trả hàng)")
     number_actions = number.add_subparsers(dest="action", required=True)

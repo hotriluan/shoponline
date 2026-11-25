@@ -11,6 +11,11 @@
     {% endfor %}
   </fieldset>
   <div class="row">
+    <label>Shop
+      <select name="shop_code" required data-shop-select data-defaults="{{ default_shops|tojson|forceescape }}">
+        {% for s in shops %}<option value="{{ s.code }}" data-platform="{{ s.platform }}">{{ s.division }}</option>{% endfor %}
+      </select>
+    </label>
     <label>Ngày xử lý (D)
       <input type="date" name="processing_date" value="{{ today }}" required>
     </label>

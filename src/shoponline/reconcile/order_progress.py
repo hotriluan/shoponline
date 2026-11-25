@@ -11,7 +11,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from shoponline.db.models import PlatformSettlement, SalesOrder, SapTaxInvoice
-from shoponline.exports.sales_history_workbook import SETTLED_PLATFORMS
+from shoponline.exports.sales_history_workbook import SETTLEMENT_LOOKUP_PLATFORMS
 
 
 @dataclass(frozen=True)
@@ -27,8 +27,8 @@ class BatchProgress:
 
 
 def order_progress(db: Session, orders: Iterable[SalesOrder]) -> dict[int, OrderProgress]:
-    """Progress per order id. `paid` stays None when no settlement is known (always for Lazada,
-    whose settlement file gives no money per order)."""
+    """Progress per order id. `paid` stays None when no settlement is known (for Lazada, until
+    an admin types the amount in)."""
     orders = list(orders)
     deliveries = {o.do_number for o in orders if o.do_number}
     invoices = (
@@ -42,7 +42,7 @@ def order_progress(db: Session, orders: Iterable[SalesOrder]) -> dict[int, Order
         if deliveries
         else {}
     )
-    settled_ids = {o.platform_order_id for o in orders if o.platform in SETTLED_PLATFORMS}
+    settled_ids = {o.platform_order_id for o in orders if o.platform in SETTLEMENT_LOOKUP_PLATFORMS}
     totals = (
         {
             (platform, order_id): total
@@ -53,7 +53,7 @@ def order_progress(db: Session, orders: Iterable[SalesOrder]) -> dict[int, Order
                     func.sum(PlatformSettlement.amount),
                 )
                 .where(
-                    PlatformSettlement.platform.in_(SETTLED_PLATFORMS),
+                    PlatformSettlement.platform.in_(SETTLEMENT_LOOKUP_PLATFORMS),
                     PlatformSettlement.platform_order_id.in_(settled_ids),
                 )
                 .group_by(PlatformSettlement.platform, PlatformSettlement.platform_order_id)

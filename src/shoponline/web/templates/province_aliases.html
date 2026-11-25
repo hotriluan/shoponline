@@ -1,0 +1,34 @@
+{% extends "base.html" %}
+{% from "_macros.html" import page_header %}
+{% block title %}Quy đổi tỉnh{% endblock %}
+{% block content %}
+{{ page_header('Quy đổi tỉnh', 'Báo cáo theo tỉnh dùng 34 tỉnh sau sáp nhập 2025. Tên tỉnh cũ đã được quy đổi sẵn; tên huyện hoặc thành phố thì cần admin chọn tỉnh ở đây. Báo cáo đổi ngay sau khi lưu.') }}
+{% set admin = user.role == 'admin' %}
+<h2>Chưa quy đổi được ({{ pending|length }})</h2>
+{% if pending %}
+<div class="scroll"><table>
+  <tr><th>Tên trong dữ liệu</th><th>Số dòng</th>{% if admin %}<th>Tỉnh</th><th></th>{% endif %}</tr>
+  {% for name, count in pending %}
+  <tr>
+    <td>{{ name }}</td><td class="num">{{ count }}</td>
+    {% if admin %}
+    <td><form method="post" action="/province-aliases" id="a-{{ loop.index }}">
+      <input type="hidden" name="raw" value="{{ name }}">
+      <select name="province" required><option value="">Chọn tỉnh…</option>{% for p in provinces %}<option>{{ p }}</option>{% endfor %}</select>
+    </form></td>
+    <td><button form="a-{{ loop.index }}" class="secondary">Lưu</button></td>
+    {% endif %}
+  </tr>
+  {% endfor %}
+</table></div>
+{% else %}
+<p class="muted">Mọi tên đã quy đổi được.</p>
+{% endif %}
+{% if saved %}
+<h2>Đã quy đổi tay</h2>
+<div class="scroll"><table>
+  <tr><th>Tên (đã chuẩn hóa)</th><th>Tỉnh</th><th>Người lưu</th></tr>
+  {% for a in saved %}<tr><td>{{ a.raw_key }}</td><td>{{ a.province }}</td><td>{{ a.updated_by }}</td></tr>{% endfor %}
+</table></div>
+{% endif %}
+{% endblock %}

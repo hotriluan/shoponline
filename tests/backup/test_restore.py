@@ -15,7 +15,7 @@ from shoponline.backup import archive, maintenance, naming, pgtools, restore, ru
 from shoponline.backup.sevenzip import SevenZip
 from shoponline.db.models import BackupRequest, BackupRun
 from tests.backup.conftest import PASSWORD
-from tests.conftest import ROOT
+from tests.conftest import HEAD_REVISION, ROOT
 
 
 @pytest.fixture
@@ -78,7 +78,7 @@ def test_newer_backup_is_refused_before_services_stop(backup_ctx, services, monk
 def test_check_version_accepts_old_and_head(backup_ctx):
     known = restore._known_revisions(ROOT)
     assert "0009_platform_settlement" in known
-    for revision in ("0009_platform_settlement", "0011_drive_connection", "0012_sales_return"):
+    for revision in ("0009_platform_settlement", "0011_drive_connection", HEAD_REVISION):
         restore.check_version(
             backup_ctx,
             restore.mf.Manifest("db", "t", "now", "x", alembic_revision=revision),
@@ -176,7 +176,7 @@ def test_old_backup_without_manifest_restores_then_migrates(
         assert result.status == "done"
         assert services == ["stop", "start"]
         assert (
-            _count(backup_ctx, "SELECT version_num = '0012_sales_return' FROM alembic_version")
+            _count(backup_ctx, f"SELECT version_num = '{HEAD_REVISION}' FROM alembic_version")
             is True
         )
         assert (
@@ -372,7 +372,7 @@ def test_drill_compares_rows_and_refuses_the_running_database(backup_ctx):
         prep = restore.prepare(ctx, outcome.archive_path, work)
         result = restore.drill(ctx, prep)
     assert result["ok"] and result["diff"] == {}
-    assert result["revision"] == "0012_sales_return"
+    assert result["revision"] == HEAD_REVISION
     assert archive.DUMP in prep.manifest.parts
 
     # A manifest that disagrees with what was restored shows up as a difference.

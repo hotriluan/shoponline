@@ -1,0 +1,20 @@
+{% extends "base.html" %}
+{% from "_macros.html" import page_header %}
+{% block title %}{{ title }}{% endblock %}
+{% block content %}
+{{ page_header(title, 'Xếp hạng theo giá trị trên sàn, gom theo tên hàng; mở từng dòng để xem quy cách và màu.') }}
+{% include "reports/_filters.html" %}
+<div class="scroll"><table class="report-table">
+  <tr><th>Tên hàng</th><th class="num">Số lượng</th><th class="num">Giá trị trên sàn</th></tr>
+  {% for name, g in groups %}
+  <tr><td colspan="3" class="group-row"><details>
+    <summary><span>{{ name }}</span><span class="num">{{ g.quantity|money }}</span><span class="num">{{ g.marketplace_value|money }}</span></summary>
+    <table class="report-table inner">
+      {% for r in g.rows %}<tr><td>{{ r.size or '–' }}</td><td>{{ r.variation or '–' }}</td><td class="num">{{ r.quantity|money }}</td><td class="num">{{ r.marketplace_value|money }}</td></tr>{% endfor %}
+    </table></details></td></tr>
+  {% else %}
+  <tr><td colspan="3" class="empty">Không có số liệu trong khoảng này.</td></tr>
+  {% endfor %}
+</table></div>
+<p class="report-note">Tên hàng, quy cách và màu từ tháng 11/2026 lấy theo "Tên báo cáo"; chưa đặt thì dùng tên trên sàn. Tải Excel để có đủ từng dòng.</p>
+{% endblock %}

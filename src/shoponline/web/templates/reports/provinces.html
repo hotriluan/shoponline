@@ -1,0 +1,17 @@
+{% extends "base.html" %}
+{% from "_macros.html" import page_header %}
+{% block title %}{{ title }}{% endblock %}
+{% block content %}
+{{ page_header(title, 'Giá trị trên sàn theo 34 tỉnh sau sáp nhập 2025.') }}
+{% include "reports/_filters.html" %}
+<div class="scroll"><table class="report-table">
+  <tr><th>Tỉnh</th><th class="num">Số đơn</th><th class="num">Số lượng</th><th class="num">Giá trị trên sàn</th><th class="bar-col"></th></tr>
+  {% for r in rows %}
+  <tr><td>{{ r.province }}{% if r.province == unknown and user.role == 'admin' %} <a href="/province-aliases">Quy đổi</a>{% endif %}</td>
+    <td class="num">{{ r.orders|money }}</td><td class="num">{{ r.quantity|money }}</td><td class="num">{{ r.marketplace_value|money }}</td>
+    <td class="bar-col"><span class="bar" style="width: {{ (r.marketplace_value * 100 / top)|round(1) if top else 0 }}%"></span></td></tr>
+  {% else %}
+  <tr><td colspan="5" class="empty">Không có số liệu trong khoảng này.</td></tr>
+  {% endfor %}
+</table></div>
+{% endblock %}

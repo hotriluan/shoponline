@@ -353,3 +353,16 @@ fieldset { min-width: 0; }
   .card.grow { min-width: 0; flex-basis: 100%; }
   input[size] { width: 100%; }
 }
+
+/* Management reports */
+.report-filters { align-items: end; margin-bottom: var(--s4); }
+.report-note { color: var(--muted); font-size: 13px; margin: var(--s2) 0; }
+.chart-box { position: relative; height: 320px; }
+.report-table td.num, .report-table th.num { text-align: right; font-variant-numeric: tabular-nums; }
+.report-table .empty { color: var(--muted); text-align: center; }
+.report-table .group-row { padding: 0; }
+.report-table .group-row summary { display: grid; grid-template-columns: 1fr 120px 160px; gap: var(--s4); padding: 8px 12px; cursor: pointer; }
+.report-table .group-row .num { text-align: right; font-variant-numeric: tabular-nums; }
+.report-table .inner { width: 100%; margin: 0 0 var(--s2); background: var(--bg); }
+.report-table .bar-col { width: 28%; }
+.report-table .bar { display: block; height: 8px; border-radius: 0 4px 4px 0; background: #2a78d6; }

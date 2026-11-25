@@ -1,0 +1,11 @@
+{# Filters shared by every report page; a GET form so the URL can be sent as a link. #}
+<form class="card row report-filters" method="get">
+  <label>Từ tháng<input type="month" name="from" value="{{ window.from_period.strftime('%Y-%m') }}"></label>
+  <label>Đến tháng<input type="month" name="to" value="{{ window.to_period.strftime('%Y-%m') }}"></label>
+  <label>Sàn<select name="platform"><option value="">Mọi sàn</option>{% for p in platforms %}<option value="{{ p }}" {{ 'selected' if p in window.platforms }}>{{ p }}</option>{% endfor %}</select></label>
+  <label>Shop<select name="shop"><option value="">Mọi shop</option>{% for s in shops %}<option value="{{ s.code }}" {{ 'selected' if s.code in window.shops }}>{{ s.division }}</option>{% endfor %}</select></label>
+  <button>Xem</button>
+  <a class="button secondary" href="?{{ window.query }}&format=xlsx">Tải Excel</a>
+</form>
+{% if window.error %}<p class="flash error">{{ window.error }}</p>{% endif %}
+{% for note in notes %}<p class="report-note">{{ note }}</p>{% endfor %}

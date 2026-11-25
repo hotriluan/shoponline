@@ -1,0 +1,143 @@
+"""Money Lazada paid out per order, typed in by an admin (Lazada's file has no order id)."""
+
+from __future__ import annotations
+
+from datetime import date, datetime
+
+from fastapi import APIRouter, Depends, Form, Request
+from sqlalchemy.orm import Session
+
+from shoponline.accounting import manual_settlement as manual
+from shoponline.clock import today_vn
+from shoponline.db.models import AppUser
+from shoponline.web.app import current_user, flash, get_db, redirect, render, require_admin
+
+router = APIRouter()
+PAGE = "/settlements/lazada"
+
+
+def _month(text: str) -> date | None:
+    try:
+        return datetime.strptime(text, "%Y-%m").date()
+    except ValueError:
+        return None
+
+
+def _back(month: str) -> str:
+    return f"{PAGE}?month={month}" if _month(month) else PAGE
+
+
+def _page(request: Request, db: Session, user: AppUser, month: str, paste: str = "", preview=None):
+    return render(
+        request,
+        "lazada_settlements.html",
+        user,
+        month=month if _month(month) else "",
+        pending=manual.pending_orders(db, _month(month)),
+        entered=manual.entered(db),
+        today=today_vn(),
+        paste=paste,
+        preview=preview,
+    )
+
+
+@router.get(PAGE)
+def lazada_settlements(
+    request: Request,
+    month: str = "",
+    db: Session = Depends(get_db),
+    user: AppUser = Depends(current_user),
+):
+    return _page(request, db, user, month)
+
+
+@router.post(PAGE + "/set")
+def set_settlement(
+    request: Request,
+    order_id: str = Form(...),
+    amount: str = Form(...),
+    settled_on: str = Form(...),
+    month: str = Form(""),
+    db: Session = Depends(get_db),
+    user: AppUser = Depends(require_admin),
+):
+    try:
+        value = manual.parse_amount(amount)
+        day = datetime.strptime(settled_on, "%Y-%m-%d").date()
+        manual.set_amount(db, order_id, value, day, user.username)
+    except ValueError as exc:  # SettlementError, or a date the browser sent in another shape
+        flash(request, f"Đơn {order_id}: {exc}", "error")
+        return redirect(_back(month))
+    db.commit()
+    flash(request, f"Đã lưu tiền về {value:,} đồng cho đơn {order_id}.")
+    return redirect(_back(month))
+
+
+@router.post(PAGE + "/remove")
+def remove_settlement(
+    request: Request,
+    order_id: str = Form(...),
+    month: str = Form(""),
+    db: Session = Depends(get_db),
+    user: AppUser = Depends(require_admin),
+):
+    if manual.remove(db, order_id, user.username):
+        db.commit()
+        flash(request, f"Đã xóa tiền về của đơn {order_id}.")
+    else:
+        flash(request, f"Đơn {order_id} chưa có tiền nhập tay.", "error")
+    return redirect(_back(month))
+
+
+def _checked(db: Session, text: str) -> list[dict]:
+    """Every pasted line with the reason it cannot be saved ('' when it can)."""
+    today = today_vn()
+    rows = []
+    for line in manual.parse_paste(text):
+        error = line.error
+        if not error:
+            try:
+                manual.check(db, line.order_id, line.amount, line.settled_on, today)
+            except manual.SettlementError as exc:
+                error = str(exc)
+        rows.append({"line": line, "error": error})
+    return rows
+
+
+@router.post(PAGE + "/preview")
+def preview_paste(
+    request: Request,
+    paste: str = Form(""),
+    month: str = Form(""),
+    db: Session = Depends(get_db),
+    user: AppUser = Depends(require_admin),
+):
+    rows = _checked(db, paste)
+    if not rows:
+        flash(request, "Chưa dán dòng nào.", "error")
+        return redirect(_back(month))
+    return _page(request, db, user, month, paste, rows)
+
+
+@router.post(PAGE + "/save-paste")
+def save_paste(
+    request: Request,
+    paste: str = Form(""),
+    month: str = Form(""),
+    db: Session = Depends(get_db),
+    user: AppUser = Depends(require_admin),
+):
+    """Save every pasted line that passes the checks again; the rest are named and left out."""
+    rows = _checked(db, paste)
+    saved = 0
+    for row in rows:
+        line = row["line"]
+        if not row["error"]:
+            manual.set_amount(db, line.order_id, line.amount, line.settled_on, user.username)
+            saved += 1
+    db.commit()
+    skipped = [f"dòng {r['line'].line_no}: {r['error']}" for r in rows if r["error"]]
+    flash(request, f"Đã lưu {saved} đơn." + (f" Bỏ qua {len(skipped)} dòng." if skipped else ""))
+    if skipped:
+        flash(request, "\n".join(skipped), "error")
+    return redirect(_back(month))

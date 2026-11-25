@@ -24,6 +24,7 @@ from shoponline.db.models import (
 )
 from shoponline.domain import states
 from shoponline.maintenance import retention
+from tests.shop_codes import SHOP
 
 NOW = datetime(2026, 11, 13, 9, 0, tzinfo=UTC)
 OLD = NOW - timedelta(days=91)
@@ -41,6 +42,7 @@ def _customer(db, platform, order_id, updated_at, status=None, batch=None, do_nu
         db.add(
             SalesOrder(
                 platform=platform,
+                shop_code=SHOP[platform],
                 platform_order_id=order_id,
                 order_batch_id=batch.id,
                 ordered_at=datetime(2026, 8, 1),
@@ -158,55 +160,18 @@ def _sweep(db, settings):
 # ---------------------------------------------------------------- customer data
 
 
-def test_erases_old_customer_data_only_for_orders_sent_to_accounting_and_exported(db, tmp_path):
+def test_customer_data_is_never_deleted_whatever_its_age_or_the_order_status(db, tmp_path):
     batch = _batch(db)
-    db.add_all(AccountingSentDelivery(delivery=d) for d in ("1900000001", "1900000002"))
+    db.add(AccountingSentDelivery(delivery="1900000001"))
     _customer(db, "SHOPEE", "R-DELIVERED", OLD, states.DELIVERED, batch, "1900000001")
     _customer(db, "SHOPEE", "R-CANCELLED", OLD, states.CANCELLED, batch)
-    _customer(db, "SHOPEE", "R-LINKED", OLD, states.SO_LINKED, batch)  # no DO yet
-    _customer(db, "SHOPEE", "R-NOT-SENT", OLD, states.DELIVERED, batch, "1900000077")
-    _customer(db, "SHOPEE", "R-RECENT", RECENT, states.DELIVERED, batch, "1900000002")
     _customer(db, "SHOPEE", "R-NO-ORDER", OLD)  # Lazada-style row without sales_order
-    # DO sent to accounting, but the name is not yet in the Shop Online history file.
-    db.add(AccountingSentDelivery(delivery="1900000003"))
-    _customer(db, "SHOPEE", "R-NOT-EXPORTED", OLD, states.DELIVERED, batch, "1900000003")
-    # In the history file, but the DO has not been sent to accounting.
-    _customer(db, "SHOPEE", "R-EXPORTED-NOT-SENT", OLD, states.DELIVERED, batch, "1900000088")
-    _exported(db, "R-DELIVERED", "R-RECENT", "R-EXPORTED-NOT-SENT")
 
-    plan = retention.find_expired(db, _settings(tmp_path), now=NOW)
+    _sweep(db, _settings(tmp_path))
 
-    assert sorted(o for _, o in plan.customer_orders) == [
-        "R-CANCELLED",
-        "R-DELIVERED",
-        "R-NO-ORDER",
-    ]
-    assert sorted(plan.held_orders) == [
-        ("SHOPEE", "R-EXPORTED-NOT-SENT"),
-        ("SHOPEE", "R-LINKED"),
-        ("SHOPEE", "R-NOT-EXPORTED"),
-        ("SHOPEE", "R-NOT-SENT"),
-    ]
-
-    retention.apply(db, plan, "test")
-    db.flush()
     left = set(db.scalars(select(CustomerInfo.platform_order_id)).all())
-    kept = {"R-LINKED", "R-NOT-SENT", "R-RECENT", "R-NOT-EXPORTED", "R-EXPORTED-NOT-SENT"}
-    assert kept <= left
-    assert not left & {"R-DELIVERED", "R-CANCELLED", "R-NO-ORDER"}
-    # Orders stay; only personal data goes.
-    assert db.scalar(select(SalesOrder).where(SalesOrder.platform_order_id == "R-DELIVERED"))
-    event = db.scalars(select(EventLog).where(EventLog.kind == "retention_purge")).one()
-    assert "Khách thử" not in (event.detail or "")
-
-
-def test_list_mode_changes_nothing(db, tmp_path):
-    _customer(db, "SHOPEE", "R-OLD", OLD)
-
-    plan = retention.find_expired(db, _settings(tmp_path), now=NOW)
-
-    assert plan.customer_orders == [("SHOPEE", "R-OLD")]
-    assert db.scalar(select(CustomerInfo).where(CustomerInfo.platform_order_id == "R-OLD"))
+    assert left == {"R-DELIVERED", "R-CANCELLED", "R-NO-ORDER"}
+    assert not db.scalars(select(EventLog).where(EventLog.kind == "retention_purge")).all()
 
 
 # ---------------------------------------------------------------- files
@@ -249,6 +214,7 @@ def test_sweep_keeps_run_files_and_history_files_with_unconfirmed_orders(db, tmp
     db.add_all(
         SalesOrder(
             platform="SHOPEE",
+            shop_code=SHOP["SHOPEE"],
             platform_order_id=order_id,
             order_batch_id=batch.id,
             ordered_at=datetime(2026, 11, 1),

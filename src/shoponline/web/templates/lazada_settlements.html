@@ -1,0 +1,100 @@
+{% extends "base.html" %}
+{% from "_macros.html" import page_header %}
+{% block title %}Tiền về Lazada{% endblock %}
+{% block content %}
+{{ page_header('Tiền về Lazada', 'File Lazada không có mã đơn nên số tiền được nhập tay theo từng đơn. Số này đi vào cột "Tiền Vô" của file Shop Online và vào báo cáo.') }}
+{% set admin = user.role == 'admin' %}
+
+<form class="card row" method="get" action="/settlements/lazada">
+  <label>Tháng đặt đơn<input type="month" name="month" value="{{ month }}"></label>
+  <button class="secondary">Lọc</button>
+  {% if month %}<a href="/settlements/lazada">Bỏ lọc</a>{% endif %}
+</form>
+
+{% if preview is not none %}
+<h2>Xem trước ({{ preview|length }} dòng)</h2>
+{% set good = preview|rejectattr('error')|list %}
+<div class="scroll"><table>
+  <tr><th>Dòng</th><th>Mã đơn</th><th>Số tiền</th><th>Ngày nhận</th><th>Kết quả</th></tr>
+  {% for row in preview %}
+  <tr{% if row.error %} class="attention"{% endif %}>
+    <td>{{ row.line.line_no }}</td>
+    <td>{{ row.line.order_id }}</td>
+    <td>{{ row.line.amount|money }}</td>
+    <td>{{ row.line.settled_on.strftime('%d/%m/%Y') if row.line.settled_on else '' }}</td>
+    <td>{% if row.error %}<span class="bad">{{ row.error }}</span>{% else %}<span class="tag ok">lưu được</span>{% endif %}</td>
+  </tr>
+  {% endfor %}
+</table></div>
+<form method="post" action="/settlements/lazada/save-paste" class="row">
+  <input type="hidden" name="month" value="{{ month }}">
+  <input type="hidden" name="paste" value="{{ paste }}">
+  <button{% if not good %} disabled{% endif %}>Lưu {{ good|length }} dòng đúng</button>
+  <a href="/settlements/lazada{{ '?month=' ~ month if month }}">Hủy</a>
+</form>
+{% endif %}
+
+{% if admin %}
+<h2>Dán nhiều dòng</h2>
+<form class="card" method="post" action="/settlements/lazada/preview">
+  <input type="hidden" name="month" value="{{ month }}">
+  <label>Mỗi dòng: mã đơn, số tiền, ngày dd/mm/yyyy, cách nhau bằng Tab (dán từ Excel)
+    <textarea name="paste" rows="5" cols="80" required>{{ paste }}</textarea></label>
+  <p><button class="secondary">Xem trước</button></p>
+</form>
+{% endif %}
+
+<h2>Đơn đã có DO, chưa có tiền về ({{ pending|length }})</h2>
+<div class="scroll"><table>
+  <tr><th>Mã đơn</th><th>Ngày đặt</th><th>DO</th>{% if admin %}<th>Tiền nhận (đồng)</th><th>Ngày nhận</th><th></th>{% endif %}</tr>
+  {% for o in pending %}
+  <tr>
+    <td>{{ o.platform_order_id }}
+      {% if admin %}<form method="post" action="/settlements/lazada/set" id="set-{{ o.id }}">
+        <input type="hidden" name="order_id" value="{{ o.platform_order_id }}">
+        <input type="hidden" name="month" value="{{ month }}">
+      </form>{% endif %}</td>
+    <td>{{ o.ordered_at.strftime('%d/%m/%Y') }}</td>
+    <td>{{ o.do_number }}</td>
+    {% if admin %}
+    <td><input form="set-{{ o.id }}" type="text" name="amount" size="14" inputmode="numeric" required></td>
+    <td><input form="set-{{ o.id }}" type="date" name="settled_on" value="{{ today.isoformat() }}" max="{{ today.isoformat() }}" required></td>
+    <td><button form="set-{{ o.id }}">Lưu</button></td>
+    {% endif %}
+  </tr>
+  {% else %}
+  <tr><td colspan="6" class="muted">Không còn đơn nào chờ tiền về.</td></tr>
+  {% endfor %}
+</table></div>
+
+<h2>Đã nhập ({{ entered|length }})</h2>
+<div class="scroll"><table>
+  <tr><th>Mã đơn</th><th>Số tiền</th><th>Ngày nhận</th><th>Người nhập</th>{% if admin %}<th>Sửa</th><th></th>{% endif %}</tr>
+  {% for s in entered %}
+  <tr>
+    <td>{{ s.platform_order_id }}
+      {% if admin %}<form method="post" action="/settlements/lazada/set" id="edit-{{ s.id }}">
+        <input type="hidden" name="order_id" value="{{ s.platform_order_id }}">
+        <input type="hidden" name="month" value="{{ month }}">
+      </form>
+      <form method="post" action="/settlements/lazada/remove" id="del-{{ s.id }}">
+        <input type="hidden" name="order_id" value="{{ s.platform_order_id }}">
+        <input type="hidden" name="month" value="{{ month }}">
+      </form>{% endif %}</td>
+    <td>{{ s.amount|money }}</td>
+    <td>{{ s.settled_at.strftime('%d/%m/%Y') }}</td>
+    <td>{{ s.entered_by }}</td>
+    {% if admin %}
+    <td>
+      <input form="edit-{{ s.id }}" type="text" name="amount" size="14" value="{{ s.amount }}" required>
+      <input form="edit-{{ s.id }}" type="date" name="settled_on" value="{{ s.settled_at.strftime('%Y-%m-%d') }}" max="{{ today.isoformat() }}" required>
+      <button form="edit-{{ s.id }}" class="secondary">Lưu</button>
+    </td>
+    <td><button form="del-{{ s.id }}" class="secondary">Xóa</button></td>
+    {% endif %}
+  </tr>
+  {% else %}
+  <tr><td colspan="6" class="muted">Chưa nhập đơn nào.</td></tr>
+  {% endfor %}
+</table></div>
+{% endblock %}

@@ -15,7 +15,7 @@ Dành cho người quản trị hệ thống và chủ dự án. Kiến trúc: [
 
 ## Thời hạn lưu
 
-Chốt ngày 2026-11-13: dữ liệu khách giữ **90 ngày**, đổi bằng `SHOPONLINE_RETENTION_DAYS`. Chốt ngày 2026-11-16: file trên máy chủ bị xóa ngay khi hết dùng; file gốc của sàn và `zrsd001` không được giữ làm bằng chứng.
+Chốt ngày 2026-11-25: tên và địa chỉ khách (`customer_info`) giữ **vĩnh viễn** để phục vụ báo cáo quản lý theo khách và tỉnh. Quyết định của chủ dự án; lưu ý Nghị định 13/2023 về dữ liệu cá nhân. Quyết định cũ ngày 2026-11-13 (xóa sau 90 ngày) không còn hiệu lực. Chốt ngày 2026-11-16: file trên máy chủ bị xóa ngay khi hết dùng; file gốc của sàn và `zrsd001` không được giữ làm bằng chứng.
 
 ### File
 
@@ -23,7 +23,7 @@ Một bộ quy tắc giữ (`kept_files` trong [retention.py](../src/shoponline/
 
 | Thư mục | Giữ khi |
 |---|---|
-| `uploads/` | File `zrsd004` của đợt gửi kế toán đang mở (gắn tay hoặc robot đọc). File `zrsd004` upload tay đang chờ gắn vào đợt (danh sách "thêm được" trên trang đợt), tối đa `SHOPONLINE_RETENTION_DAYS` ngày |
+| `uploads/` | File `zrsd004` của đợt gửi kế toán đang mở (gắn tay hoặc robot đọc). File `zrsd004` upload tay đang chờ gắn vào đợt (danh sách "thêm được" trên trang đợt), tối đa `SHOPONLINE_RETENTION_DAYS` ngày (biến này nay chỉ áp cho file này) |
 | `exports/` | Mọi file kế toán (`generated_file.kind = accounting_file`, kể cả file sinh trước khi có đợt và file của đợt đã hủy hoặc gỡ chốt: bản đã gửi kế toán không bao giờ bị dọn). File Shop Online còn ít nhất một đơn chưa được xác nhận đã dán |
 | `robot-work/job-<n>/` | Việc chưa `DONE`, tối đa số ngày giữ ảnh màn hình robot |
 | `robot-evidence/` | Tối đa số ngày giữ ảnh màn hình robot (mặc định 30, đặt ở trang Kết nối SAP) |
@@ -40,24 +40,17 @@ Lượt quét hằng đêm dừng và không xóa gì trong hai trường hợp,
 - Đang có `maintenance.json` (deploy, phục hồi hoặc chuyển máy): thoát sớm với mã 0, vì khôi phục bản `db` rồi quét sẽ xóa file mới hơn bản đó.
 - Có đường dẫn lưu trong database (`import_batch`, `generated_file`) nằm ngoài `SHOPONLINE_DATA_DIR` hiện tại, thường do database khôi phục lên máy có thư mục dữ liệu khác: mã thoát 1. Quy tắc giữ không khớp file nào, nên quét tiếp sẽ xóa mọi file quá 1 giờ. Sửa `SHOPONLINE_DATA_DIR` hoặc đường dẫn trong database rồi chạy lại.
 
-Gỡ xác nhận một file lịch sử Shop Online bị từ chối khi tên khách của đơn nào trong file đã bị xóa theo thời hạn lưu: nếu cho gỡ, đơn đó sẽ bị chặn mãi vì thiếu tên khách.
 - File Shop Online: khi mọi đơn trong file đã được xác nhận, kể cả xác nhận qua file khác.
 
 Lệnh `shoponline retention` (tác vụ `shoponline-retention`, 12:30 hằng ngày) **luôn** xóa file theo bảng trên, không cần `--apply`. Nó bỏ qua file mới hơn 1 giờ, vì file có thể được ghi trước khi dòng giữ nó được lưu. File không xóa được (ví dụ còn mở trong SAP hoặc Excel) chỉ được ghi log và để lượt sau. Số file đã xóa được ghi vào `retention.log` và một dòng `retention_files` trong `event_log`.
 
 ### Dữ liệu khách
 
-Với `--apply`, lệnh `shoponline retention`:
-
-- Xóa dòng `customer_info` không đổi trong 90 ngày, **trừ** khi đơn chưa hủy và còn cần tên khách: DO của đơn chưa vào sổ gửi kế toán (`accounting_sent_delivery`), hoặc đơn chưa được xác nhận đã dán vào file lịch sử Shop Online (`sales_history_exported`). Vì vậy tên khách của đơn chưa xuất sang file lịch sử được giữ quá 90 ngày, tới khi admin xác nhận. Dòng nhập tay theo mã đơn không có trong hệ thống thì xóa theo tuổi.
-- Giữ đơn, dòng hàng, số SO, số DO và sổ DO đã gửi (chỉ chứa số Delivery): không phải dữ liệu cá nhân, và cần để nhập lại file cũ không tạo đơn trùng, không gửi kế toán hai lần.
-- Ghi một dòng `retention_purge` vào `event_log` (chỉ số lượng).
-
-Không có `--apply` thì lệnh chỉ liệt kê dữ liệu khách sẽ bị xóa.
+Lệnh `shoponline retention` không xóa dòng `customer_info` nào, dù đơn cũ hay đã hủy. Tham số `--apply` vẫn được nhận để tác vụ đã đăng ký không lỗi, nhưng không có tác dụng và được ghi vào log. Không còn dòng `retention_purge` mới trong `event_log` (các dòng cũ, nếu có, giữ nguyên). Đơn, dòng hàng, số SO, số DO và sổ DO đã gửi vẫn được giữ như trước.
 
 ### Phiếu trả hàng
 
-Phiếu trả hàng (`sales_return`) giữ bản chụp tên và địa chỉ người mua, và hai file của phiếu, **không giới hạn thời gian**: đây là chứng từ điều chỉnh hóa đơn. Quy tắc 90 ngày không áp dụng cho chúng. Quét file giữ mọi `generated_file` mà một phiếu trỏ tới, theo dữ liệu chứ không theo loại file, nên hoàn tác mã cũng không làm mất phiếu. Chỉ admin xem tên, địa chỉ và tải hai file; viewer chỉ thấy danh sách và số liệu. Bản sao lưu `db` hằng ngày chép hai file này cùng file kế toán.
+Phiếu trả hàng (`sales_return`) giữ bản chụp tên và địa chỉ người mua, và hai file của phiếu, **không giới hạn thời gian**: đây là chứng từ điều chỉnh hóa đơn.  Quét file giữ mọi `generated_file` mà một phiếu trỏ tới, theo dữ liệu chứ không theo loại file, nên hoàn tác mã cũng không làm mất phiếu. Chỉ admin xem tên, địa chỉ và tải hai file; viewer chỉ thấy danh sách và số liệu. Bản sao lưu `db` hằng ngày chép hai file này cùng file kế toán.
 
 PDF hóa đơn tải lên không được ứng dụng lưu vào kho file, nhưng máy chủ web có thể tạm đặt upload lớn (hơn 1 MB) vào thư mục tạm của hệ điều hành trước khi route chạy; PDF chỉ nhận từ admin, tối đa 5 MB và 5 trang.
 
@@ -71,21 +64,13 @@ Xoay vòng ([retention.py](../src/shoponline/backup/retention.py)) áp dụng nh
 | `app` | 15 bản mới nhất |
 | `full` | Theo tuổi: tối đa 30 ngày (web chỉ cho đặt 7–90 ngày). Bản `full` cuối cùng cũng bị xóa khi quá hạn; web cảnh báo khi 8 ngày không có bản `full` thành công |
 
-Mọi mặc định và mức tối đa đều nằm trong thời hạn 90 ngày, nên dữ liệu khách đã xóa không còn trong bản sao lưu quá 90 ngày. Bản sao lưu trước deploy chỉ ở máy chủ, không lên Drive. Bản thành công mới nhất của mỗi loại và bản an toàn của lần phục hồi gần nhất không xóa tay được. Phục hồi trả `public` (gồm `customer_info` và `event_log`) về thời điểm của bản sao lưu nhưng **không lùi tài khoản web**, lịch sao lưu và kết nối Drive; mọi người phải đăng nhập lại.
+Dữ liệu khách được giữ vĩnh viễn nên cũng nằm trong mọi bản sao lưu. Bản sao lưu trước deploy chỉ ở máy chủ, không lên Drive. Bản thành công mới nhất của mỗi loại và bản an toàn của lần phục hồi gần nhất không xóa tay được. Phục hồi trả `public` (gồm `customer_info` và `event_log`) về thời điểm của bản sao lưu nhưng **không lùi tài khoản web**, lịch sao lưu và kết nối Drive; mọi người phải đăng nhập lại.
 
 Chỉ `admin` được tải về, xóa, tải lên và phục hồi bản sao lưu. Mỗi lần tải về, xóa, tải lên ghi một dòng `event_log` (ai, bản nào, không có nội dung). File tải về vẫn là `.7z` mã hóa nhưng chứa dữ liệu khách rời khỏi máy chủ, nên chỉ tải khi cần.
 
-### Bật xóa thật dữ liệu khách
+### Tác vụ dọn file
 
-1. `register-tasks.ps1` đăng ký tác vụ `shoponline-retention` chạy 12:30 hằng ngày; phần dữ liệu khách ở chế độ **chỉ liệt kê**. Kết quả ghi vào `<SHOPONLINE_DATA_DIR>\logs\retention.log` (xoay vòng 10 × 5 MB).
-2. Trong một tuần, người quản trị đọc log: chỉ có đơn đã gửi kế toán và đã vào file lịch sử Shop Online, và đơn đã hủy.
-3. Đăng ký lại với `-RetentionApply` (thêm cùng các tham số đã dùng lần đầu, ví dụ `-AtLogOn`):
-
-   ```powershell
-   pwsh -ExecutionPolicy Bypass -File scripts\windows\register-tasks.ps1 -User <tài khoản> -RetentionApply
-   ```
-
-Chạy tay: `uv run shoponline retention` xóa file hết dùng và liệt kê dữ liệu khách sẽ xóa; `uv run shoponline retention --apply` xóa cả dữ liệu khách. Việc xóa không đảo được; muốn lấy lại thì phải khôi phục bản sao lưu.
+`register-tasks.ps1` đăng ký tác vụ `shoponline-retention` chạy 12:30 hằng ngày; tác vụ chỉ dọn file hết dùng và ghi kết quả vào ``retention.log` trong thư mục `logs` của dữ liệu (xoay vòng 10 × 5 MB). Tham số `-RetentionApply` không còn tác dụng (in cảnh báo); đăng ký lại tác vụ sẽ bỏ `--apply` khỏi lệnh của tác vụ đã có.
 
 ## Quyền truy cập
 

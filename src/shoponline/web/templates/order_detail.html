@@ -10,6 +10,16 @@
      <a href="/batches/{{ order.order_batch_id }}">Lô {{ order.batch.processing_date.strftime('%d/%m/%Y') }}</a> ·
      SO {{ order.so_number or '—' }} · DO {{ order.do_number or '—' }} ·
      Giá trị SO mong đợi {{ expected|money }}</p>
+  <p>Shop: <b>{{ order.shop.division }}</b></p>
+  {% if user.role == 'admin' %}
+  <form method="post" action="/orders/{{ order.id }}/shop" class="row">
+    <label>Đổi shop
+      <select name="shop_code">
+        {% for s in shop_choices %}<option value="{{ s.code }}" {{ 'selected' if s.code == order.shop_code }}>{{ s.division }}</option>{% endfor %}
+      </select></label>
+    <button class="secondary">Lưu shop</button>
+  </form>
+  {% endif %}
   {% if order.review_note %}<p class="bad">Cần kiểm tra: {{ order.review_note }}</p>{% endif %}
   <p>Khách: {{ customer.customer_name if customer and customer.customer_name else '—' }} ·
      {{ customer.address if customer and customer.address else '—' }}</p>

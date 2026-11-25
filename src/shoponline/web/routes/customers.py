@@ -3,6 +3,8 @@ from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
 from shoponline.db.models import AppUser, CustomerInfo, OrderBatch, PlatformSetting, SalesOrder
+from shoponline.domain.provinces import place_key
+from shoponline.domain.report_names import province_of
 from shoponline.web.app import (
     autosave_reply,
     current_user,
@@ -117,6 +119,8 @@ def save_customer(
         db.add(info)
     info.customer_name = customer_name.strip() or None
     info.address = address.strip() or None
+    info.province = province_of(info.address)
+    info.place_key = place_key(info.address)
     has_order = db.scalar(
         select(SalesOrder.id).where(
             SalesOrder.platform == platform, SalesOrder.platform_order_id == order_id

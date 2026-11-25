@@ -17,6 +17,16 @@ ROOT = Path(__file__).resolve().parents[1]
 load_dotenv(ROOT / ".env")
 
 
+def _head_revision() -> str:
+    from alembic.config import Config
+    from alembic.script import ScriptDirectory
+
+    return ScriptDirectory.from_config(Config(str(ROOT / "alembic.ini"))).get_current_head()
+
+
+HEAD_REVISION = _head_revision()  # tests that pin "the latest migration" follow it
+
+
 def _test_database_url() -> str | None:
     return os.environ.get("SHOPONLINE_TEST_DATABASE_URL") or None
 

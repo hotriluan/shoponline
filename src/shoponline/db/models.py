@@ -38,6 +38,18 @@ class PlatformSetting(Base):
     mode: Mapped[str] = mapped_column(String(10), default="manual")
 
 
+class Shop(Base):
+    """A shop of a platform. `division` is written as is into the Shop Online history file."""
+
+    __tablename__ = "shop"
+
+    code: Mapped[str] = mapped_column(String(30), primary_key=True)
+    platform: Mapped[str] = mapped_column(ForeignKey("platform_setting.platform"))
+    division: Mapped[str] = mapped_column(String(50), unique=True)
+    active: Mapped[bool] = mapped_column(Boolean, default=True, server_default=text("true"))
+    sort_order: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+
+
 class AppUser(Base):
     """Web accounts live in schema ops: a restore of the business data never rolls them back."""
 
@@ -71,6 +83,7 @@ class ImportBatch(Base):
     new_count: Mapped[int] = mapped_column(Integer, default=0)
     updated_count: Mapped[int] = mapped_column(Integer, default=0)
     unchanged_count: Mapped[int] = mapped_column(Integer, default=0)
+    shop_code: Mapped[str | None] = mapped_column(ForeignKey("shop.code"))
 
 
 class GeneratedFile(Base):
@@ -111,6 +124,7 @@ class SalesOrder(Base):
     platform: Mapped[str] = mapped_column(ForeignKey("platform_setting.platform"))
     platform_order_id: Mapped[str] = mapped_column(String(40))
     order_batch_id: Mapped[int] = mapped_column(ForeignKey("order_batch.id"))
+    shop_code: Mapped[str] = mapped_column(ForeignKey("shop.code"), index=True)
     ordered_at: Mapped[datetime] = mapped_column(DateTime)
     status: Mapped[str] = mapped_column(String(20))
     status_reason: Mapped[str | None] = mapped_column(Text)
@@ -123,6 +137,7 @@ class SalesOrder(Base):
     )
 
     batch: Mapped[OrderBatch] = relationship(back_populates="orders")
+    shop: Mapped[Shop] = relationship()
     items: Mapped[list[SalesOrderItem]] = relationship(
         back_populates="order", cascade="all, delete-orphan", order_by="SalesOrderItem.line_no"
     )
@@ -174,9 +189,55 @@ class CustomerInfo(Base):
     platform_order_id: Mapped[str] = mapped_column(String(40))
     customer_name: Mapped[str | None] = mapped_column(Text)
     address: Mapped[str | None] = mapped_column(Text)
+    # One of the 34 provinces, read from the address; NULL when the address names none of them.
+    province: Mapped[str | None] = mapped_column(String(30))
+    # Folded last part of the address (domain.provinces.place_key), looked up in province_alias.
+    place_key: Mapped[str | None] = mapped_column(String(100))
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
     )
+
+
+class ProvinceAlias(Base):
+    """A raw place name (pre-merger province, city, district) and the province it belongs to.
+    `raw_key` is the name folded by domain.provinces.fold_key."""
+
+    __tablename__ = "province_alias"
+
+    raw_key: Mapped[str] = mapped_column(String(100), primary_key=True)
+    province: Mapped[str] = mapped_column(String(30))
+    updated_by: Mapped[str] = mapped_column(String(50))
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+
+class HistorySaleLine(Base):
+    """One line of the accountants' Shop Online history file (orders before the system took
+    over). Read-only reporting data: nothing here is posted anywhere."""
+
+    __tablename__ = "history_sale_line"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    period: Mapped[date] = mapped_column(Date, index=True)  # first day of the file's month/year
+    ordered_on: Mapped[date | None] = mapped_column(Date)
+    shop_code: Mapped[str] = mapped_column(ForeignKey("shop.code"), index=True)
+    customer_name: Mapped[str | None] = mapped_column(Text)
+    customer_phone: Mapped[str | None] = mapped_column(String(30))
+    city_raw: Mapped[str | None] = mapped_column(Text)
+    city_key: Mapped[str | None] = mapped_column(String(100))  # fold_key(city_raw)
+    item_name: Mapped[str | None] = mapped_column(Text)
+    size: Mapped[str | None] = mapped_column(Text)
+    variation: Mapped[str | None] = mapped_column(Text)
+    quantity: Mapped[int] = mapped_column(Integer)
+    customer_paid: Mapped[int] = mapped_column(BigInteger)
+    unit_price: Mapped[int | None] = mapped_column(BigInteger)
+    seller_discount: Mapped[int | None] = mapped_column(BigInteger)
+    shipping_fee: Mapped[int | None] = mapped_column(BigInteger)
+    order_key: Mapped[str] = mapped_column(String(64), index=True)
+    line_key: Mapped[str] = mapped_column(String(64), unique=True)
+    source_row: Mapped[int] = mapped_column(Integer)
+    import_batch_id: Mapped[int] = mapped_column(ForeignKey("import_batch.id"), index=True)
 
 
 class EventLog(Base):
@@ -253,6 +314,11 @@ class PlatformSettlement(Base):
     __table_args__ = (
         UniqueConstraint("platform", "line_key"),
         Index("ix_platform_settlement_order", "platform", "platform_order_id"),
+        CheckConstraint(
+            "(source = 'file' AND import_batch_id IS NOT NULL)"
+            " OR (source = 'manual' AND entered_by IS NOT NULL)",
+            name="ck_platform_settlement_source",
+        ),
     )
 
     id: Mapped[int] = mapped_column(primary_key=True)
@@ -261,7 +327,11 @@ class PlatformSettlement(Base):
     line_key: Mapped[str] = mapped_column(String(200))
     amount: Mapped[int] = mapped_column(BigInteger)
     settled_at: Mapped[datetime] = mapped_column(DateTime)
-    import_batch_id: Mapped[int] = mapped_column(ForeignKey("import_batch.id"))
+    # 'file' rows come from a settlement file (import_batch_id set); 'manual' rows are typed in
+    # for Lazada, one per order with line_key 'manual:<order id>' (entered_by set).
+    source: Mapped[str] = mapped_column(String(10), default="file", server_default="file")
+    import_batch_id: Mapped[int | None] = mapped_column(ForeignKey("import_batch.id"))
+    entered_by: Mapped[str | None] = mapped_column(String(50))
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
     )

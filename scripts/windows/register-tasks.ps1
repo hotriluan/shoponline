@@ -2,7 +2,7 @@
 .SYNOPSIS
   Register the Task Scheduler jobs on the production machine: web at startup, the backup task
   (every 15 minutes, runs what the schedule on the web page Sao lưu says is due), daily data
-  retention (list-only unless -RetentionApply).
+  file retention (customer data is kept for good).
 
 .DESCRIPTION
   Run from an elevated PowerShell 7 on the production machine, inside the repo folder.
@@ -17,7 +17,7 @@
 
   With -OnlyMissing it registers the tasks that do not exist yet, and updates the command and
   battery settings of existing tasks that differ from what this script would register. Their
-  triggers, account and the retention --apply choice are kept, with one narrow exception: the
+  triggers and account are kept, with one narrow exception: the
   trigger of shoponline-backup is replaced when it is not the 15-minute repetition (a machine
   that still has the old daily trigger). It starts nothing.
   update-production.ps1 calls it this way on every deploy.
@@ -101,13 +101,8 @@ if (-not $User) { throw "Truyền -User (web và sao lưu) hoặc -RobotUser (ro
 if ($BackupTime) { Write-Warning "-BackupTime không còn tác dụng: giờ sao lưu nay đặt trên trang Sao lưu của web." }
 if ($OnlyMissing -and -not $AtLogOn) { throw "-OnlyMissing chỉ dùng cùng -AtLogOn (không hỏi mật khẩu)" }
 
-# On a deploy, keep whichever retention mode someone chose; never switch real deletion on or off here.
-$applyRetention = [bool]$RetentionApply
-if ($OnlyMissing) {
-    $existingRetention = Get-ScheduledTask -TaskName "shoponline-retention" -ErrorAction SilentlyContinue
-    if ($existingRetention -and "$($existingRetention.Actions[0].Arguments)" -match 'retention --apply') { $applyRetention = $true }
-}
-$retentionArgs = if ($applyRetention) { "retention --apply" } else { "retention" }
+if ($RetentionApply) { Write-Warning "-RetentionApply không còn tác dụng: dữ liệu khách được giữ, tác vụ chỉ dọn file hết dùng." }
+$retentionArgs = "retention"
 
 $settings = New-TaskSettings -StartWhenAvailable -RestartCount 3 -RestartInterval (New-TimeSpan -Minutes 1) -ExecutionTimeLimit ([TimeSpan]::Zero)
 $dailySettings = New-TaskSettings -StartWhenAvailable -ExecutionTimeLimit (New-TimeSpan -Hours 1)

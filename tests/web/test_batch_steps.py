@@ -3,11 +3,13 @@ from datetime import datetime
 from shoponline.db.models import SalesOrder
 from shoponline.domain import states
 from shoponline.web.routes.batches import batch_steps
+from tests.shop_codes import SHOP
 
 
 def _order(status):
     return SalesOrder(
         platform="SHOPEE",
+        shop_code=SHOP["SHOPEE"],
         platform_order_id="X",
         ordered_at=datetime(2026, 11, 10),
         status=status,

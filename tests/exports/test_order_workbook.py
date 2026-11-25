@@ -6,6 +6,7 @@ from openpyxl import load_workbook
 from shoponline.db.models import OrderBatch, PlatformSetting, SalesOrder, SalesOrderItem
 from shoponline.domain import states
 from shoponline.exports.order_workbook import build_order_workbook, order_file_name
+from tests.shop_codes import SHOP
 
 SETTING = PlatformSetting(platform="TIKTOK", display_name="TIKTOK", sap_customer="1200001146")
 BATCH = OrderBatch(
@@ -16,6 +17,7 @@ BATCH = OrderBatch(
 def _order(order_id, hour, status=states.READY, subsidy=0, quantity=1, lines=1):
     order = SalesOrder(
         platform="TIKTOK",
+        shop_code=SHOP["TIKTOK"],
         platform_order_id=order_id,
         ordered_at=datetime(2026, 11, 11, hour),
         status=status,

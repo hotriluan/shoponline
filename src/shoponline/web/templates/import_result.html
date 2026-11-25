@@ -24,6 +24,11 @@
   <p>Các đơn này ở lại lô cũ, không chuyển sang lô {{ result.batch.processing_date.strftime('%d/%m/%Y') }}:
   {% for o, b in result.in_other_batch %}<a href="/orders/{{ o.id }}">{{ o.platform_order_id }}</a> (lô <a href="/batches/{{ b.id }}">{{ b.processing_date.strftime('%d/%m/%Y') }}</a>){% if not loop.last %}, {% endif %}{% endfor %}</p></div>
 {% endif %}
+{% if result.in_other_shop %}
+<div class="card bad"><strong class="bad">{{ result.in_other_shop|length }} đơn đã thuộc shop khác shop đã chọn ({{ result.shop_code }})</strong>
+  <p>Các đơn này giữ nguyên shop cũ; admin sửa ở trang chi tiết đơn nếu cần:
+  {% for o in result.in_other_shop %}<a href="/orders/{{ o.id }}">{{ o.platform_order_id }}</a> (đơn {{ o.platform_order_id }} đã thuộc shop {{ o.shop_code }}, giữ nguyên){% if not loop.last %}, {% endif %}{% endfor %}</p></div>
+{% endif %}
 {% if result.problem_orders %}
 <h2 class="bad">{{ result.problem_orders|length }} đơn cần xử lý</h2>
 <div class="scroll"><table>

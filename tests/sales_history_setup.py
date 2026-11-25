@@ -18,6 +18,9 @@ from shoponline.db.models import (
     SapTaxInvoice,
 )
 from shoponline.domain import states
+from shoponline.domain.provinces import place_key
+from shoponline.domain.report_names import province_of
+from tests.shop_codes import SHOP
 
 MATERIAL = "100001787"
 ADDRESS = "Phường Sài Gòn, Thành phố Hồ Chí Minh, Việt Nam"
@@ -63,12 +66,14 @@ def order(
     customer: bool = True,
     invoice: str | None = AUTO,
     settlement: int | str | None = AUTO,
+    shop_code: str | None = None,
 ) -> SalesOrder:
     """lines: (material, quantity, unit_price, unit_subsidy) per order line. A delivered order
     gets a tax invoice for its DO ("HD" + order id) unless invoice is None. A Shopee or TikTok
     order gets one settlement row of SETTLED unless settlement is None (or another amount)."""
     created = SalesOrder(
         platform=platform,
+        shop_code=shop_code or SHOP[platform],
         platform_order_id=order_id,
         order_batch_id=batch(db, platform).id,
         ordered_at=ordered_at,
@@ -92,7 +97,12 @@ def order(
     if customer:
         db.add(
             CustomerInfo(
-                platform=platform, platform_order_id=order_id, customer_name=name, address=address
+                platform=platform,
+                platform_order_id=order_id,
+                customer_name=name,
+                address=address,
+                province=province_of(address),
+                place_key=place_key(address),
             )
         )
     if created.do_number and invoice is not None:

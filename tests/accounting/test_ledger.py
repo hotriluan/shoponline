@@ -16,6 +16,7 @@ from shoponline.db.models import (
     SalesOrder,
 )
 from shoponline.domain import states
+from tests.shop_codes import SHOP
 
 
 def _batch(db):
@@ -30,6 +31,7 @@ def _batch(db):
 def _order(db, batch, order_id, status, do_number=None):
     order = SalesOrder(
         platform="SHOPEE",
+        shop_code=SHOP["SHOPEE"],
         platform_order_id=order_id,
         order_batch_id=batch.id,
         ordered_at=datetime(2026, 11, 11, 8),

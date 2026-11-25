@@ -11,7 +11,7 @@ Một gói Python `shoponline`, một database PostgreSQL, một máy Windows. H
 | `web` | `shoponline web` | tài khoản hệ thống | FastAPI + Jinja2, render phía máy chủ; nhập file, sinh file, xếp việc cho robot |
 | `robot` | `shoponline robot` | phiên đăng nhập của tài khoản robot (cần màn hình cho SAP GUI) | Nhận việc từ hàng đợi, đọc `ZRSD001`, `ZRSD004` trên Production bằng SAP GUI Scripting |
 
-Các tác vụ: `shoponline-backup` (mỗi 15 phút, làm việc đang chờ rồi bản tới lịch), `shoponline-restore` (không có lịch; web gọi nó khi admin bấm phục hồi), `shoponline-retention` (xóa file hết dùng, liệt kê hoặc xóa dữ liệu khách quá hạn), và runner deploy `shoponline-deploy-runner`. Đăng ký bằng [register-tasks.ps1](../scripts/windows/register-tasks.ps1) và [install-deploy-runner.ps1](../scripts/windows/install-deploy-runner.ps1).
+Các tác vụ: `shoponline-backup` (mỗi 15 phút, làm việc đang chờ rồi bản tới lịch), `shoponline-restore` (không có lịch; web gọi nó khi admin bấm phục hồi), `shoponline-retention` (xóa file hết dùng; dữ liệu khách được giữ vĩnh viễn), và runner deploy `shoponline-deploy-runner`. Đăng ký bằng [register-tasks.ps1](../scripts/windows/register-tasks.ps1) và [install-deploy-runner.ps1](../scripts/windows/install-deploy-runner.ps1).
 
 Hệ thống không ghi gì vào SAP. Không có API sàn, không Docker, không LLM trong đường nghiệp vụ.
 
@@ -36,6 +36,13 @@ flowchart LR
   A --> K[SHOP ONLINE ddmmyy.xlsx gửi kế toán]
   K -->|chốt| G[(accounting_sent_delivery: sổ DO đã gửi)]
   G -->|loại DO đã gửi| A
+  H0[File lịch sử 2022-2026 của kế toán] -->|history-import| HS[(history_sale_line)]
+  LZ[Tiền Lazada nhập tay] -->|manual_settlement| PS[(platform_settlement)]
+  HS --> V[report_sale_line, report_order_revenue]
+  O --> V
+  TI --> V
+  PS --> V
+  V -->|reports/queries| P[Trang Báo cáo, Excel]
 ```
 
 Tải file lên và robot đi qua cùng một hàm, [report_ingest.py](../src/shoponline/reconcile/report_ingest.py), nên kết quả giống hệt nhau. File robot xuất ra được lưu như một file tải lên (`import_batch`).
@@ -54,7 +61,8 @@ Tải file lên và robot đi qua cùng một hàm, [report_ingest.py](../src/sh
 | `reconcile/` | Nối SO với đơn theo `PO No`, báo lệch, đánh dấu đã có DO |
 | `sapjobs/` | Hàng đợi `sap_job` (nhận việc bằng `FOR UPDATE SKIP LOCKED`), công tắc dừng robot, xếp việc đọc báo cáo |
 | `saprobot/` | Robot: lớp chặn T-code (`guard.py`), phiên, thanh trạng thái, popup, ảnh lỗi, cửa sổ Windows (`desktop.py`), vòng lặp (`worker.py`), thao tác đọc báo cáo (`transactions/`) |
-| `maintenance/` | Quy tắc giữ file, xóa file hết dùng và dữ liệu khách quá thời hạn lưu (`retention.py`) |
+| `reports/` | Báo cáo cho quản lý: mốc `REPORTING_CUTOVER`, nạp file lịch sử (`history_import.py`), truy vấn tổng hợp trên hai view (`queries.py`) |
+| `maintenance/` | Quy tắc giữ file và xóa file hết dùng (`retention.py`) |
 | `web/` | Route, template, xác thực, lưu file tải lên |
 | `config/` (gốc repo) | ID phần tử màn hình SAP và danh sách popup đã biết, lấy từ bản ghi recorder |
 
@@ -71,6 +79,34 @@ Bảng `accounting_run` (một đợt: `OPEN`, `FINALIZED`, `CANCELLED`, `REVOKE
 Trang `/sales-history` dựng dòng nối tiếp cho file lịch sử của kế toán ([sales_history_workbook.py](../src/shoponline/exports/sales_history_workbook.py)): mọi đơn `DELIVERED` chưa có trong `sales_history_exported`, đặt tới hết ngày chọn, mỗi dòng sản phẩm một dòng 20 cột (17 cột của file kế toán, rồi `Mã đơn`, `Tax Invoice Doc.` và `Tiền Vô`). Số hóa đơn lấy từ `sap_tax_invoice` (khóa `delivery`, nạp từ `zrsd003` bởi `ingest_zrsd003`) theo `sales_order.do_number`; đơn chưa có hóa đơn bị chặn, và trang xếp việc robot `read_zrsd003` cho khoảng ngày cần đọc. Tiền vô lấy từ `platform_settlement` (một dòng mỗi giao dịch, khóa `(platform, line_key)`; nạp từ file quyết toán Shopee/TikTok bởi `read_settlement_file` và `ingest_settlement`, sàn nhận theo nội dung file): tổng theo `(platform, platform_order_id)`, ghi ở dòng đầu của đơn; đơn Shopee/TikTok chưa có dòng nào nằm ở hộp "Đơn chờ tiền vô", Lazada để trống. Tỉnh/thành tách từ `customer_info.address`, itemName, kích cỡ, variation lấy từ `report_item_name` theo mã vật tư (sửa ở `/report-names`, gợi ý từ `sku_mapping`; [report_names.py](../src/shoponline/domain/report_names.py)). Đơn thiếu một giá trị thì bị chặn, không đoán. `/sales-history/draft` gọi `collect_rows(draft=True)`: chấp nhận thêm đơn chỉ có lý do `tax_invoice` hoặc `settlement`, ghi thêm cột 21 `Trạng thái`, trả file từ bộ nhớ và không ghi `generated_file` hay `sales_history_file_order`. `/sales-history/all` gọi `collect_all_rows`: mọi đơn có `ordered_at` trong khoảng ngày, mọi trạng thái, không chặn đơn nào, trả file từ bộ nhớ và không ghi `generated_file`, `sales_history_file_order` hay `sales_history_exported`.
 
 Bảng `sales_history_file_order` ghi các đơn có trong từng file đã tải (`generated_file` kind `sales_history`); `sales_history_exported` (khóa chính `sales_order_id`) ghi đơn đã được xác nhận là đã dán, kèm file đã xác nhận. Xác nhận chép danh sách đơn của file sang sổ, bỏ qua đơn đã có; gỡ xác nhận xóa đúng các dòng của file đó.
+
+## Danh mục shop
+
+Bảng `shop` (mã, sàn, `division`, đang bán, thứ tự). Mỗi đơn mang `sales_order.shop_code`, chọn lúc tải file ở trang **Tải file sàn** (xem [shops.py](../src/shoponline/domain/shops.py)); mỗi lần tải file ghi `import_batch.shop_code`. `division` là chữ ghi vào cột Division của file Shop Online. Shop có đơn thì không xóa được, chỉ tắt. Mỗi sàn luôn còn ít nhất một shop đang bán. Admin sửa ở trang **Shop**.
+
+## Tiền về Lazada nhập tay
+
+File Lazada không có mã đơn, nên admin nhập tiền từng đơn ở trang **Tiền về Lazada** ([manual_settlement.py](../src/shoponline/accounting/manual_settlement.py)). Số nhập nằm trong `platform_settlement` với `source = 'manual'` và đi vào cột `Tiền Vô` của file Shop Online và đường "tiền thực nhận" của báo cáo. Đơn Lazada chưa có số vẫn không bị chặn (chỉ Shopee và TikTok bị chặn khi thiếu tiền).
+
+## Lịch sử bán hàng 2022–2026
+
+`shoponline history-import <file> [--apply]` nạp file `Shop Online 2022-2026` của kế toán vào `history_sale_line` ([history_file.py](../src/shoponline/importers/history_file.py), [history_import.py](../src/shoponline/reports/history_import.py)). Quy tắc:
+
+- **Kỳ** lấy theo cột `month` và `year`. `createTime` có nhiều dạng (và có dòng đảo ngày với tháng), nên chỉ cho `ordered_on` khi một cách đọc khớp tháng của kỳ.
+- **Mốc** `REPORTING_CUTOVER = 2026-11-11 00:00` ([reports/__init__.py](../src/shoponline/reports/__init__.py)): lấy kỳ đến 10/2026 và các dòng kỳ 11/2026 có ngày đặt trước mốc; dòng khác bị loại kèm lý do. Từ mốc trở đi số liệu lấy từ đơn của hệ thống, nên không đơn nào bị tính hai lần.
+- **Chống trùng:** `line_key` là SHA-256 của các trường chuẩn hóa cộng thứ tự lặp trong file. Nạp lại cùng file hoặc file dài hơn chỉ thêm dòng mới.
+- **Shop** theo Division (không phân biệt hoa thường và khoảng trắng) so với bảng `shop`; Division lạ thì dòng bị loại.
+- **Tỉnh:** `province_alias` quy tên tỉnh cũ (63) và quận/huyện phổ biến ([districts.py](../src/shoponline/domain/districts.py)) về 34 tỉnh sau sáp nhập 2025. Tên còn lại admin khai ở trang **Quy đổi tỉnh**. Tên huyện trùng ở nhiều tỉnh (Châu Thành, Chợ Mới…) cố ý không tự quy đổi.
+- `--apply` ghi trong một giao dịch, giữ bản file trong `exports/history/` (retention giữ lại) và từ chối khi không có bản sao lưu `db` thành công trong 2 giờ (`--skip-backup-check` chỉ cho máy phát triển; việc dùng cờ được ghi trong `event_log`).
+
+## Báo cáo
+
+Trang `/reports` và bốn trang con (sàn và shop, sản phẩm, tỉnh, trả hàng); viewer và admin đều xem, mọi trang tải được Excel bằng `?format=xlsx` ([reports.py](../src/shoponline/web/routes/reports.py), [report_workbook.py](../src/shoponline/exports/report_workbook.py)). Nguồn là hai view ở migration `0016`:
+
+- `report_sale_line`: một dòng mỗi dòng hàng, hợp của lịch sử và đơn hệ thống (từ mốc, không tính đơn hủy). Dùng cho giá trị trên sàn, sản phẩm, tỉnh.
+- `report_order_revenue`: một dòng mỗi đơn hệ thống, với ba con số: giá trị trên sàn = (giá − trợ giá) × số lượng; doanh thu hóa đơn = `net_value_vnd + tax_vnd`; tiền thực nhận = tổng `platform_settlement.amount`; kèm giá trị trả của phiếu `ISSUED`. Lịch sử chỉ có đường đầu.
+
+Hai view nằm trong schema `public` (không phải schema riêng) vì khôi phục chạy `DROP SCHEMA public CASCADE` và `pg_dump` mang view theo schema `public`. Đổi view đi qua migration mới. Mốc trong SQL được test so với `REPORTING_CUTOVER`. Phí sàn và chênh giá chỉ cộng trên đơn đủ cả hai số; số đơn còn thiếu hóa đơn hoặc tiền hiện ngay trong bảng.
 
 ## Trả hàng sau hóa đơn
 

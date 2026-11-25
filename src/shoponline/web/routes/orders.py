@@ -10,7 +10,7 @@ from shoponline.db.models import (
     SalesReturn,
     SapTaxInvoice,
 )
-from shoponline.domain import states
+from shoponline.domain import shops, states
 from shoponline.domain.expected_value import expected_so_value
 from shoponline.importers.order_import import evaluate_order
 from shoponline.web.app import current_user, flash, get_db, redirect, render, require_admin
@@ -69,7 +69,37 @@ def order_detail(
         can_return=can_return,
         expected=expected_so_value(order.items),
         can_cancel=states.CANCELLED in states.ALLOWED[order.status],
+        shop_choices=shops.active_shops(db, order.platform),
     )
+
+
+@router.post("/orders/{order_id}/shop")
+def change_shop(
+    request: Request,
+    order_id: int,
+    shop_code: str = Form(""),
+    db: Session = Depends(get_db),
+    user: AppUser = Depends(require_admin),
+):
+    order = _order(db, order_id)
+    try:
+        shop = shops.require_choice(db, order.platform, shop_code)
+    except shops.ShopRefused as exc:
+        flash(request, str(exc), "error")
+        return redirect(f"/orders/{order_id}")
+    if shop.code != order.shop_code:
+        states.log_event(
+            db,
+            user.username,
+            "order_shop_changed",
+            platform=order.platform,
+            platform_order_id=order.platform_order_id,
+            detail={"old": order.shop_code, "new": shop.code},
+        )
+        order.shop_code = shop.code
+        db.commit()
+    flash(request, f"Đơn {order.platform_order_id} thuộc shop {shop.division}.")
+    return redirect(f"/orders/{order_id}")
 
 
 @router.post("/orders/{order_id}/cancel")

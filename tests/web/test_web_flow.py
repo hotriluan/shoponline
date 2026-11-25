@@ -33,6 +33,7 @@ from tests.fixtures.build_fixtures import (
     zrsd004_file,
     zrsd004_row,
 )
+from tests.shop_codes import SHOP
 
 XLSX = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 
@@ -62,6 +63,8 @@ def _client(app, username=None, password=None):
 
 
 def _upload(client, url, path, **data):
+    if url == "/imports":
+        data.setdefault("shop_code", SHOP[data["platform"]])
     with open(path, "rb") as fh:
         return client.post(
             url, data=data, files={"file": (path.name, fh, XLSX)}, follow_redirects=False

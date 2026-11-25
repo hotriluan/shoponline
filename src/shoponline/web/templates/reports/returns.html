@@ -1,0 +1,9 @@
+{% extends "base.html" %}
+{% from "_macros.html" import page_header %}
+{% from "reports/_table.html" import data_table %}
+{% block title %}{{ title }}{% endblock %}
+{% block content %}
+{{ page_header(title, 'Phiếu điều chỉnh hóa đơn đã phát hành theo tháng và lý do (từ 11/11/2026).') }}
+{% include "reports/_filters.html" %}
+{{ data_table(columns, rows) }}
+{% endblock %}

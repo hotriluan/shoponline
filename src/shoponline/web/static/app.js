@@ -89,3 +89,26 @@
     if (failed.size) { e.preventDefault(); e.returnValue = ''; }
   });
 })();
+
+/* Upload form: the shop list shows only the shops of the chosen platform and preselects the default
+   one. The server checks the choice again. */
+(function () {
+  var select = document.querySelector('[data-shop-select]');
+  if (!select) return;
+  var defaults = JSON.parse(select.dataset.defaults || '{}');
+  var radios = document.querySelectorAll('input[name=platform]');
+  function update() {
+    var chosen = document.querySelector('input[name=platform]:checked');
+    var platform = chosen ? chosen.value : '';
+    var first = null;
+    select.querySelectorAll('option').forEach(function (o) {
+      var match = o.dataset.platform === platform;
+      o.hidden = !match;
+      o.disabled = !match;
+      if (match && first === null) first = o.value;
+    });
+    select.value = defaults[platform] || first || '';
+  }
+  radios.forEach(function (r) { r.addEventListener('change', update); });
+  update();
+})();

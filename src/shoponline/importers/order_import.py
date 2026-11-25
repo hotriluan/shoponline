@@ -15,6 +15,9 @@ from shoponline.db.models import CustomerInfo, ImportBatch, OrderBatch, SalesOrd
 from shoponline.domain import states
 from shoponline.domain.gi_date import suggest_gi_date
 from shoponline.domain.order import ParsedOrder
+from shoponline.domain.provinces import place_key
+from shoponline.domain.report_names import province_of
+from shoponline.domain.shops import default_shop, require_choice
 from shoponline.domain.sku_mapping import find_mapping
 from shoponline.importers.excel_table import FileRejected
 from shoponline.importers.lazada_orders import read_lazada_orders
@@ -39,6 +42,9 @@ class ImportResult:
     changed_after_so: list[SalesOrder] = field(default_factory=list)
     # Orders already in a batch of another processing date: they stay there.
     in_other_batch: list[tuple[SalesOrder, OrderBatch]] = field(default_factory=list)
+    # Orders that already belong to another shop than the one chosen for this file: they stay.
+    in_other_shop: list[SalesOrder] = field(default_factory=list)
+    shop_code: str = ""
     batch: OrderBatch | None = None
 
 
@@ -140,13 +146,23 @@ def import_orders(
     processing_date: date,
     actor: str,
     import_batch: ImportBatch | None = None,
+    shop_code: str | None = None,
 ) -> ImportResult:
+    """New orders get `shop_code` (an active shop of the platform); without one, the platform's
+    default shop. An order already stored keeps the shop it has."""
     wrong_platform = {o.platform for o in parsed_orders} - {platform}
     if wrong_platform:
         raise FileRejected(f"File chứa đơn của sàn khác: {', '.join(sorted(wrong_platform))}")
     _check_dates(parsed_orders, processing_date)
 
-    result = ImportResult()
+    shop = (
+        require_choice(session, platform, shop_code)
+        if shop_code
+        else default_shop(session, platform)
+    )
+    result = ImportResult(shop_code=shop.code)
+    if import_batch is not None:
+        import_batch.shop_code = shop.code
     batch = get_or_create_batch(session, platform, processing_date)
     result.batch = batch
     for parsed in parsed_orders:
@@ -162,6 +178,7 @@ def import_orders(
                 platform=platform,
                 platform_order_id=parsed.platform_order_id,
                 order_batch_id=batch.id,
+                shop_code=shop.code,
                 ordered_at=parsed.ordered_at,
                 status=states.NEW,
                 review_note=review_note,
@@ -212,6 +229,8 @@ def import_orders(
             result.problem_orders.append(order)
         if order.order_batch_id != batch.id:
             result.in_other_batch.append((order, session.get(OrderBatch, order.order_batch_id)))
+        if order.shop_code != shop.code:
+            result.in_other_shop.append(order)
         _ensure_customer(session, platform, parsed)
 
     if import_batch is not None:
@@ -230,6 +249,8 @@ def import_orders(
             "unchanged": result.unchanged,
             "changed_after_so": len(result.changed_after_so),
             "in_other_batch": len(result.in_other_batch),
+            "in_other_shop": len(result.in_other_shop),
+            "shop": shop.code,
         },
     )
     session.flush()
@@ -274,10 +295,14 @@ def _ensure_customer(session: Session, platform: str, parsed: ParsedOrder) -> No
                 platform_order_id=parsed.platform_order_id,
                 customer_name=parsed.customer_name,
                 address=parsed.default_address,
+                province=province_of(parsed.default_address),
+                place_key=place_key(parsed.default_address),
             )
         )
         return
     if not existing.address:
         existing.address = parsed.default_address
+        existing.province = province_of(parsed.default_address)
+        existing.place_key = place_key(parsed.default_address)
     if not existing.customer_name and parsed.customer_name:
         existing.customer_name = parsed.customer_name

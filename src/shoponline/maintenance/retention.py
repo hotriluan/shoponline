@@ -1,4 +1,4 @@
-"""Delete stored files once nothing needs them, and customer data older than the retention period.
+"""Delete stored files once nothing needs them.
 
 Files. One set of keep rules (kept_files) serves both the deletion at the moment a file is spent
 (discard_unused, called by the web and the robot) and the nightly sweep (sweep_files), which
@@ -9,7 +9,8 @@ removes whatever is left over:
   retention_days. Platform files, mapping tables, zrsd001 and zrsd003 are read once, at import.
 - exports/: every accounting file (the copy sent to accounting, including those from before runs
   existed), a Shop Online history file that still holds an order not yet confirmed as pasted,
-  and every file a sales return points at (the return documents, kept for good). Order files
+  every file a sales return points at (the return documents, kept for good) and every history
+  file loaded for the management reports (exports/history/, kept as evidence). Order files
   are deleted as soon as they are sent.
 - robot-work/job-N: kept only while the job is not DONE, for at most evidence_keep_days.
 - robot-evidence/: screenshots, for evidence_keep_days (saprobot.evidence.prune).
@@ -19,13 +20,8 @@ keeps it is committed. A file that cannot be deleted is logged and left for the 
 The sweep refuses to run when a stored path points outside the data folder (a database restored
 onto a machine with another data folder would otherwise match no file and lose them all).
 
-Customer data. Orders themselves stay (platform order id, SKU lines, SO and DO numbers): they
-hold no personal data and keep re-imports idempotent. customer_info rows (name, address)
-untouched for retention_days go, unless the order is still needed: its DO has not yet been
-recorded as sent to accounting (accounting_sent_delivery), or it has not yet been confirmed as
-pasted into the Shop Online history file (sales_history_exported), which carries the customer
-name. Cancelled orders and rows typed in by hand for an order id with no sales_order go by age
-alone.
+Customer data (name, address) is never deleted: it is kept for good, decided 2026-11-25, so the
+management reports can break sales down by customer and province.
 """
 
 from __future__ import annotations
@@ -38,7 +34,7 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
-from sqlalchemy import and_, delete, or_, select
+from sqlalchemy import and_, or_, select
 from sqlalchemy.orm import Session
 
 from shoponline.accounting import runs
@@ -47,13 +43,10 @@ from shoponline.db.models import (
     AccountingRun,
     AccountingRunRead,
     AccountingRunSource,
-    AccountingSentDelivery,
-    CustomerInfo,
     GeneratedFile,
     ImportBatch,
     SalesHistoryExported,
     SalesHistoryFileOrder,
-    SalesOrder,
     SalesReturn,
     SapJob,
 )
@@ -69,69 +62,6 @@ JOB_DIR = re.compile(r"job-(\d+)")
 
 class ForeignStoredPaths(RuntimeError):
     """Stored file paths lie outside the data folder, so the keep rules cannot be trusted."""
-
-
-# ---------------------------------------------------------------- customer data
-
-
-@dataclass
-class RetentionPlan:
-    cutoff: datetime
-    customer_ids: list[int] = field(default_factory=list)
-    customer_orders: list[tuple[str, str]] = field(default_factory=list)  # (platform, order id)
-    held_orders: list[tuple[str, str]] = field(default_factory=list)  # expired but unfinished
-
-
-def find_expired(
-    session: Session, settings: Settings, now: datetime | None = None
-) -> RetentionPlan:
-    now = now or datetime.now(UTC)
-    plan = RetentionPlan(cutoff=now - timedelta(days=settings.retention_days))
-    rows = session.execute(
-        select(
-            CustomerInfo.id,
-            CustomerInfo.platform,
-            CustomerInfo.platform_order_id,
-            SalesOrder.status,
-            AccountingSentDelivery.delivery,
-            SalesHistoryExported.sales_order_id,
-        )
-        .outerjoin(
-            SalesOrder,
-            and_(
-                SalesOrder.platform == CustomerInfo.platform,
-                SalesOrder.platform_order_id == CustomerInfo.platform_order_id,
-            ),
-        )
-        .outerjoin(AccountingSentDelivery, AccountingSentDelivery.delivery == SalesOrder.do_number)
-        .outerjoin(SalesHistoryExported, SalesHistoryExported.sales_order_id == SalesOrder.id)
-        .where(CustomerInfo.updated_at < plan.cutoff)
-        .order_by(CustomerInfo.platform, CustomerInfo.platform_order_id)
-    ).all()
-    for info_id, platform, order_id, status, sent, exported in rows:
-        finished = sent is not None and exported is not None
-        if status is None or status == states.CANCELLED or finished:
-            plan.customer_ids.append(info_id)
-            plan.customer_orders.append((platform, order_id))
-        else:
-            plan.held_orders.append((platform, order_id))
-    return plan
-
-
-def apply(session: Session, plan: RetentionPlan, actor: str) -> None:
-    """Delete the expired customer rows and log the purge. The caller commits."""
-    if plan.customer_ids:
-        session.execute(delete(CustomerInfo).where(CustomerInfo.id.in_(plan.customer_ids)))
-    states.log_event(
-        session,
-        actor,
-        "retention_purge",
-        detail={
-            "cutoff": plan.cutoff.isoformat(),
-            "customers": len(plan.customer_ids),
-            "held": len(plan.held_orders),
-        },
-    )
 
 
 # ---------------------------------------------------------------- files
@@ -188,8 +118,9 @@ def kept_files(session: Session, settings: Settings, now: datetime | None = None
             GeneratedFile.id.in_(select(SalesReturn.xlsx_file_id)),
         )
     )
+    history = select(ImportBatch.stored_path).where(ImportBatch.kind == "history_sales")
     paths: set[Path] = set()
-    for stmt in (attached, read, waiting, accounting, unconfirmed, returns):
+    for stmt in (attached, read, waiting, accounting, unconfirmed, returns, history):
         paths.update(Path(p).resolve() for p in session.scalars(stmt))
     return paths
 

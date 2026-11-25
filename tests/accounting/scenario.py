@@ -13,6 +13,7 @@ from shoponline.domain import states
 from shoponline.sapjobs import queue
 from shoponline.sapjobs.queue import SapTarget
 from tests.fixtures.build_fixtures import zrsd004_file, zrsd004_row
+from tests.shop_codes import SHOP
 
 TODAY = date(2026, 11, 13)
 QA = SapTarget("QAS", "300")
@@ -45,6 +46,7 @@ def make_order(
 ) -> SalesOrder:
     order = SalesOrder(
         platform=batch.platform,
+        shop_code=SHOP[batch.platform],
         platform_order_id=order_id,
         order_batch_id=batch.id,
         ordered_at=datetime(2026, 11, 11, 8),

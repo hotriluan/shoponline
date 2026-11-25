@@ -108,13 +108,14 @@
   <p><span class="tag">Đã có hóa đơn: {{ invoiced }}</span> <span class="tag">Đã có tiền vô: {{ paid }}</span></p>
 </div>
 <div class="scroll"><table class="orders-table">
-  <tr><th>Mã đơn</th><th>Đặt lúc</th><th>Sản phẩm</th><th class="num">SL</th><th class="num">Đơn giá</th><th class="num">Trợ giá/đv</th><th>Mã SAP</th>
+  <tr><th>Mã đơn</th><th>Shop</th><th>Đặt lúc</th><th>Sản phẩm</th><th class="num">SL</th><th class="num">Đơn giá</th><th class="num">Trợ giá/đv</th><th>Mã SAP</th>
       <th>Trạng thái</th><th>SO</th><th>DO</th><th>Số hóa đơn</th><th>Tiền vô</th><th>Khách</th></tr>
   {% for o in orders %}
   {% for i in o.items %}
   <tr>
     {% if loop.first %}
     <td rowspan="{{ o.items|length }}"><a href="/orders/{{ o.id }}">{{ o.platform_order_id }}</a></td>
+    <td rowspan="{{ o.items|length }}">{{ o.shop.division }}</td>
     <td rowspan="{{ o.items|length }}">{{ o.ordered_at.strftime('%d/%m %H:%M') }}</td>
     {% endif %}
     <td class="product">{{ i.product_name }}{% if i.variation_name %}<br><span class="muted">{{ i.variation_name }}</span>{% endif %}</td>

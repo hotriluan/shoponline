@@ -28,7 +28,8 @@ class Settings:
     data_dir: Path
     web_host: str = "127.0.0.1"
     web_port: int = 8750
-    # Customer names, addresses and stored workbooks are deleted after this many days.
+    # Days a zrsd004 file uploaded by hand is kept while it waits to be attached to a run.
+    # Customer names and addresses are not deleted.
     retention_days: int = 90
     # Backups: optional, so the web still starts on a machine that does not back up.
     backup_password: str = field(default="", repr=False)

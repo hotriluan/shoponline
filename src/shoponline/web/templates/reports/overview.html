@@ -1,0 +1,26 @@
+{% extends "base.html" %}
+{% from "_macros.html" import page_header, stat %}
+{% from "reports/_table.html" import data_table %}
+{% block title %}{{ title }}{% endblock %}
+{% block head %}{% include "reports/_chart_scripts.html" %}{% endblock %}
+{% block content %}
+{{ page_header(title, 'Giá trị trên sàn từ 2022; doanh thu hóa đơn và tiền thực nhận chỉ có từ 11/11/2026.') }}
+{% include "reports/_filters.html" %}
+<div class="stats">
+  {{ stat(totals.marketplace_value|money, 'Giá trị trên sàn') }}
+  {{ stat(totals.invoice_value|money if totals.invoice_value is not none else '–', 'Doanh thu hóa đơn') }}
+  {{ stat(totals.settled_value|money if totals.settled_value is not none else '–', 'Tiền thực nhận') }}
+  {{ stat(totals.platform_fee|money if totals.platform_fee is not none else '–', 'Phí sàn') }}
+  {{ stat(totals.orders|money, 'Số đơn') }}
+  {{ stat(totals.average_order|money if totals.average_order is not none else '–', 'Giá trị đơn trung bình') }}
+  {{ stat('%.1f%%'|format(totals.return_rate * 100) if totals.return_rate is not none else '–', 'Tỷ lệ trả') }}
+</div>
+<section class="card">
+  <div class="card-head"><h2>Doanh số theo tháng</h2></div>
+  <div class="chart-box"><canvas data-chart="lines" aria-label="Biểu đồ giá trị trên sàn, doanh thu hóa đơn và tiền thực nhận theo tháng. Số liệu có trong bảng bên dưới."></canvas></div>
+  <p class="report-note">Trước 11/2026 chỉ có đường giá trị trên sàn: file lịch sử của kế toán không ghi hóa đơn và tiền thực nhận.</p>
+  <script type="application/json" id="chart-data">{{ chart|tojson }}</script>
+</section>
+<h2>Bảng theo tháng</h2>
+{{ data_table(columns, rows) }}
+{% endblock %}

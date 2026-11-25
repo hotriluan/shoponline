@@ -1,0 +1,16 @@
+{% extends "base.html" %}
+{% from "_macros.html" import page_header %}
+{% from "reports/_table.html" import data_table %}
+{% block title %}{{ title }}{% endblock %}
+{% block head %}{% include "reports/_chart_scripts.html" %}{% endblock %}
+{% block content %}
+{{ page_header(title, 'Giá trị trên sàn theo sàn và shop (Division).') }}
+{% include "reports/_filters.html" %}
+<section class="card">
+  <div class="card-head"><h2>Theo tháng</h2></div>
+  <div class="chart-box"><canvas data-chart="stack" aria-label="Biểu đồ cột chồng giá trị trên sàn theo tháng và shop. Tổng theo shop có trong bảng bên dưới."></canvas></div>
+  <script type="application/json" id="chart-data">{{ chart|tojson }}</script>
+</section>
+<h2>Tổng trong khoảng</h2>
+{{ data_table(columns, rows) }}
+{% endblock %}

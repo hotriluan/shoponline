@@ -68,11 +68,6 @@ COLUMNS = (
     "Tax Invoice Doc.",
     "Tiền Vô",
 )
-DIVISION = {
-    "SHOPEE": "Shopee Bình Dương",
-    "TIKTOK": "tiktok Bình Dương",
-    "LAZADA": "Lazada Mall",
-}
 HIDDEN_PHONE = "******"
 MONEY_FORMAT = "#,##0"
 MONEY_COLUMNS = ("J", "K", "T")
@@ -81,11 +76,13 @@ TEXT_COLUMNS = ("R", "S")
 # Why an order is blocked; the kind tells the page where it is fixed.
 CUSTOMER = "customer"
 REPORT_NAME = "report_name"
-DIVISION_MISSING = "division"
 TAX_INVOICE = "tax_invoice"
 SETTLEMENT = "settlement"
-# Platforms whose settlement files give money per order. Lazada's does not: its column stays empty.
-SETTLED_PLATFORMS = ("SHOPEE", "TIKTOK")
+# Platforms whose money received is looked up per order. Lazada's file gives none, so an admin
+# types it in (accounting/manual_settlement.py); until then the order is still not blocked.
+SETTLEMENT_LOOKUP_PLATFORMS = ("SHOPEE", "TIKTOK", "LAZADA")
+# Platforms whose order waits for the money (blocked, or a draft) because a file always brings it.
+SETTLEMENT_REQUIRED_PLATFORMS = ("SHOPEE", "TIKTOK")
 # The only waits a draft accepts, in the order the status column lists them.
 DRAFT_LABELS = {TAX_INVOICE: "Chờ hóa đơn", SETTLEMENT: "Chờ tiền vô"}
 STATUS_COLUMN = "Trạng thái"
@@ -165,7 +162,7 @@ def pending_orders(session: Session, until: date) -> list[SalesOrder]:
                 ~confirmed,
                 SalesOrder.ordered_at < datetime.combine(until + timedelta(days=1), time()),
             )
-            .options(selectinload(SalesOrder.items))
+            .options(selectinload(SalesOrder.items), selectinload(SalesOrder.shop))
             .order_by(SalesOrder.ordered_at, SalesOrder.platform_order_id)
         )
     )
@@ -208,7 +205,7 @@ def _lookups(session: Session, orders: Sequence[SalesOrder]) -> Lookups:
         ).all()
     )
 
-    settled_ids = {oid for platform, oid in wanted if platform in SETTLED_PLATFORMS}
+    settled_ids = {oid for platform, oid in wanted if platform in SETTLEMENT_LOOKUP_PLATFORMS}
     settlements = {
         (platform, order_id): total
         for platform, order_id, total in session.execute(
@@ -218,7 +215,7 @@ def _lookups(session: Session, orders: Sequence[SalesOrder]) -> Lookups:
                 func.sum(PlatformSettlement.amount),
             )
             .where(
-                PlatformSettlement.platform.in_(SETTLED_PLATFORMS),
+                PlatformSettlement.platform.in_(SETTLEMENT_LOOKUP_PLATFORMS),
                 PlatformSettlement.platform_order_id.in_(settled_ids),
             )
             .group_by(PlatformSettlement.platform, PlatformSettlement.platform_order_id)
@@ -238,9 +235,7 @@ def collect_rows(session: Session, until: date, draft: bool = False) -> HistoryR
 
     for order in orders:
         reasons: list[Reason] = []
-        division = DIVISION.get(order.platform)
-        if division is None:
-            reasons.append(Reason(DIVISION_MISSING, f"Sàn {order.platform} chưa có tên Division"))
+        division = order.shop.division
         info = customers.get((order.platform, order.platform_order_id))
         name = (info.customer_name or "").strip() if info else ""
         if not name:
@@ -259,7 +254,7 @@ def collect_rows(session: Session, until: date, draft: bool = False) -> HistoryR
         if invoice is None:
             reasons.append(Reason(TAX_INVOICE, f"DO {order.do_number} chưa có Tax Invoice Doc."))
         total = settlements.get((order.platform, order.platform_order_id))
-        if order.platform in SETTLED_PLATFORMS and total is None:
+        if order.platform in SETTLEMENT_REQUIRED_PLATFORMS and total is None:
             reasons.append(Reason(SETTLEMENT, "Chưa có tiền vô"))
         unique = tuple(dict.fromkeys(reasons))
         status = ""
@@ -312,7 +307,7 @@ def collect_all_rows(session: Session, first: date, last: date) -> list[HistoryR
                 SalesOrder.ordered_at >= datetime.combine(first, time()),
                 SalesOrder.ordered_at < datetime.combine(last + timedelta(days=1), time()),
             )
-            .options(selectinload(SalesOrder.items))
+            .options(selectinload(SalesOrder.items), selectinload(SalesOrder.shop))
             .order_by(SalesOrder.ordered_at, SalesOrder.platform_order_id)
         )
     )
@@ -337,14 +332,14 @@ def collect_all_rows(session: Session, first: date, last: date) -> list[HistoryR
         if order.status == states.DELIVERED:
             if invoice is None:
                 parts.append(DRAFT_LABELS[TAX_INVOICE])
-            if order.platform in SETTLED_PLATFORMS and total is None:
+            if order.platform in SETTLEMENT_REQUIRED_PLATFORMS and total is None:
                 parts.append(DRAFT_LABELS[SETTLEMENT])
         parts.append(CONFIRMED_LABEL if order.id in confirmed else UNCONFIRMED_LABEL)
         for index, item in enumerate(order.items):  # ordered by line_no
             report = lookups.names.get(item.material_number)
             rows.append(
                 HistoryRow(
-                    division=DIVISION.get(order.platform, order.platform),
+                    division=order.shop.division,
                     ordered_at=order.ordered_at,
                     billing_name=name,
                     billing_city=city,

@@ -3,13 +3,12 @@ from io import BytesIO
 
 from openpyxl import load_workbook
 
-from shoponline.db.models import GeneratedFile, PlatformSetting, SalesHistoryExported
+from shoponline.db.models import GeneratedFile, SalesHistoryExported
 from shoponline.domain import states
 from shoponline.exports.sales_history_workbook import (
     ALL_SHEET,
     COLUMNS,
     CUSTOMER,
-    DIVISION_MISSING,
     REPORT_NAME,
     SETTLEMENT,
     TAX_INVOICE,
@@ -127,6 +126,16 @@ def test_division_per_platform(db):
     assert [r.division for r in rows] == ["Shopee Bình Dương", "tiktok Bình Dương", "Lazada Mall"]
 
 
+def test_division_follows_the_shop_of_the_order(db):
+    setup.report_name(db)
+    setup.order(db, "A-1", datetime(2026, 11, 11, 1), shop_code="SHOPEE_PGT")
+    setup.order(db, "A-2", datetime(2026, 11, 11, 2))
+
+    rows = collect_rows(db, UNTIL).rows
+
+    assert [r.division for r in rows] == ["Shopee PGT", "Shopee Bình Dương"]
+
+
 def _blocked(db):
     result = collect_rows(db, UNTIL)
     assert result.rows == [] and result.order_ids == []
@@ -170,14 +179,6 @@ def test_blocked_without_report_name(db):
     assert [(r.kind, r.text) for r in _blocked(db).reasons] == [
         (REPORT_NAME, "Mã 100009999 chưa có tên báo cáo")
     ]
-
-
-def test_blocked_for_platform_without_division(db):
-    db.add(PlatformSetting(platform="SENDO", display_name="SENDO", sap_customer="1299999999"))
-    db.flush()
-    setup.report_name(db)
-    setup.order(db, "SENDO-1", datetime(2026, 11, 11), platform="SENDO")
-    assert [r.kind for r in _blocked(db).reasons] == [DIVISION_MISSING]
 
 
 def test_blocked_order_does_not_hold_back_the_others(db):
@@ -249,6 +250,20 @@ def test_shopee_and_tiktok_wait_for_settlement_but_lazada_does_not(db):
     assert result.rows[0].settlement is None
     assert [b.platform_order_id for b in result.blocked] == ["SP-1", "TT-1"]
     assert all(b.reasons == (Reason(SETTLEMENT, "Chưa có tiền vô"),) for b in result.blocked)
+
+
+def test_lazada_money_typed_in_shows_in_the_file_and_missing_money_never_blocks(db):
+    from shoponline.accounting import manual_settlement
+
+    setup.report_name(db)
+    setup.order(db, "LZ-1", datetime(2026, 11, 11, 2), platform="LAZADA")
+    setup.order(db, "LZ-2", datetime(2026, 11, 11, 3), platform="LAZADA")
+    manual_settlement.set_amount(db, "LZ-1", 87500, date(2026, 11, 15), "admin", date(2026, 11, 16))
+
+    result = collect_rows(db, UNTIL)
+
+    assert result.blocked == []
+    assert {r.platform_order_id: r.settlement for r in result.rows} == {"LZ-1": 87500, "LZ-2": None}
 
 
 def test_a_settlement_of_another_platform_does_not_count(db):

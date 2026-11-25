@@ -31,9 +31,19 @@ def test_detail_shows_summary_and_per_order_invoice_and_money(db, login):
     assert "250.000" in html or "250,000" in html
 
 
-def test_lazada_never_counts_money_received(db, login):
+def test_lazada_counts_money_only_once_it_is_typed_in(db, login):
+    from datetime import date
+
+    from shoponline.accounting import manual_settlement
+
     setup.order(db, "LZ1", WHEN, platform="LAZADA", invoice="HD0009")
     db.commit()
     html = login("viewer").get("/batches").text
     assert "Đã có hóa đơn: 1" in html
     assert "Đã có tiền vô: 0" in html
+
+    manual_settlement.set_amount(db, "LZ1", 73000, date(2026, 11, 12), "admin", date(2026, 11, 20))
+    db.commit()
+    html = login("viewer").get(f"/batches/{setup.batch(db, 'LAZADA').id}").text
+    assert "Đã có tiền vô: 1" in html
+    assert "73.000" in html or "73,000" in html

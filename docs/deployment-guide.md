@@ -78,7 +78,7 @@ Script dừng lại nếu cổng web đang có tiến trình khác giữ; khi đ
 - `shoponline-web`: chạy `uv run shoponline web` khi máy khởi động, tự chạy lại nếu dừng.
 - `shoponline-backup`: chạy `uv run shoponline backup run --if-due` **mỗi 15 phút** (tối đa 3 giờ một lần chạy, không chạy chồng). Nó làm các yêu cầu admin bấm trên web, rồi chạy bản tới lịch. Giờ chạy đặt trên trang **Sao lưu**, không cần đăng ký lại. `-BackupTime` không còn tác dụng.
 - `shoponline-restore`: không có lịch; chạy khi admin bấm phục hồi hệ thống thật trên web (`backup process-queue --restore`).
-- `shoponline-retention`: hằng ngày lúc 12:30 (`-RetentionTime`), xóa file hết dùng và liệt kê dữ liệu khách quá thời hạn lưu vào `<SHOPONLINE_DATA_DIR>\logs\retention.log`. Dữ liệu khách chỉ bị xóa thật khi đăng ký với `-RetentionApply`, sau một tuần xem log (xem [security-and-data-retention.md](security-and-data-retention.md#thời-hạn-lưu)).
+- `shoponline-retention`: hằng ngày lúc 12:30 (`-RetentionTime`), dọn file hết dùng, ghi vào `<SHOPONLINE_DATA_DIR>\logs\retention.log`. Dữ liệu khách được giữ vĩnh viễn; `-RetentionApply` không còn tác dụng (xem [security-and-data-retention.md](security-and-data-retention.md#thời-hạn-lưu)).
 
 Mọi tác vụ chạy ẩn, không mở cửa sổ nào để người khác lỡ tay đóng:
 
@@ -152,6 +152,21 @@ Không dùng web: `uv run --extra robot shoponline drive set-client --client-id 
 - Ký hiệu hóa đơn suy ra từ biến `SHOPONLINE_INVOICE_SYMBOL_PATTERN` (mặc định `1C{yy}TAL`, `yy` là hai số cuối năm hóa đơn); sai mẫu thì ứng dụng không khởi động.
 - Hóa đơn nhập trước khi có cột tiền thì thiếu tiền: đọc lại zrsd003 của các tháng có hóa đơn cần trả.
 - **Không `downgrade` migration `0012` khi đã có phiếu**: bảng bị xóa thì số đã in có thể bị cấp lại. Khôi phục bản sao lưu cũ thì chạy `uv run shoponline return-number repair` rồi so với số cao nhất đã in.
+
+## Báo cáo quản lý: việc một lần khi bật
+
+Làm theo thứ tự, trên máy chạy thật (migration `0013` đến `0016`):
+
+1. Chỉ đọc: kiểm đơn hiện có đều sau 2026-11-11 (`SELECT min(ordered_at) FROM sales_order`) và mọi đơn Shopee thuộc shop đang bán. Lệch thì dừng và xem lại [plan](../plans/261125-0621-management-reporting-module/plan.md).
+2. Sao lưu `db` (`pwsh -File scripts\windows\backup-db.ps1`); bản này cũng là bản `history-import --apply` đòi trong 2 giờ.
+3. Deploy như thường; `migrate` chạy `0013` đến `0016`.
+4. Chạy lại `scripts\windows\register-tasks.ps1` để tác vụ dọn file không còn `--apply`.
+5. Đưa file lịch sử lên `C:\shoponline-data\incoming\` (file chứa tên và số điện thoại khách, không để trong cây mã nguồn; `docs/**/*.xlsx` đã bị `.gitignore` loại).
+6. `shoponline history-import "C:\shoponline-data\incoming\<file>"` (chạy thử), đọc báo cáo, rồi thêm `--apply`. Không dùng `--skip-backup-check` ở production. Sau khi nạp, so số dòng và tổng `Customer paid` theo năm với báo cáo chạy thử rồi xóa bản trong `incoming\` (lệnh đã giữ một bản trong `exports\history\`).
+7. Mở **Quy đổi tỉnh** và khai các tên huyện còn lại; mở `/reports` kiểm số liệu.
+8. Tạo tài khoản cho quản lý: `shoponline create-user <tên> --role viewer`.
+
+Lùi: revert code, không `alembic downgrade` khi đã có dữ liệu nhập tay hoặc lịch sử; hai view và bảng `history_sale_line` không ảnh hưởng code cũ.
 
 ## Cập nhật phiên bản
 

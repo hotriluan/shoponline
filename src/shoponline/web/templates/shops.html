@@ -1,0 +1,38 @@
+{% extends "base.html" %}
+{% from "_macros.html" import page_header %}
+{% block title %}Shop{% endblock %}
+{% block content %}
+{{ page_header('Danh mục shop', 'Mỗi đơn mang shop đã chọn lúc tải file. Division là chữ ghi vào cột Division của file Shop Online. Shop tắt không hiện ở trang tải file nhưng đơn cũ vẫn giữ.') }}
+{% set admin = user.role == 'admin' %}
+<div class="scroll"><table>
+  <tr><th>Mã</th><th>Sàn</th><th>Division</th><th>Đang bán</th><th>Số đơn</th>{% if admin %}<th></th><th></th>{% endif %}</tr>
+  {% for s in shops %}
+  <tr{% if not s.active %} class="muted"{% endif %}>
+    <td>{{ s.code }}
+      {% if admin %}<form method="post" action="/shops/{{ s.code }}/update" id="u-{{ s.code }}"></form>
+      <form method="post" action="/shops/{{ s.code }}/delete" id="d-{{ s.code }}" onsubmit="return confirm('Xóa shop này?')"></form>{% endif %}</td>
+    <td>{{ s.platform }}</td>
+    {% if admin %}
+    <td><input form="u-{{ s.code }}" type="text" name="division" value="{{ s.division }}" size="24" maxlength="50" required></td>
+    <td><input form="u-{{ s.code }}" type="checkbox" name="active" {{ 'checked' if s.active }}></td>
+    {% else %}
+    <td>{{ s.division }}</td><td>{{ 'có' if s.active else 'tắt' }}</td>
+    {% endif %}
+    <td class="num">{{ order_counts.get(s.code, 0) }}</td>
+    {% if admin %}
+    <td><button form="u-{{ s.code }}" class="secondary">Lưu</button></td>
+    <td>{% if not order_counts.get(s.code) %}<button form="d-{{ s.code }}" class="secondary">Xóa</button>{% endif %}</td>
+    {% endif %}
+  </tr>
+  {% endfor %}
+</table></div>
+{% if admin %}
+<h2>Thêm shop</h2>
+<form class="card row" method="post" action="/shops">
+  <label>Mã (A–Z, 0–9, _)<input type="text" name="code" required size="14" maxlength="30" pattern="[A-Za-z0-9_]{2,30}"></label>
+  <label>Sàn<select name="platform">{% for p in platforms %}<option>{{ p }}</option>{% endfor %}</select></label>
+  <label>Division<input type="text" name="division" required size="24" maxlength="50"></label>
+  <button>Thêm</button>
+</form>
+{% endif %}
+{% endblock %}

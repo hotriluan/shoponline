@@ -1,0 +1,14 @@
+{% macro data_table(columns, rows) %}
+<div class="scroll"><table class="report-table">
+  <tr>{% for header, key, kind in columns %}<th{% if kind != 'text' %} class="num"{% endif %}>{{ header }}</th>{% endfor %}</tr>
+  {% for row in rows %}
+  <tr>{% for header, key, kind in columns %}{% set v = row[key] %}
+    {% if kind == 'text' %}<td>{{ v if v is not none else '' }}</td>
+    {% elif kind == 'percent' %}<td class="num">{{ '%.1f%%'|format(v * 100) if v is not none else '–' }}</td>
+    {% else %}<td class="num">{{ v|money if v is not none else '–' }}</td>{% endif %}
+  {% endfor %}</tr>
+  {% else %}
+  <tr><td colspan="{{ columns|length }}" class="empty">Không có số liệu trong khoảng này.</td></tr>
+  {% endfor %}
+</table></div>
+{% endmacro %}

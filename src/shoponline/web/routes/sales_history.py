@@ -567,8 +567,8 @@ def unconfirm_file(
     if nameless:
         flash(
             request,
-            f"Không gỡ xác nhận được: tên khách của {nameless} đơn trong file đã bị xóa theo "
-            "thời hạn lưu, các đơn này sẽ bị chặn mãi vì thiếu tên khách.",
+            f"Không gỡ xác nhận được: {nameless} đơn trong file không còn tên khách, "
+            "các đơn này sẽ bị chặn mãi vì thiếu tên khách.",
             "error",
         )
         return redirect("/sales-history")

@@ -6,7 +6,7 @@ Dành cho admin shop online. Ở chế độ thủ công hệ thống không ghi
 
 Đăng nhập xong web mở trang **Việc hôm nay** (mục đầu của menu bên trái, địa chỉ `/`). Trang chỉ đọc, người xem cũng thấy. Mỗi thẻ nêu một việc kèm nút đi tới trang xử lý: đơn thiếu ánh xạ hoặc cần kiểm tra, lô chờ sales admin xác nhận, lô chờ đối chiếu SO, đợt gửi kế toán, đơn đã có DO chưa vào file Shop Online, và tình trạng robot, sao lưu. Thẻ không có việc hiện dấu ✓ "Không có việc".
 
-Menu chia bốn nhóm theo thứ tự làm việc: **Hằng ngày** (Tải file sàn, Lô đơn, Báo cáo SAP), **Kế toán** (Gửi kế toán, File Shop Online), **Dữ liệu gốc** (Ánh xạ SAP, Tên báo cáo, Khách hàng) và **Hệ thống** (Robot SAP, Kết nối SAP, Sao lưu). Mục đang mở được tô sáng; Robot SAP và Sao lưu có chấm cam khi đang có cảnh báo. Trên màn hình hẹp, bấm nút ☰ để mở menu.
+Menu chia bốn nhóm theo thứ tự làm việc: **Báo cáo** (Tổng quan, Theo sàn và shop, Theo sản phẩm, Theo tỉnh, Trả hàng), **Hằng ngày** (Tải file sàn, Lô đơn, Báo cáo SAP), **Kế toán** (Gửi kế toán, File Shop Online, Phiếu trả hàng, Tiền về Lazada), **Dữ liệu gốc** (Ánh xạ SAP, Tên báo cáo, Tên trên hóa đơn, Shop, Quy đổi tỉnh, Khách hàng) và **Hệ thống** (Robot SAP, Kết nối SAP, Sao lưu). Mục đang mở được tô sáng; Robot SAP và Sao lưu có chấm cam khi đang có cảnh báo. Trên màn hình hẹp, bấm nút ☰ để mở menu.
 
 Trang lô có thanh bước (Nhập file, Ánh xạ đủ, Gửi sales admin, Xác nhận SO/DO, Đối chiếu SO, Gửi kế toán) cho biết lô đang ở bước nào; nút nổi bật trong khung hành động là việc kế tiếp.
 
@@ -63,7 +63,7 @@ File lịch sử của kế toán `Shop Online 2022-2026` (sheet1, 17 cột; fil
 5. Mở file lịch sử, copy từ **dòng 2** của file vừa tải và dán vào dòng trống đầu tiên của sheet1. Nếu sheet1 chưa có tiêu đề cột T, thêm tay `Tiền Vô` một lần. Hai cột `Cust + time` và `Transaction` là công thức tương đối nên tự tính theo dòng mới.
    - **Sắp xếp theo ngày đặt (tùy chọn):** đơn đến muộn (DO hoặc hóa đơn muộn) được dán sau các đơn đặt sau nó. Muốn xếp lại thì chọn toàn bộ dữ liệu sheet1 từ dòng 2, cột A đến **T** (không chỉ A:S, kẻo cột `Tiền Vô` lệch hàng), **Sort** theo cột `createTime` (B), khóa phụ `Cust + time` (H). `createTime` là text dạng `YYYY-MM-DD HH:MM` nên sắp xếp theo text ra đúng thứ tự thời gian; khóa phụ giữ các dòng của một đơn liền nhau, và `Transaction` tự tính lại theo dòng mới ngay trên. Dòng cũ gõ tay sai dạng (ví dụ `27 Mar 2026 10:19`) sẽ đứng sai chỗ, cần sửa tay về đúng dạng.
 6. Trở lại trang, ở bảng **File đã tải** bấm **Xác nhận đã dán** cho đúng file vừa dán. Lần xuất sau không còn các đơn đó. Nếu một đơn đã được xác nhận qua file khác, thông báo ghi số đơn bỏ qua. Các file chưa xác nhận khác chứa cùng đơn (ví dụ do bấm tải hai lần) bị xóa khi bạn xác nhận một file, để không dán một đơn hai lần; đơn của chúng chưa nằm trong file vừa xác nhận quay lại danh sách chờ. Khi tải mà đã có file chưa xác nhận chứa cùng đơn, trang báo ngay: chỉ dán một file.
-7. Dán nhầm hoặc dán thiếu: xóa các dòng đã dán trong file lịch sử, bấm **Gỡ xác nhận** cho file đó, rồi xuất lại. Không gỡ xác nhận được nếu tên khách của đơn nào trong file đã bị xóa theo thời hạn lưu (90 ngày); khi đó sửa tay trong file lịch sử.
+7. Dán nhầm hoặc dán thiếu: xóa các dòng đã dán trong file lịch sử, bấm **Gỡ xác nhận** cho file đó, rồi xuất lại. 
    - Tên khách bắt đầu bằng `=`, `+`, `-` hoặc `@` được ghi thành chữ, không thành công thức Excel.
 
 Quên xác nhận thì lần xuất sau có lại các đơn đó (lặp chứ không sót); bảng **File đã tải** ghi "Chưa xác nhận" để nhắc. File sẽ không bao giờ được dán (tải thử, tải trùng) thì bấm **Xóa** ở dòng đó để làm sạch bảng; file và danh sách đơn của nó bị xóa, các đơn chưa xác nhận vẫn có trong lần xuất sau. File đã xác nhận không xóa được: gỡ xác nhận trước. Chỉ admin xác nhận, gỡ xác nhận và xóa.
@@ -79,6 +79,13 @@ Chỉ admin. Mở trang đơn (đơn đã giao, đã có hóa đơn) và bấm *
 5. Lập nhầm thì hủy phiếu (có lý do): số cũ không dùng lại, đơn lập lại nhận số mới.
 
 Đơn hủy trước khi có DO chưa có hóa đơn nên không lập phiếu. Đơn kit lập theo dòng cha, đúng như hóa đơn.
+
+## Chọn shop, tiền về Lazada, báo cáo
+
+- **Chọn shop khi tải file sàn:** trang **Tải file sàn** có ô Shop cho mỗi sàn; mọi đơn trong file mang shop đã chọn. Sàn chỉ có một shop đang bán thì ô đã chọn sẵn. Thêm hoặc tắt shop ở trang **Shop** (admin).
+- **Tiền về Lazada (admin):** file Lazada không có mã đơn, nên mở **Tiền về Lazada**, nhập số tiền thực nhận của từng đơn (có thể dán nhiều dòng một lúc rồi xem trước). Số nhập vào cột `Tiền Vô` của file Shop Online và vào báo cáo.
+- **Báo cáo:** nhóm **Báo cáo** ở đầu menu; chọn khoảng tháng, sàn, shop rồi bấm Xem. **Tải Excel** trả đúng bảng đang xem kèm bộ lọc và ghi chú dữ liệu. Ghi chú dưới tiêu đề nói số liệu nào còn thiếu (ví dụ doanh thu hóa đơn và tiền thực nhận chỉ có từ 11/11/2026).
+- **Quy đổi tỉnh (admin):** dòng "Chưa xác định" của báo cáo theo tỉnh là các tên huyện chưa biết thuộc tỉnh nào. Mở **Quy đổi tỉnh**, chọn tỉnh cho từng tên rồi Lưu; báo cáo đổi ngay.
 
 ## Duyệt bảng dài
 

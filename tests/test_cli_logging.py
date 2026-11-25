@@ -68,7 +68,7 @@ def test_web_hands_uvicorn_logging_to_the_root_logger(settings, clean_root_logge
     assert "GET /login" not in text
 
 
-def test_retention_always_sweeps_files_and_logs_to_a_rotating_file(
+def test_retention_sweeps_files_keeps_customer_data_and_logs_to_a_rotating_file(
     db, settings, clean_root_logger, monkeypatch
 ):
     from contextlib import contextmanager
@@ -95,7 +95,7 @@ def test_retention_always_sweeps_files_and_logs_to_a_rotating_file(
     orphan.write_bytes(b"x")
     os.utime(orphan, (old.timestamp(), old.timestamp()))
 
-    assert cli.main(["retention"]) == 0  # no --apply
+    assert cli.main(["retention", "--apply"]) == 0  # --apply is accepted and changes nothing more
 
     assert not orphan.exists()
     assert db.scalars(select(CustomerInfo)).one().customer_name == "Khách"
@@ -103,7 +103,7 @@ def test_retention_always_sweeps_files_and_logs_to_a_rotating_file(
     for handler in clean_root_logger.handlers:
         handler.flush()
     text = (settings.data_dir / "logs" / "retention.log").read_text(encoding="utf-8")
-    assert "Sẽ xóa (chế độ liệt kê" in text and "đơn SHOPEE R-OLD" in text
+    assert "--apply không còn tác dụng" in text and "Sẽ xóa" not in text
     assert "Đã xóa 1 file hết dùng" in text and str(orphan) in text
 
 
