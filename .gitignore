@@ -51,3 +51,6 @@ startserver.txt
 
 # Google OAuth client secrets
 client_secret_*.json
+
+# Customer return-document samples (real names and addresses)
+docs/bbdchd/
