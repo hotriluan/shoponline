@@ -99,7 +99,7 @@ code { font: 13px ui-monospace, Consolas, monospace; background: var(--neutral-b
 .nav-expand:hover { background: var(--accent-soft); color: var(--accent); border-color: var(--accent); }
 @media (max-width: 1023px) { .nav-collapse { display: none; } }
 @media (min-width: 1024px) {
-  html.nav-collapsed .app:not(.single) { grid-template-columns: 0 minmax(0, 1fr); }
+  html.nav-collapsed .app:not(.single) { grid-template-columns: minmax(0, 1fr); }
   html.nav-collapsed .sidebar { display: none; }
   html.nav-collapsed .nav-expand { display: inline-flex; }
   html.nav-collapsed .content { padding-left: var(--s6); }
