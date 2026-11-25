@@ -4,12 +4,14 @@ from __future__ import annotations
 
 from datetime import date, datetime
 
-from fastapi import APIRouter, Depends, Form, Request
+from fastapi import APIRouter, Depends, File, Form, Request, UploadFile
 from sqlalchemy.orm import Session
 
 from shoponline.accounting import manual_settlement as manual
+from shoponline.accounting import settlement_invoice_file as invoice_file
 from shoponline.clock import today_vn
 from shoponline.db.models import AppUser
+from shoponline.importers.excel_table import FileRejected
 from shoponline.web.app import (
     autosave_reply,
     current_user,
@@ -20,6 +22,7 @@ from shoponline.web.app import (
     render,
     require_admin,
 )
+from shoponline.web.uploads import ALLOWED_SUFFIXES, MAX_UPLOAD_BYTES
 
 router = APIRouter()
 PAGE = "/settlements/lazada"
@@ -36,7 +39,16 @@ def _back(month: str) -> str:
     return f"{PAGE}?month={month}" if _month(month) else PAGE
 
 
-def _page(request: Request, db: Session, user: AppUser, month: str, paste: str = "", preview=None):
+def _page(
+    request: Request,
+    db: Session,
+    user: AppUser,
+    month: str,
+    paste: str = "",
+    preview=None,
+    file_preview=None,
+    carry: str = "",
+):
     pending = manual.pending_orders(db, _month(month))
     entered = manual.entered(db)
     return render(
@@ -53,6 +65,8 @@ def _page(request: Request, db: Session, user: AppUser, month: str, paste: str =
         today=today_vn(),
         paste=paste,
         preview=preview,
+        file_preview=file_preview,
+        carry=carry,
     )
 
 
@@ -156,6 +170,61 @@ def save_paste(
             saved += 1
     db.commit()
     skipped = [f"dòng {r['line'].line_no}: {r['error']}" for r in rows if r["error"]]
+    flash(request, f"Đã lưu {saved} đơn." + (f" Bỏ qua {len(skipped)} dòng." if skipped else ""))
+    if skipped:
+        flash(request, "\n".join(skipped), "error")
+    return redirect(_back(month))
+
+
+@router.post(PAGE + "/preview-file")
+async def preview_file(
+    request: Request,
+    file: UploadFile = File(...),
+    month: str = Form(""),
+    db: Session = Depends(get_db),
+    user: AppUser = Depends(require_admin),
+):
+    """Read the accounting file and show each line with its order; nothing is stored."""
+    data = await file.read(MAX_UPLOAD_BYTES + 1)
+    try:
+        if not (file.filename or "").lower().endswith(ALLOWED_SUFFIXES):
+            raise FileRejected("Chỉ nhận file .xlsx")
+        if len(data) > MAX_UPLOAD_BYTES:
+            raise FileRejected("File lớn hơn 20 MB")
+        if not data:
+            raise FileRejected("File rỗng")
+        lines = invoice_file.read_file(data)
+        if not lines:
+            raise FileRejected("File không có dòng nào")
+    except FileRejected as exc:
+        flash(request, str(exc), "error")
+        return redirect(_back(month))
+    rows = invoice_file.resolve(db, lines)
+    return _page(request, db, user, month, file_preview=rows, carry=invoice_file.to_carry(lines))
+
+
+@router.post(PAGE + "/save-file")
+def save_file(
+    request: Request,
+    carry: str = Form(""),
+    month: str = Form(""),
+    db: Session = Depends(get_db),
+    user: AppUser = Depends(require_admin),
+):
+    """Check every previewed line again and save the good ones; the rest are named and left out."""
+    try:
+        lines = invoice_file.from_carry(carry)
+    except ValueError:
+        flash(request, "Dữ liệu xem trước không đọc được, hãy tải lại file.", "error")
+        return redirect(_back(month))
+    rows = invoice_file.resolve(db, lines)
+    saved = 0
+    for row in rows:
+        if not row.error:
+            manual.set_amount(db, row.order_id, row.line.amount, row.line.settled_on, user.username)
+            saved += 1
+    db.commit()
+    skipped = [f"dòng {r.line.line_no}: {r.error}" for r in rows if r.error]
     flash(request, f"Đã lưu {saved} đơn." + (f" Bỏ qua {len(skipped)} dòng." if skipped else ""))
     if skipped:
         flash(request, "\n".join(skipped), "error")

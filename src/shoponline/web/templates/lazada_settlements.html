@@ -34,7 +34,40 @@
 </form>
 {% endif %}
 
+{% if file_preview is not none %}
+<h2>Xem trước file ({{ file_preview|length }} dòng)</h2>
+{% set good_file = file_preview|rejectattr('error')|list %}
+<div class="scroll"><table>
+  <tr><th>Dòng</th><th>Số hóa đơn</th><th>Mã đơn</th><th>Số tiền</th><th>Ngày nhận</th><th>Kết quả</th></tr>
+  {% for row in file_preview %}
+  <tr{% if row.error %} class="attention"{% endif %}>
+    <td>{{ row.line.line_no }}</td>
+    <td>{{ row.line.invoice.zfill(8) if row.line.invoice else '' }}</td>
+    <td>{{ row.order_id }}</td>
+    <td>{{ row.line.amount|money if row.line.amount is not none else '' }}</td>
+    <td>{{ row.line.settled_on.strftime('%d/%m/%Y') if row.line.settled_on else '' }}</td>
+    <td>{% if row.error %}<span class="bad">{{ row.error }}</span>{% else %}<span class="tag ok">lưu được</span>{% endif %}</td>
+  </tr>
+  {% endfor %}
+</table></div>
+<form method="post" action="/settlements/lazada/save-file" class="row">
+  <input type="hidden" name="month" value="{{ month }}">
+  <input type="hidden" name="carry" value="{{ carry }}">
+  <button{% if not good_file %} disabled{% endif %}>Lưu {{ good_file|length }} dòng đúng</button>
+  <a href="/settlements/lazada{{ '?month=' ~ month if month }}">Hủy</a>
+</form>
+{% endif %}
+
 {% if admin %}
+<h2>Tải file theo số hóa đơn</h2>
+<form class="card" method="post" action="/settlements/lazada/preview-file" enctype="multipart/form-data">
+  <input type="hidden" name="month" value="{{ month }}">
+  <label>File .xlsx, dòng 1 là tên cột: <b>Số hóa đơn</b>, <b>Ngày nhận tiền</b>, <b>Số tiền</b>
+    (ví dụ: 00001234, 20/11/2026, 90000). Mỗi hóa đơn một dòng, phải ứng với đúng một đơn Lazada.
+    <input type="file" name="file" accept=".xlsx" required></label>
+  <p><button class="secondary">Xem trước</button></p>
+</form>
+
 <h2>Dán nhiều dòng</h2>
 <form class="card" method="post" action="/settlements/lazada/preview">
   <input type="hidden" name="month" value="{{ month }}">

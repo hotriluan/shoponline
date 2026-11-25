@@ -1,10 +1,13 @@
+import re
 from datetime import datetime
+from io import BytesIO
 
+from openpyxl import Workbook
 from sqlalchemy import select
 
 from shoponline.accounting import manual_settlement as manual
 from shoponline.clock import today_vn
-from shoponline.db.models import PlatformSettlement
+from shoponline.db.models import EventLog, PlatformSettlement
 from tests import sales_history_setup as setup
 
 WHEN = datetime(2026, 11, 12, 9)
@@ -121,3 +124,96 @@ def test_paste_previews_first_then_saves_only_the_good_lines(db, login):
     admin.post(f"{PAGE}/save-paste", data={"paste": paste})
 
     assert _typed(db) == {"LZ-1": 70000}
+
+
+def _xlsx(rows, header=("Số hóa đơn", "Ngày nhận tiền", "Số tiền")):
+    book = Workbook()
+    book.active.append(header)
+    for row in rows:
+        book.active.append(row)
+    out = BytesIO()
+    book.save(out)
+    return out.getvalue()
+
+
+def _upload(client, data, name="tien-ve.xlsx", route="preview-file"):
+    return client.post(f"{PAGE}/{route}", files={"file": (name, data)})
+
+
+def _file_orders(db):
+    setup.order(db, "LZ-1", WHEN, platform="LAZADA", invoice="00001234")
+    setup.order(db, "LZ-2", WHEN, platform="LAZADA", invoice="00005678")
+    db.commit()
+
+
+def _carry(page):
+    return re.search(r'name="carry" value="([^"]*)"', page).group(1)
+
+
+def test_file_previews_first_then_saves_only_the_good_lines(db, login):
+    _file_orders(db)
+    admin = login("admin")
+    data = _xlsx(
+        [("00001234", "20/11/2026", 70000), ("5678", "20/11/2026", -5), ("999", "20/11/2026", 1)]
+    )
+
+    preview = _upload(admin, data).text
+
+    assert _typed(db) == {}
+    assert "LZ-1" in preview and "lưu được" in preview
+    assert "chưa có trong dữ liệu SAP" in preview and "Lưu 1 dòng đúng" in preview
+
+    admin.post(f"{PAGE}/save-file", data={"carry": _carry(preview)})
+
+    assert _typed(db) == {"LZ-1": 70000}
+    row = db.scalar(select(PlatformSettlement).where(PlatformSettlement.source == "manual"))
+    assert row.entered_by == "admin"
+
+
+def test_uploading_the_same_file_again_updates_and_logs_the_old_amount(db, login):
+    _file_orders(db)
+    admin = login("admin")
+    first = _upload(admin, _xlsx([("1234", "20/11/2026", 70000)])).text
+    admin.post(f"{PAGE}/save-file", data={"carry": _carry(first)})
+    second = _upload(admin, _xlsx([("1234", "20/11/2026", 65000)])).text
+    admin.post(f"{PAGE}/save-file", data={"carry": _carry(second)})
+
+    assert _typed(db) == {"LZ-1": 65000}
+    events = db.scalars(select(EventLog).where(EventLog.kind == "settlement_manual_set")).all()
+    assert '"old": 70000, "new": 65000' in events[-1].detail
+
+
+def test_a_bad_file_is_reported_and_nothing_is_saved(db, login):
+    _file_orders(db)
+    admin = login("admin")
+
+    wrong_columns = _upload(admin, _xlsx([], header=("Số hóa đơn", "Số tiền"))).text
+    not_xlsx = _upload(admin, b"hello", name="x.csv").text
+    empty = _upload(admin, b"").text
+    no_lines = _upload(admin, _xlsx([])).text
+
+    assert "thiếu cột bắt buộc" in wrong_columns
+    assert "Chỉ nhận file .xlsx" in not_xlsx
+    assert "File rỗng" in empty
+    assert "không có dòng nào" in no_lines
+    assert _typed(db) == {}
+
+
+def test_a_carry_in_the_wrong_shape_saves_nothing(db, login):
+    _file_orders(db)
+
+    page = login("admin").post(f"{PAGE}/save-file", data={"carry": "garbage"}).text
+
+    assert "hãy tải lại file" in page
+    assert _typed(db) == {}
+
+
+def test_viewer_has_no_upload_form_and_cannot_call_the_file_routes(db, login):
+    _file_orders(db)
+    viewer = login("viewer")
+
+    assert "preview-file" not in viewer.get(PAGE).text
+    _upload(viewer, _xlsx([("1234", "20/11/2026", 1)]))
+    viewer.post(f"{PAGE}/save-file", data={"carry": "2\t1234\t1\t2026-11-20"})
+
+    assert _typed(db) == {}

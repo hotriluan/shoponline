@@ -86,7 +86,7 @@ Bảng `shop` (mã, sàn, `division`, đang bán, thứ tự). Mỗi đơn mang 
 
 ## Tiền về Lazada nhập tay
 
-File Lazada không có mã đơn, nên admin nhập tiền từng đơn ở trang **Tiền về Lazada** ([manual_settlement.py](../src/shoponline/accounting/manual_settlement.py)). Số nhập nằm trong `platform_settlement` với `source = 'manual'` và đi vào cột `Tiền Vô` của file Shop Online và đường "tiền thực nhận" của báo cáo. Đơn Lazada chưa có số vẫn không bị chặn (chỉ Shopee và TikTok bị chặn khi thiếu tiền).
+File Lazada không có mã đơn, nên admin nhập tiền từng đơn ở trang **Tiền về Lazada** ([manual_settlement.py](../src/shoponline/accounting/manual_settlement.py)). Số nhập nằm trong `platform_settlement` với `source = 'manual'` và đi vào cột `Tiền Vô` của file Shop Online và đường "tiền thực nhận" của báo cáo. Ngoài nhập tay và dán, admin có thể tải file `.xlsx` ba cột (số hóa đơn, ngày nhận tiền, số tiền): [settlement_invoice_file.py](../src/shoponline/accounting/settlement_invoice_file.py) đọc file, tra số hóa đơn SAP (bỏ số 0 đầu) ra đúng một đơn Lazada qua DO, từ chối dòng không có đơn hoặc có nhiều đơn, rồi lưu bằng cùng hàm `set_amount`. File không được lưu lên đĩa và không tạo `import_batch`. Đơn Lazada chưa có số vẫn không bị chặn (chỉ Shopee và TikTok bị chặn khi thiếu tiền).
 
 ## Lịch sử bán hàng 2022–2026
 

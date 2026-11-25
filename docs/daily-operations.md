@@ -83,7 +83,7 @@ Chỉ admin. Mở trang đơn (đơn đã giao, đã có hóa đơn) và bấm *
 ## Chọn shop, tiền về Lazada, báo cáo
 
 - **Chọn shop khi tải file sàn:** trang **Tải file sàn** có ô Shop cho mỗi sàn; mọi đơn trong file mang shop đã chọn. Sàn chỉ có một shop đang bán thì ô đã chọn sẵn. Thêm hoặc tắt shop ở trang **Shop** (admin).
-- **Tiền về Lazada (admin):** file Lazada không có mã đơn, nên mở **Tiền về Lazada**, nhập số tiền thực nhận của từng đơn (có thể dán nhiều dòng một lúc rồi xem trước). Số nhập vào cột `Tiền Vô` của file Shop Online và vào báo cáo.
+- **Tiền về Lazada (admin):** file Lazada không có mã đơn, nên mở **Tiền về Lazada**, nhập số tiền thực nhận của từng đơn (có thể dán nhiều dòng một lúc rồi xem trước). Số nhập vào cột `Tiền Vô` của file Shop Online và vào báo cáo. Nếu kế toán có file theo số hóa đơn, dùng ô **Tải file theo số hóa đơn**: file `.xlsx`, dòng 1 là ba tên cột `Số hóa đơn`, `Ngày nhận tiền`, `Số tiền`, mỗi hóa đơn một dòng. Hệ thống tra hóa đơn ra đơn Lazada, hiện bảng xem trước, rồi bạn bấm lưu các dòng đúng. Dòng bị từ chối kèm lý do: hóa đơn chưa có trong SAP, không thuộc đơn Lazada nào, ứng với nhiều đơn, trùng trong file, ngày hoặc số tiền sai. Đơn đã có DO nhưng chưa có hóa đơn SAP thì chờ hóa đơn về hoặc nhập tay. File không được lưu lại; tải lại cùng file chỉ cập nhật số cũ.
 - **Báo cáo:** nhóm **Báo cáo** ở đầu menu; chọn khoảng tháng, sàn, shop rồi bấm Xem. **Tải Excel** trả đúng bảng đang xem kèm bộ lọc và ghi chú dữ liệu. Ghi chú dưới tiêu đề nói số liệu nào còn thiếu (ví dụ doanh thu hóa đơn và tiền thực nhận chỉ có từ 11/11/2026).
 - **Quy đổi tỉnh (admin):** dòng "Chưa xác định" của báo cáo theo tỉnh là các tên huyện chưa biết thuộc tỉnh nào. Mở **Quy đổi tỉnh**, chọn tỉnh cho từng tên rồi Lưu; báo cáo đổi ngay.
 
