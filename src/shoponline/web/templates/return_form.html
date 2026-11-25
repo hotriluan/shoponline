@@ -1,0 +1,121 @@
+{% extends "base.html" %}
+{% from "_macros.html" import page_header %}
+{% block title %}Trả hàng {{ order.platform_order_id }}{% endblock %}
+{% block content %}
+{{ page_header('Lập phiếu trả hàng', 'Đơn ' ~ order.platform ~ ' ' ~ order.platform_order_id ~ ' · DO ' ~ (order.do_number or '—'), '/orders/' ~ order.id, 'Đơn ' ~ order.platform_order_id) }}
+<p class="muted">Lập Biên bản điều chỉnh hóa đơn (.docx) và REQUEST to RETURN GOODS (.xlsx) cho đơn đã có hóa đơn.
+  Hệ thống không ghi gì vào SAP hay Bkav: bạn in hai file rồi làm hóa đơn điều chỉnh như thường lệ.</p>
+
+{% if confirm %}
+<div class="card warn">
+  <div class="card-head"><h2>Tên trong PDF khác tên đã lưu</h2></div>
+  <p>Chưa ghi gì. Nếu PDF này đúng và tên cũ sai, chọn lại đúng file PDF đó và xác nhận ghi đè.</p>
+  <div class="scroll"><table>
+    <tr><th>Mã vật tư</th><th>Tên đã lưu</th><th>ĐVT đã lưu</th><th>Tên trong PDF</th><th>ĐVT trong PDF</th></tr>
+    {% for c in confirm.differing %}
+    <tr><td>{{ c.material_number }}</td><td>{{ c.old_name }}</td><td>{{ c.old_unit }}</td><td><b>{{ c.new_name }}</b></td><td><b>{{ c.new_unit }}</b></td></tr>
+    {% endfor %}
+  </table></div>
+  <form method="post" action="/orders/{{ order.id }}/return/invoice-pdf" enctype="multipart/form-data" class="row">
+    <input type="hidden" name="confirm_overwrite" value="1">
+    <label>Chọn lại file PDF<input type="file" name="pdf" accept="application/pdf,.pdf" required></label>
+    <button class="danger">Ghi đè tên đã lưu</button>
+    <a class="button secondary" href="/orders/{{ order.id }}/return">Bỏ qua</a>
+  </form>
+</div>
+{% endif %}
+
+{% if blocked %}
+<div class="card warn">
+  <div class="card-head"><h2>Chưa lập được phiếu</h2></div>
+  <ul>{% for reason in blocked.reasons %}<li>{{ reason }}</li>{% endfor %}</ul>
+  {% if 'missing_money' in blocked.codes %}
+  <form method="post" action="/orders/{{ order.id }}/return/read-zrsd003" class="row">
+    <button class="secondary">Xếp robot đọc lại zrsd003 của tháng hóa đơn</button>
+    <span class="muted">Hoặc tải file zrsd003 lên ở <a href="/sap-reports">Báo cáo SAP</a>.</span>
+  </form>
+  {% endif %}
+  {% if 'numbering' in blocked.codes %}
+  <p>Chạy một lần trên máy chủ: <code>uv run shoponline return-number start &lt;số&gt;</code>, với số là số của biên bản đầu tiên.</p>
+  {% endif %}
+</div>
+{% endif %}
+
+{% if missing_texts and not confirm %}
+<div class="card">
+  <div class="card-head"><h2>Tải PDF hóa đơn của đơn này</h2></div>
+  <p>Chưa có tên hàng và đơn vị tính trên hóa đơn của mã {{ missing_texts|join(', ') }}. Tải PDF hóa đơn Bkav của
+    <b>đúng đơn này</b> (tối đa {{ max_mb }} MB): hệ thống đọc, kiểm khớp đơn rồi ghi vào danh mục
+    <a href="/invoice-texts">Tên trên hóa đơn</a>. File PDF không được lưu lại.</p>
+  <form method="post" action="/orders/{{ order.id }}/return/invoice-pdf" enctype="multipart/form-data" class="row">
+    <label>File PDF<input type="file" name="pdf" accept="application/pdf,.pdf" required></label>
+    <button>Đọc PDF</button>
+  </form>
+</div>
+{% endif %}
+
+{% if lines %}
+<form method="post" action="/orders/{{ order.id }}/return/preview" id="return-form">
+  <div class="card">
+    <div class="card-head"><h2>Lý do</h2></div>
+    <div class="row">
+      {% for key, label in reasons.items() %}
+      <label><span><input type="radio" name="reason" value="{{ key }}" {{ 'checked' if key == reason }}> {{ label }}</span></label>
+      {% endfor %}
+    </div>
+  </div>
+
+  <h2>Dòng hàng trên hóa đơn</h2>
+  {% if quantity_error %}<div class="flash error">{{ quantity_error }}</div>{% endif %}
+  <div class="scroll"><table>
+    <tr><th>#</th><th>Tên trên hóa đơn</th><th>ĐVT</th><th class="num">SL hóa đơn</th><th class="num">SL trả</th></tr>
+    {% for line in lines %}
+    <tr>
+      <td>{{ line.so_item_no }}</td>
+      <td>{{ line.invoice_name or '— chưa có (' ~ line.material_number ~ ')' }}</td>
+      <td>{{ line.invoice_unit }}</td>
+      <td class="num">{{ line.quantity|string|replace('.000', '') }}</td>
+      <td class="num"><input type="text" inputmode="decimal" name="qty_{{ line.so_item_no }}" value="{{ quantities[line.so_item_no] }}" size="6"></td>
+    </tr>
+    {% endfor %}
+  </table></div>
+
+  <div class="card">
+    <div class="card-head"><h2>Người mua trên biên bản</h2></div>
+    <p class="muted">Lấy từ thông tin khách của đơn. Sửa nếu dữ liệu đã bị xóa hoặc sai; biên bản giữ đúng chữ ở đây.</p>
+    <div class="row">
+      <label>Tên<input type="text" name="buyer_name" value="{{ buyer_name }}" size="30" maxlength="300"></label>
+      <label>Địa chỉ<input type="text" name="buyer_address" value="{{ buyer_address }}" size="70" maxlength="500"></label>
+    </div>
+  </div>
+
+  {% if preview %}
+  <h2>Xem trước</h2>
+  <div class="card">
+    <p>Biên bản số sẽ được cấp khi phát hành · Hóa đơn <b>{{ preview.invoice_symbol }}</b> số
+      <b>{{ preview.tax_invoice_doc.zfill(8) }}</b> ngày {{ preview.billing_date.strftime('%d/%m/%Y') }} · thuế suất {{ preview.vat_rate }}%
+      · {{ 'trả cả đơn' if preview.full_return else 'trả một phần' }}</p>
+    <div class="scroll"><table>
+      <tr><th>Hàng</th><th>Tên trên hóa đơn</th><th>Tên SAP (file Excel)</th><th class="num">SL hóa đơn</th><th class="num">SL trả</th><th class="num">Thành tiền hóa đơn</th><th class="num">Điều chỉnh</th></tr>
+      {% for l in preview.lines %}
+      <tr><td>{{ l.so_item_no }}</td><td>{{ l.invoice_name }} · {{ l.invoice_unit }}</td><td>{{ l.sap_name }}</td>
+          <td class="num">{{ l.invoice_qty|string|replace('.000', '') }}</td><td class="num">{{ l.return_qty|string|replace('.000', '') }}</td>
+          <td class="num">{{ l.amount_before|money }}</td><td class="num">{{ ('-' ~ (l.amount_returned|money)) if l.amount_returned else '0' }}</td></tr>
+      {% endfor %}
+      <tr><th colspan="5">Cộng tiền hàng</th><td class="num">{{ preview.invoice_net|money }}</td><td class="num">-{{ preview.returned_net|money }}</td></tr>
+      <tr><th colspan="5">Tiền thuế GTGT</th><td class="num">{{ preview.invoice_tax|money }}</td><td class="num">-{{ preview.returned_tax|money }}</td></tr>
+      <tr><th colspan="5">Tổng cộng thanh toán</th><td class="num">{{ (preview.invoice_net + preview.invoice_tax)|money }}</td><td class="num">-{{ (preview.returned_net + preview.returned_tax)|money }}</td></tr>
+    </table></div>
+    <input type="hidden" name="fingerprint" value="{{ preview.fingerprint }}">
+  </div>
+  {% endif %}
+
+  <p class="row">
+    <button class="secondary">Làm mới xem trước</button>
+    {% if preview %}
+    <button formaction="/orders/{{ order.id }}/return" onclick="return confirm('Phát hành phiếu? Số biên bản sẽ được cấp và không dùng lại.')">Phát hành phiếu</button>
+    {% endif %}
+  </p>
+</form>
+{% endif %}
+{% endblock %}

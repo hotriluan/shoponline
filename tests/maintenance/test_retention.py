@@ -370,3 +370,34 @@ def test_sweep_skips_a_file_that_vanishes_between_listing_and_stat(db, tmp_path,
 
     assert result.files == [other]
     assert ghost.exists()
+
+
+def test_sweep_never_deletes_a_file_a_sales_return_points_to_whatever_its_kind(db, tmp_path):
+    from tests.returns import factory
+
+    settings = _settings(tmp_path)
+    ex = settings.export_dir
+    word = _generated(db, _file(ex / "bbdc.docx", SPENT), "legacy_kind")
+    sheet = _generated(db, _file(ex / "rrg.xlsx", SPENT), "invoice_adjustment")
+    stray = _generated(db, _file(ex / "stray.xlsx", SPENT), "order_file")
+    made = factory.sales_return(db, factory.delivered_order(db), year=2026, seq=80)
+    made.docx_file_id, made.xlsx_file_id = word.id, sheet.id
+    db.flush()
+
+    result = _sweep(db, settings)
+
+    assert result.files == [Path(stray.stored_path)]
+    assert Path(word.stored_path).exists() and Path(sheet.stored_path).exists()
+
+
+def test_a_voided_sales_return_keeps_its_files_too(db, tmp_path):
+    from tests.returns import factory
+
+    settings = _settings(tmp_path)
+    word = _generated(db, _file(settings.export_dir / "bbdc.docx", SPENT), "invoice_adjustment")
+    made = factory.sales_return(db, factory.delivered_order(db), year=2026, seq=80, status="VOID")
+    made.docx_file_id = word.id
+    db.flush()
+
+    assert _sweep(db, settings).files == []
+    assert Path(word.stored_path).exists()

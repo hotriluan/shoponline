@@ -2,7 +2,14 @@ from fastapi import APIRouter, Depends, Form, HTTPException, Request
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from shoponline.db.models import AppUser, CustomerInfo, EventLog, SalesOrder
+from shoponline.db.models import (
+    AppUser,
+    CustomerInfo,
+    EventLog,
+    SalesOrder,
+    SalesReturn,
+    SapTaxInvoice,
+)
 from shoponline.domain import states
 from shoponline.domain.expected_value import expected_so_value
 from shoponline.importers.order_import import evaluate_order
@@ -40,6 +47,17 @@ def order_detail(
         )
         .order_by(EventLog.at, EventLog.id)
     ).all()
+    issued_return = db.scalar(
+        select(SalesReturn).where(
+            SalesReturn.sales_order_id == order.id, SalesReturn.status == "ISSUED"
+        )
+    )
+    can_return = (
+        issued_return is None
+        and order.status == states.DELIVERED
+        and bool(order.do_number)
+        and db.get(SapTaxInvoice, order.do_number) is not None
+    )
     return render(
         request,
         "order_detail.html",
@@ -47,6 +65,8 @@ def order_detail(
         order=order,
         customer=customer,
         events=events,
+        issued_return=issued_return,
+        can_return=can_return,
         expected=expected_so_value(order.items),
         can_cancel=states.CANCELLED in states.ALLOWED[order.status],
     )

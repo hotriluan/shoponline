@@ -8,8 +8,9 @@ removes whatever is left over:
   robot), and zrsd004 files uploaded by hand that still wait to be attached to a run, for at most
   retention_days. Platform files, mapping tables, zrsd001 and zrsd003 are read once, at import.
 - exports/: every accounting file (the copy sent to accounting, including those from before runs
-  existed), and a Shop Online history file that still holds an order not yet confirmed as
-  pasted. Order files are deleted as soon as they are sent.
+  existed), a Shop Online history file that still holds an order not yet confirmed as pasted,
+  and every file a sales return points at (the return documents, kept for good). Order files
+  are deleted as soon as they are sent.
 - robot-work/job-N: kept only while the job is not DONE, for at most evidence_keep_days.
 - robot-evidence/: screenshots, for evidence_keep_days (saprobot.evidence.prune).
 
@@ -53,6 +54,7 @@ from shoponline.db.models import (
     SalesHistoryExported,
     SalesHistoryFileOrder,
     SalesOrder,
+    SalesReturn,
     SapJob,
 )
 from shoponline.domain import states
@@ -178,8 +180,16 @@ def kept_files(session: Session, settings: Settings, now: datetime | None = None
         )
         .where(SalesHistoryExported.sales_order_id.is_(None))
     )
+    # Return documents are kept by the rows that point at them, not by their kind: reverting the
+    # code that made them, or a kind this code no longer knows, must not let the sweep delete them.
+    returns = select(GeneratedFile.stored_path).where(
+        or_(
+            GeneratedFile.id.in_(select(SalesReturn.docx_file_id)),
+            GeneratedFile.id.in_(select(SalesReturn.xlsx_file_id)),
+        )
+    )
     paths: set[Path] = set()
-    for stmt in (attached, read, waiting, accounting, unconfirmed):
+    for stmt in (attached, read, waiting, accounting, unconfirmed, returns):
         paths.update(Path(p).resolve() for p in session.scalars(stmt))
     return paths
 

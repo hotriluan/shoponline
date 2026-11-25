@@ -78,7 +78,7 @@ def test_newer_backup_is_refused_before_services_stop(backup_ctx, services, monk
 def test_check_version_accepts_old_and_head(backup_ctx):
     known = restore._known_revisions(ROOT)
     assert "0009_platform_settlement" in known
-    for revision in ("0009_platform_settlement", "0011_drive_connection"):
+    for revision in ("0009_platform_settlement", "0011_drive_connection", "0012_sales_return"):
         restore.check_version(
             backup_ctx,
             restore.mf.Manifest("db", "t", "now", "x", alembic_revision=revision),
@@ -176,7 +176,7 @@ def test_old_backup_without_manifest_restores_then_migrates(
         assert result.status == "done"
         assert services == ["stop", "start"]
         assert (
-            _count(backup_ctx, "SELECT version_num = '0011_drive_connection' FROM alembic_version")
+            _count(backup_ctx, "SELECT version_num = '0012_sales_return' FROM alembic_version")
             is True
         )
         assert (
@@ -372,7 +372,7 @@ def test_drill_compares_rows_and_refuses_the_running_database(backup_ctx):
         prep = restore.prepare(ctx, outcome.archive_path, work)
         result = restore.drill(ctx, prep)
     assert result["ok"] and result["diff"] == {}
-    assert result["revision"] == "0011_drive_connection"
+    assert result["revision"] == "0012_sales_return"
     assert archive.DUMP in prep.manifest.parts
 
     # A manifest that disagrees with what was restored shows up as a difference.
@@ -390,9 +390,23 @@ def test_db_backup_carries_the_accounting_files_and_a_restore_puts_back_the_miss
     lost = settings.export_dir / "20261120-101010-accounting_file-aaaa1111.xlsx"
     kept = settings.export_dir / "20261121-101010-accounting_file-bbbb2222.xlsx"
     other = settings.export_dir / "20261121-111111-order_file-cccc3333.xlsx"
-    for path, body in ((lost, b"lost"), (kept, b"kept"), (other, b"order")):
+    word = settings.export_dir / "20261122-101010-invoice_adjustment-dddd4444.docx"
+    request = settings.export_dir / "20261122-101010-return_request-eeee5555.xlsx"
+    for path, body in (
+        (lost, b"lost"),
+        (kept, b"kept"),
+        (other, b"order"),
+        (word, b"word"),
+        (request, b"request"),
+    ):
         path.write_bytes(body)
-    kinds = {lost: "accounting_file", kept: "accounting_file", other: "order_file"}
+    kinds = {
+        lost: "accounting_file",
+        kept: "accounting_file",
+        other: "order_file",
+        word: "invoice_adjustment",
+        request: "return_request",
+    }
     with backup_ctx.engine.begin() as conn:
         for path, kind in kinds.items():
             conn.execute(
@@ -407,14 +421,16 @@ def test_db_backup_carries_the_accounting_files_and_a_restore_puts_back_the_miss
         out = tmp_path / "out"
         SevenZip(backup_ctx.seven_zip, PASSWORD).extract(outcome.archive_path, out)
         packed = {p.name for p in (out / archive.ACCOUNTING).iterdir()}
-        assert packed == {lost.name, kept.name}
+        assert packed == {lost.name, kept.name, word.name, request.name}
 
         lost.unlink()
+        word.unlink()
         kept.write_bytes(b"kept, edited after the backup")
         result = _production(backup_ctx, outcome.file_name)
 
         assert result.status == "done"
         assert lost.read_bytes() == b"lost"
+        assert word.read_bytes() == b"word"
         assert kept.read_bytes() == b"kept, edited after the backup"
     finally:
         with backup_ctx.engine.begin() as conn:

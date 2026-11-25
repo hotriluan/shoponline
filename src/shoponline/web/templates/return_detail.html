@@ -1,0 +1,47 @@
+{% extends "base.html" %}
+{% from "_macros.html" import page_header %}
+{% block title %}Phiếu {{ sr.doc_no }}{% endblock %}
+{% block content %}
+{{ page_header('Phiếu ' ~ sr.doc_no, '', '/returns', 'Phiếu trả hàng') }}
+<div class="card">
+  <p><span class="tag {{ 'ok' if sr.status == 'ISSUED' else '' }}">{{ 'Đã lập' if sr.status == 'ISSUED' else 'Đã hủy' }}</span>
+     {{ reasons[sr.reason_kind] }}{% if not sr.full_return %} (một phần){% endif %} ·
+     lập bởi {{ sr.issued_by }} lúc {{ sr.issued_at|localtime }}</p>
+  <p>Đơn <a href="/orders/{{ sr.sales_order_id }}">{{ sr.platform_name }} {{ sr.order.platform_order_id }}</a> ·
+     DO {{ sr.delivery }} · hóa đơn <b>{{ sr.invoice_symbol }}</b> số <b>{{ sr.tax_invoice_doc.zfill(8) }}</b>
+     ngày {{ sr.billing_date.strftime('%d/%m/%Y') }} · thuế suất {{ sr.vat_rate }}%</p>
+  {% if user.role == 'admin' %}
+  <p>Người mua: {{ sr.buyer_name }} · {{ sr.buyer_address }}</p>
+  <div class="row">
+    <a class="button" href="/returns/{{ sr.id }}/docx">Tải biên bản điều chỉnh (.docx)</a>
+    <a class="button" href="/returns/{{ sr.id }}/xlsx">Tải REQUEST to RETURN GOODS (.xlsx)</a>
+  </div>
+  {% else %}
+  <p class="muted">Tên, địa chỉ người mua và hai file chỉ admin xem được.</p>
+  {% endif %}
+  {% if sr.status == 'VOID' %}
+  <p class="bad">Đã hủy bởi {{ sr.voided_by }} lúc {{ sr.voided_at|localtime }}: {{ sr.void_reason }}. Số biên bản không được dùng lại.</p>
+  {% endif %}
+</div>
+
+<h2>Dòng hàng</h2>
+<div class="scroll"><table>
+  <tr><th>#</th><th>Tên trên hóa đơn</th><th>ĐVT</th><th>Tên SAP</th><th class="num">SL hóa đơn</th><th class="num">SL trả</th><th class="num">Thành tiền hóa đơn</th><th class="num">Điều chỉnh</th></tr>
+  {% for l in sr.lines %}
+  <tr><td>{{ l.so_item_no }}</td><td>{{ l.invoice_name }}</td><td>{{ l.invoice_unit }}</td><td>{{ l.sap_name }}</td>
+      <td class="num">{{ l.invoice_qty|string|replace('.000', '') }}</td><td class="num">{{ l.return_qty|string|replace('.000', '') }}</td>
+      <td class="num">{{ l.amount_before|money }}</td><td class="num">{{ ('-' ~ (l.amount_returned|money)) if l.amount_returned else '0' }}</td></tr>
+  {% endfor %}
+  <tr><th colspan="6">Cộng tiền hàng</th><td class="num">{{ sr.invoice_net|money }}</td><td class="num">-{{ sr.returned_net|money }}</td></tr>
+  <tr><th colspan="6">Tiền thuế GTGT</th><td class="num">{{ sr.invoice_tax|money }}</td><td class="num">-{{ sr.returned_tax|money }}</td></tr>
+  <tr><th colspan="6">Tổng cộng thanh toán</th><td class="num">{{ (sr.invoice_net + sr.invoice_tax)|money }}</td><td class="num">-{{ (sr.returned_net + sr.returned_tax)|money }}</td></tr>
+</table></div>
+
+{% if user.role == 'admin' and sr.status == 'ISSUED' %}
+<h2>Hủy phiếu</h2>
+<form method="post" action="/returns/{{ sr.id }}/void" class="card row" onsubmit="return confirm('Hủy phiếu này? Số biên bản vẫn bị giữ, đơn lập lại sẽ nhận số mới.')">
+  <label>Lý do hủy<input type="text" name="reason" required size="50"></label>
+  <button class="danger">Hủy phiếu</button>
+</form>
+{% endif %}
+{% endblock %}

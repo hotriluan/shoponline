@@ -1,5 +1,3 @@
-from dataclasses import replace
-from datetime import date
 from decimal import Decimal
 from pathlib import Path
 
@@ -9,7 +7,7 @@ from sqlalchemy import select
 from shoponline.config import Settings
 from shoponline.db.models import EventLog, InvoiceItemText
 from shoponline.importers.excel_table import FileRejected
-from shoponline.importers.invoice_pdf import InvoicePdf, PdfLine
+from shoponline.importers.invoice_pdf import PdfLine
 from shoponline.returns.master import learn_from_pdf, missing_materials
 from tests.returns import factory
 
@@ -18,20 +16,7 @@ NAME = "SƠN V-09 REDDISH CLAY 2004 VN"
 UNIT = "LON 0.8 LT"
 
 
-def pdf_for(order, **changes) -> InvoicePdf:
-    pdf = InvoicePdf(
-        symbol="1C26TAL",
-        number="00008038",
-        invoice_date=date(2026, 11, 17),
-        delivery=order.do_number,
-        po=order.platform_order_id,
-        net=111111,
-        vat_rate=8,
-        tax=8889,
-        total=120000,
-        lines=(PdfLine(1, NAME, UNIT, Decimal(1), 111111),),
-    )
-    return replace(pdf, **changes)
+pdf_for = factory.invoice_pdf
 
 
 def order(db, **kwargs):

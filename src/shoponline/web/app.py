@@ -218,6 +218,7 @@ def create_app(
         login,
         orders,
         report_names,
+        returns,
         robot,
         sales_history,
         sap_reports,
@@ -268,6 +269,7 @@ def create_app(
         sap_reports,
         accounting,
         sales_history,
+        returns,
         robot,
         backup,
     ):

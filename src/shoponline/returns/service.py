@@ -36,7 +36,7 @@ from shoponline.db.models import (
 from shoponline.domain import states
 from shoponline.exports import invoice_adjustment_doc, return_request_workbook
 from shoponline.returns import numbering
-from shoponline.returns.amounts import Blocked, invoice_lines, returned
+from shoponline.returns.amounts import Blocked, InvoiceLines, invoice_lines, returned
 from shoponline.web.uploads import save_generated_bytes
 
 REASON_KINDS = ("CANCEL", "RETURN")
@@ -136,20 +136,8 @@ def _sap_names(session: Session, order: SalesOrder, materials: list[str]) -> tup
     return names, problems
 
 
-def build_preview(
-    session: Session,
-    settings: Settings,
-    order_id: int,
-    reason_kind: str,
-    selection: Mapping[int, Decimal | int] | None = None,
-    buyer: Buyer | None = None,
-) -> Preview | Blocked:
-    """selection: SO item number -> quantity returned; None returns the whole order."""
-    order = session.get(SalesOrder, order_id)
-    if order is None:
-        return Blocked(("Không thấy đơn hàng",))
-    if reason_kind not in REASON_KINDS:
-        return Blocked(("Chọn lý do: hủy đơn hàng hoặc trả lại hàng",))
+def invoice_of(session: Session, order: SalesOrder) -> tuple[SapTaxInvoice, InvoiceLines] | Blocked:
+    """The order's invoice and its lines, or why they cannot be worked out."""
     if order.status != states.DELIVERED or not order.do_number:
         return Blocked(
             (
@@ -174,6 +162,64 @@ def build_preview(
     figures = invoice_lines(ref.items, invoice.net_value_vnd, invoice.tax_vnd)
     if isinstance(figures, Blocked):
         return figures
+    return invoice, figures
+
+
+@dataclass(frozen=True)
+class DraftLine:
+    so_item_no: int
+    material_number: str
+    quantity: Decimal
+    invoice_name: str
+    invoice_unit: str
+
+
+def draft_lines(session: Session, order: SalesOrder) -> list[DraftLine]:
+    """The invoice lines the form lets the admin choose from; empty when there is no invoice yet."""
+    found = invoice_of(session, order)
+    if isinstance(found, Blocked):
+        return []
+    _, figures = found
+    texts = {
+        t.material_number: t
+        for t in session.scalars(
+            select(InvoiceItemText).where(
+                InvoiceItemText.material_number.in_(
+                    [line.material_number for line in figures.lines]
+                )
+            )
+        )
+    }
+    return [
+        DraftLine(
+            line.so_item_no,
+            line.material_number,
+            line.quantity,
+            texts[line.material_number].invoice_name if line.material_number in texts else "",
+            texts[line.material_number].invoice_unit if line.material_number in texts else "",
+        )
+        for line in figures.lines
+    ]
+
+
+def build_preview(
+    session: Session,
+    settings: Settings,
+    order_id: int,
+    reason_kind: str,
+    selection: Mapping[int, Decimal | int] | None = None,
+    buyer: Buyer | None = None,
+) -> Preview | Blocked:
+    """selection: SO item number -> quantity returned; None returns the whole order."""
+    order = session.get(SalesOrder, order_id)
+    if order is None:
+        return Blocked(("Không thấy đơn hàng",))
+    if reason_kind not in REASON_KINDS:
+        return Blocked(("Chọn lý do: hủy đơn hàng hoặc trả lại hàng",))
+    found = invoice_of(session, order)
+    if isinstance(found, Blocked):
+        return found
+    invoice, figures = found
 
     reasons: list[str] = []
     codes: set[str] = set()

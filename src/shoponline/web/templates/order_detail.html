@@ -27,6 +27,19 @@
   </div>
   {% endif %}
 </div>
+{% if issued_return %}
+<div class="card">
+  <div class="card-head"><h2>Trả hàng</h2></div>
+  <p>Đã lập phiếu <a href="/returns/{{ issued_return.id }}"><b>{{ issued_return.doc_no }}</b></a>
+     ({{ issued_return.issued_at|localtime('%d/%m/%Y') }}).</p>
+</div>
+{% elif can_return and user.role == 'admin' %}
+<div class="card">
+  <div class="card-head"><h2>Trả hàng</h2></div>
+  <p class="muted">Khách hủy hoặc trả đơn đã có hóa đơn: lập biên bản điều chỉnh hóa đơn và phiếu trả hàng.</p>
+  <a class="button" href="/orders/{{ order.id }}/return">Lập phiếu trả hàng</a>
+</div>
+{% endif %}
 <h2>Dòng đơn</h2>
 <div class="scroll"><table>
   <tr><th>#</th><th>Sản phẩm</th><th>Phân loại</th><th class="num">SL</th><th class="num">Giá gốc</th><th class="num">Trợ giá/đv</th><th>Mã SAP</th><th>Tên SAP</th></tr>

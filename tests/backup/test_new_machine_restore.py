@@ -70,7 +70,7 @@ def test_new_machine_takes_accounts_schedule_data_and_env(backup_ctx, bundle):
         "this-machines-client"
     )  # the Drive connection of the new machine is its own
     assert (backup_ctx.settings.data_dir / "uploads" / "orders.xlsx").read_bytes() == b"workbook"
-    assert _scalar(backup_ctx, "SELECT version_num FROM alembic_version") == "0011_drive_connection"
+    assert _scalar(backup_ctx, "SELECT version_num FROM alembic_version") == "0012_sales_return"
 
     lines = (backup_ctx.repo_root / ".env").read_text(encoding="utf-8").splitlines()
     assert "SHOPONLINE_OWN_LINE=keep-me" in lines  # a line the machine has is never overwritten

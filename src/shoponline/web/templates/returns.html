@@ -1,0 +1,26 @@
+{% extends "base.html" %}
+{% from "_macros.html" import page_header %}
+{% from "pager.html" import search, links, empty_search %}
+{% block title %}Phiếu trả hàng{% endblock %}
+{% block content %}
+{{ page_header('Phiếu trả hàng', 'Biên bản điều chỉnh hóa đơn và REQUEST to RETURN GOODS đã lập. Lập phiếu mới từ trang của đơn đã giao.') }}
+{{ search(page, 'Tìm theo số biên bản, mã đơn, số hóa đơn…') }}
+<div class="scroll"><table data-server>
+  <tr><th>Số biên bản</th><th>Ngày lập</th><th>Sàn</th><th>Mã đơn</th><th>Hóa đơn</th><th>Lý do</th><th class="num">Tổng điều chỉnh</th><th>Trạng thái</th></tr>
+  {% for r in rows %}
+  <tr>
+    <td><a href="/returns/{{ r.id }}">{{ r.doc_no }}</a></td>
+    <td>{{ r.issued_at|localtime('%d/%m/%Y') }}</td>
+    <td>{{ r.platform_name }}</td>
+    <td><a href="/orders/{{ r.sales_order_id }}">{{ r.order.platform_order_id }}</a></td>
+    <td>{{ r.invoice_symbol }} · {{ r.tax_invoice_doc.zfill(8) }}</td>
+    <td>{{ reasons[r.reason_kind] }}{% if not r.full_return %} (một phần){% endif %}</td>
+    <td class="num">-{{ (r.returned_net + r.returned_tax)|money }}</td>
+    <td><span class="tag {{ 'ok' if r.status == 'ISSUED' else '' }}">{{ 'Đã lập' if r.status == 'ISSUED' else 'Đã hủy' }}</span></td>
+  </tr>
+  {% else %}
+  <tr><td colspan="8" class="muted">{{ empty_search(page, 'Chưa có phiếu trả hàng nào.') }}</td></tr>
+  {% endfor %}
+</table></div>
+{{ links(page) }}
+{% endblock %}

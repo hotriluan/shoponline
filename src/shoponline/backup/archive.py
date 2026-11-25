@@ -33,7 +33,9 @@ ENV = "env"
 CONFIG = "config"
 DATA = "data"
 ACCOUNTING = "accounting-files"
-ACCOUNTING_KIND = "accounting_file"
+# A db backup carries the files that exist nowhere else: the accounting files sent out and the
+# return documents (they hold the buyer's name and address, and are kept without a time limit).
+ACCOUNTING_KINDS = ("accounting_file", "invoice_adjustment", "return_request")
 PASSWORD_VARIABLE = "SHOPONLINE_BACKUP_PASSWORD"
 # Never copied from the data folder: rebuilt, being written, or this machine's own state.
 DATA_SKIP = {
@@ -133,14 +135,14 @@ def _dump_database(src: Sources, target: Path, manifest: mf.Manifest) -> None:
 
 
 def _copy_accounting_files(src: Sources, target: Path, manifest: mf.Manifest) -> None:
-    """Copy every accounting file the database knows into target. A missing file is a warning,
-    not a failure: the database part of the backup still counts."""
+    """Copy every accounting and return-document file the database knows into target. A missing
+    file is a warning, not a failure: the database part of the backup still counts."""
     engine = create_engine(src.settings.database_url, poolclass=NullPool)
     try:
         with engine.connect() as conn:
             paths = conn.execute(
-                text("SELECT stored_path FROM generated_file WHERE kind = :kind ORDER BY id"),
-                {"kind": ACCOUNTING_KIND},
+                text("SELECT stored_path FROM generated_file WHERE kind = ANY(:kinds) ORDER BY id"),
+                {"kinds": list(ACCOUNTING_KINDS)},
             ).scalars()
             paths = [Path(p) for p in paths]
     finally:

@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
 from datetime import date, datetime
+from decimal import Decimal
 
 from sqlalchemy.orm import Session
 
@@ -14,6 +16,7 @@ from shoponline.db.models import (
     SapSoRefItem,
     SapTaxInvoice,
 )
+from shoponline.importers.invoice_pdf import InvoicePdf, PdfLine
 from tests import sales_history_setup as setup
 
 MATERIAL = setup.MATERIAL
@@ -131,3 +134,20 @@ def sales_return(
     db.add(row)
     db.flush()
     return row
+
+
+def invoice_pdf(order: SalesOrder, **changes) -> InvoicePdf:
+    """What reading the order's invoice PDF returns (one line, 1 x 111.111 + 8% VAT)."""
+    pdf = InvoicePdf(
+        symbol="1C26TAL",
+        number="00008038",
+        invoice_date=BILLING_DATE,
+        delivery=order.do_number,
+        po=order.platform_order_id,
+        net=111111,
+        vat_rate=8,
+        tax=8889,
+        total=120000,
+        lines=(PdfLine(1, INVOICE_NAME, INVOICE_UNIT, Decimal(1), 111111),),
+    )
+    return replace(pdf, **changes)
