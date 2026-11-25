@@ -55,3 +55,6 @@ client_secret_*.json
 
 # Customer return-document samples (real names and addresses)
 docs/bbdchd/
+
+# Local database dumps (customer data)
+*.dump
