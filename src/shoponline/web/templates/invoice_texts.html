@@ -1,0 +1,38 @@
+{% extends "base.html" %}
+{% from "_macros.html" import page_header %}
+{% block title %}Tên trên hóa đơn{% endblock %}
+{% block content %}
+{{ page_header('Tên hàng và đơn vị tính trên hóa đơn') }}
+<p class="muted">Biên bản điều chỉnh hóa đơn in tên hàng và đơn vị tính đúng như hóa đơn Bkav đã xuất. Mã chưa có
+  sẽ được nạp khi lập phiếu trả hàng: tải PDF hóa đơn của đơn đó. Có thể gõ tay ở đây; ô <b>ĐVT kho</b> là đơn vị
+  ghi vào file REQUEST to RETURN GOODS (mặc định PC). Dòng để trống cả hai ô tên và đơn vị được bỏ qua.</p>
+<div class="action-bar">
+  <a class="button {{ 'secondary' if missing else '' }}" href="/invoice-texts">Tất cả</a>
+  <a class="button {{ '' if missing else 'secondary' }}" href="/invoice-texts?missing=true">Chưa có ({{ unsaved }})</a>
+</div>
+<form method="post" action="/invoice-texts">
+{% if missing %}<input type="hidden" name="missing" value="true">{% endif %}
+<div class="scroll">
+<table>
+  <tr><th>Mã vật tư</th><th>Tên SAP</th><th>Tên hàng trên hóa đơn</th><th>ĐVT hóa đơn</th><th>ĐVT kho</th><th>Nguồn</th></tr>
+  {% for row in rows %}
+  <tr{% if not row.saved %} class="attention"{% endif %}>
+    <td>{{ row.material_number }}<input type="hidden" name="material_number" value="{{ row.material_number }}"></td>
+    <td>{{ row.sap_name }}</td>
+    <td><input type="text" name="invoice_name" value="{{ row.invoice_name }}" size="40" maxlength="200"{% if user.role != 'admin' %} readonly{% endif %}></td>
+    <td><input type="text" name="invoice_unit" value="{{ row.invoice_unit }}" size="14" maxlength="200"{% if user.role != 'admin' %} readonly{% endif %}></td>
+    <td><input type="text" name="stock_unit" value="{{ row.stock_unit }}" size="5" maxlength="10"{% if user.role != 'admin' %} readonly{% endif %}></td>
+    <td>
+      {% if row.error %}<span class="bad">{{ row.error }}</span>
+      {% elif row.saved %}<span class="muted">{{ 'sửa tay' if row.saved.source == 'manual' else 'HĐ ' ~ row.saved.source }}, {{ row.saved.updated_by }}, {{ row.saved.updated_at|localtime('%d/%m/%Y') }}</span>
+      {% else %}<span class="tag s-NEED_REVIEW">chưa có</span>{% endif %}
+    </td>
+  </tr>
+  {% else %}
+  <tr><td colspan="6" class="muted">Không có mã nào.</td></tr>
+  {% endfor %}
+</table>
+</div>
+{% if user.role == 'admin' and rows %}<p class="sticky-bottom"><button>Lưu tất cả</button></p>{% endif %}
+</form>
+{% endblock %}
