@@ -6,6 +6,7 @@ from openpyxl import load_workbook
 from shoponline.db.models import GeneratedFile, PlatformSetting, SalesHistoryExported
 from shoponline.domain import states
 from shoponline.exports.sales_history_workbook import (
+    ALL_SHEET,
     COLUMNS,
     CUSTOMER,
     DIVISION_MISSING,
@@ -14,7 +15,9 @@ from shoponline.exports.sales_history_workbook import (
     TAX_INVOICE,
     Reason,
     build_history_workbook,
+    collect_all_rows,
     collect_rows,
+    history_all_file_name,
     history_draft_file_name,
     history_file_name,
 )
@@ -341,3 +344,106 @@ def test_a_customer_name_that_looks_like_a_formula_stays_text(db):
     assert [c.value for c in names] == ["=1+1", "+84 Lan", "-Minh", "@SUM(A1)", "Nguyễn Văn A"]
     assert {c.data_type for c in names} == {"s"}
     assert ws["H2"].data_type == "f" and ws["I3"].data_type == "f"  # the file's own formulas
+
+
+FROM, TO = date(2026, 11, 10), date(2026, 11, 12)
+
+
+def _all_orders(db):
+    setup.report_name(db)
+    confirmed = setup.order(db, "CONF", datetime(2026, 11, 10, 9))
+    _confirm(db, confirmed)
+    setup.order(db, "FULL", datetime(2026, 11, 10, 10))
+    setup.order(db, "WAIT", datetime(2026, 11, 11, 9), invoice=None, settlement=None)
+    setup.order(
+        db,
+        "READY",
+        datetime(2026, 11, 11, 10),
+        status=states.READY,
+        lines=((None, 1, 50000, 0),),
+        settlement=None,
+    )
+    setup.order(db, "CANCEL", datetime(2026, 11, 12, 9), status=states.CANCELLED)
+    setup.order(db, "NONAME", datetime(2026, 11, 12, 23, 59), name=None, customer=False)
+    setup.order(db, "OUT", datetime(2026, 11, 13, 0, 0))
+    setup.order(db, "BEFORE", datetime(2026, 11, 9, 23, 59))
+
+
+def _all_sheet(db, first=FROM, last=TO):
+    rows = collect_all_rows(db, first, last)
+    buffer = BytesIO()
+    build_history_workbook(rows, draft=True, title=ALL_SHEET).save(buffer)
+    buffer.seek(0)
+    return load_workbook(buffer)[ALL_SHEET]
+
+
+def test_all_orders_in_the_range_in_any_status_with_their_state(db):
+    _all_orders(db)
+
+    ws = _all_sheet(db)
+
+    by_id = {ws.cell(r, 18).value: r for r in range(2, ws.max_row + 1)}
+    assert list(by_id) == ["CONF", "FULL", "WAIT", "READY", "CANCEL", "NONAME"]
+    status = {k: ws.cell(r, 21).value for k, r in by_id.items()}
+    assert status == {
+        "CONF": "Đã có DO; Đã xác nhận dán",
+        "FULL": "Đã có DO; Chưa xác nhận",
+        "WAIT": "Đã có DO; Chờ hóa đơn; Chờ tiền vô; Chưa xác nhận",
+        "READY": "Sẵn sàng; Chưa xác nhận",
+        "CANCEL": "Đã hủy; Chưa xác nhận",
+        "NONAME": "Đã có DO; Chưa xác nhận",
+    }
+    conf = by_id["CONF"]
+    assert ws.cell(conf, 19).value == "HDCONF" and ws.cell(conf, 20).value == setup.SETTLED
+    assert ws.cell(by_id["WAIT"], 19).value is None and ws.cell(by_id["WAIT"], 20).value is None
+    assert ws.cell(by_id["CANCEL"], 20).value == setup.SETTLED  # money shows in any status
+
+
+def test_all_orders_leaves_missing_data_empty_or_takes_the_platforms(db):
+    _all_orders(db)
+
+    ws = _all_sheet(db)
+
+    by_id = {ws.cell(r, 18).value: r for r in range(2, ws.max_row + 1)}
+    noname = by_id["NONAME"]
+    assert not ws.cell(noname, 5).value and not ws.cell(noname, 7).value
+    ready = by_id["READY"]  # no material: the platform's own product and variation
+    assert [ws.cell(ready, c).value for c in (15, 16, 17)] == ["P", None, "V1"]
+
+
+def test_all_orders_has_one_row_per_line_with_money_and_status_on_the_first(db):
+    setup.report_name(db)
+    setup.order(
+        db,
+        "MULTI",
+        datetime(2026, 11, 10, 9),
+        lines=((setup.MATERIAL, 1, 100, 0), (setup.MATERIAL, 2, 200, 0)),
+    )
+
+    ws = _all_sheet(db)
+
+    assert ws.max_row == 3
+    assert [ws.cell(r, 20).value for r in (2, 3)] == [setup.SETTLED, None]
+    assert [ws.cell(r, 21).value for r in (2, 3)] == ["Đã có DO; Chưa xác nhận", None]
+    assert [ws.cell(r, 19).value for r in (2, 3)] == ["HDMULTI", "HDMULTI"]
+
+
+def test_all_orders_includes_both_end_days_and_one_day_ranges(db):
+    _all_orders(db)
+
+    one_day = collect_all_rows(db, date(2026, 11, 12), date(2026, 11, 12))
+    next_day = collect_all_rows(db, date(2026, 11, 13), date(2026, 11, 13))
+
+    assert {r.platform_order_id for r in one_day} == {"CANCEL", "NONAME"}
+    assert [r.platform_order_id for r in next_day] == ["OUT"]
+    assert collect_all_rows(db, date(2026, 12, 1), date(2026, 12, 31)) == []
+
+
+def test_all_orders_workbook_layout_and_file_name(db):
+    _all_orders(db)
+
+    ws = _all_sheet(db)
+
+    assert ws.title == ALL_SHEET and ws.max_column == 21 and ws["U1"].value == "Trạng thái"
+    assert _sheet(collect_rows(db, UNTIL).rows).max_column == len(COLUMNS) == 20
+    assert history_all_file_name(FROM, TO) == "TẤT CẢ ĐƠN SHOP ONLINE 101126-121126.xlsx"

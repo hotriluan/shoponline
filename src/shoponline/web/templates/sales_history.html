@@ -28,6 +28,15 @@
   {% endif %}
 </div>
 
+<div class="card" id="all-orders">
+  <form class="row" method="get" action="/sales-history/all">
+    <label>Từ ngày<input type="date" name="from" value="{{ first_day.isoformat() }}" required></label>
+    <label>Đến ngày<input type="date" name="to" value="{{ until.isoformat() }}" required></label>
+    <button class="secondary">Tải tất cả đơn</button>
+  </form>
+  <p class="muted">Mọi đơn đặt trong khoảng, ở mọi trạng thái, cả đã và chưa xác nhận dán (cột Trạng thái). Để đối chiếu, không dán vào file lịch sử; không có trong bảng File đã tải.</p>
+</div>
+
 <div class="card" id="tax-invoice">
   <h2>Chờ hóa đơn {% if invoice_range %}<span class="tag warn">{{ waiting_invoice }}</span>{% endif %}</h2>
   {% if invoice_range %}

@@ -14,6 +14,9 @@ row of sheet1 as they are.
 A draft (collect_rows(draft=True)) also takes the orders blocked only by those two waits, leaves
 the missing cells empty and adds a 21st column saying what each order waits for. It is for
 checking only: it is never stored, so it cannot be confirmed as pasted.
+
+collect_all_rows takes every order placed in a range of days, in any status, pasted or not, and
+blocks none: the same 21 columns, for reconciling against the accountants' own file.
 """
 
 from __future__ import annotations
@@ -86,6 +89,9 @@ SETTLED_PLATFORMS = ("SHOPEE", "TIKTOK")
 # The only waits a draft accepts, in the order the status column lists them.
 DRAFT_LABELS = {TAX_INVOICE: "Chờ hóa đơn", SETTLEMENT: "Chờ tiền vô"}
 STATUS_COLUMN = "Trạng thái"
+ALL_SHEET = "TẤT CẢ ĐƠN - KHÔNG DÁN"
+CONFIRMED_LABEL = "Đã xác nhận dán"
+UNCONFIRMED_LABEL = "Chưa xác nhận"
 
 
 @dataclass(frozen=True)
@@ -136,6 +142,10 @@ def history_draft_file_name(day: date) -> str:
     return f"NHÁP {history_file_name(day)}"
 
 
+def history_all_file_name(first: date, last: date) -> str:
+    return f"TẤT CẢ ĐƠN SHOP ONLINE {first:%d%m%y}-{last:%d%m%y}.xlsx"
+
+
 def is_draftable(reasons: Sequence[Reason]) -> bool:
     """True when every reason is a wait a draft accepts."""
     return all(r.kind in DRAFT_LABELS for r in reasons)
@@ -161,11 +171,17 @@ def pending_orders(session: Session, until: date) -> list[SalesOrder]:
     )
 
 
-def collect_rows(session: Session, until: date, draft: bool = False) -> HistoryRows:
-    orders = pending_orders(session, until)
-    result = HistoryRows()
-    if not orders:
-        return result
+@dataclass(frozen=True)
+class Lookups:
+    """What the rows of a set of orders are read from, fetched once for all of them."""
+
+    customers: dict
+    names: dict
+    invoices: dict
+    settlements: dict
+
+
+def _lookups(session: Session, orders: Sequence[SalesOrder]) -> Lookups:
     wanted = {(o.platform, o.platform_order_id) for o in orders}
     customers = {
         (c.platform, c.platform_order_id): c
@@ -208,6 +224,17 @@ def collect_rows(session: Session, until: date, draft: bool = False) -> HistoryR
             .group_by(PlatformSettlement.platform, PlatformSettlement.platform_order_id)
         )
     }
+    return Lookups(customers, names, invoices, settlements)
+
+
+def collect_rows(session: Session, until: date, draft: bool = False) -> HistoryRows:
+    orders = pending_orders(session, until)
+    result = HistoryRows()
+    if not orders:
+        return result
+    lookups = _lookups(session, orders)
+    customers, names = lookups.customers, lookups.names
+    invoices, settlements = lookups.invoices, lookups.settlements
 
     for order in orders:
         reasons: list[Reason] = []
@@ -274,10 +301,74 @@ def collect_rows(session: Session, until: date, draft: bool = False) -> HistoryR
     return result
 
 
-def build_history_workbook(rows: Sequence[HistoryRow], draft: bool = False) -> Workbook:
+def collect_all_rows(session: Session, first: date, last: date) -> list[HistoryRow]:
+    """Every order placed from the start of `first` to the end of `last`, in any status, pasted
+    or not, one row per order line. Nothing blocks an order: a missing value is left empty or
+    taken from the platform's own data. For checking only; nothing is stored."""
+    orders = list(
+        session.scalars(
+            select(SalesOrder)
+            .where(
+                SalesOrder.ordered_at >= datetime.combine(first, time()),
+                SalesOrder.ordered_at < datetime.combine(last + timedelta(days=1), time()),
+            )
+            .options(selectinload(SalesOrder.items))
+            .order_by(SalesOrder.ordered_at, SalesOrder.platform_order_id)
+        )
+    )
+    if not orders:
+        return []
+    lookups = _lookups(session, orders)
+    confirmed = set(
+        session.scalars(
+            select(SalesHistoryExported.sales_order_id).where(
+                SalesHistoryExported.sales_order_id.in_([o.id for o in orders])
+            )
+        )
+    )
+    rows: list[HistoryRow] = []
+    for order in orders:
+        info = lookups.customers.get((order.platform, order.platform_order_id))
+        name = (info.customer_name or "").strip() if info else ""
+        city = province_of(info.address if info else None) or ""
+        invoice = lookups.invoices.get(order.do_number or "")
+        total = lookups.settlements.get((order.platform, order.platform_order_id))
+        parts = [states.LABELS.get(order.status, order.status)]
+        if order.status == states.DELIVERED:
+            if invoice is None:
+                parts.append(DRAFT_LABELS[TAX_INVOICE])
+            if order.platform in SETTLED_PLATFORMS and total is None:
+                parts.append(DRAFT_LABELS[SETTLEMENT])
+        parts.append(CONFIRMED_LABEL if order.id in confirmed else UNCONFIRMED_LABEL)
+        for index, item in enumerate(order.items):  # ordered by line_no
+            report = lookups.names.get(item.material_number)
+            rows.append(
+                HistoryRow(
+                    division=DIVISION.get(order.platform, order.platform),
+                    ordered_at=order.ordered_at,
+                    billing_name=name,
+                    billing_city=city,
+                    customer_paid=(item.unit_price - item.unit_subsidy) * item.quantity,
+                    unit_price=item.unit_price,
+                    quantity=item.quantity,
+                    item_name=report.item_name if report else item.sap_name or item.product_name,
+                    size=report.size if report else "",
+                    variation=report.variation if report else item.variation_name or "",
+                    platform_order_id=order.platform_order_id,
+                    tax_invoice_doc=invoice,
+                    settlement=int(total) if total is not None and index == 0 else None,
+                    status="; ".join(parts) if index == 0 else "",
+                )
+            )
+    return rows
+
+
+def build_history_workbook(
+    rows: Sequence[HistoryRow], draft: bool = False, title: str | None = None
+) -> Workbook:
     wb = Workbook()
     ws = wb.active
-    ws.title = DRAFT_SHEET if draft else SHEET
+    ws.title = title or (DRAFT_SHEET if draft else SHEET)
     bold = Font(bold=True)
     for col, title in enumerate(COLUMNS + (STATUS_COLUMN,) if draft else COLUMNS, start=1):
         ws.cell(1, col, title).font = bold

@@ -602,3 +602,72 @@ def test_a_very_old_waiting_order_splits_the_zrsd003_read_into_month_sized_jobs(
         for j in jobs
     )
     assert "dài hơn 62 ngày" in resp.text and "7 việc" in resp.text
+
+
+def _all(client, query="from=2026-11-10&to=2026-11-12"):
+    return client.get(f"/sales-history/all?{query}", follow_redirects=False)
+
+
+def test_all_orders_downloads_without_storing_or_remembering_anything(db, login, app):
+    setup.report_name(db)
+    setup.order(db, "A-1", datetime(2026, 11, 10, 9))
+    setup.order(db, "A-2", datetime(2026, 11, 12, 23, 59), status="CANCELLED")
+    setup.order(db, "A-3", datetime(2026, 11, 13, 0, 0))
+    admin = login("admin")
+    export_dir = app.state.settings.export_dir
+    tables = (GeneratedFile, SalesHistoryFileOrder, SalesHistoryExported)
+    before = [_count(db, m) for m in tables]
+    files = sorted(export_dir.rglob("*")) if export_dir.exists() else []
+
+    resp = _all(admin)
+
+    assert resp.status_code == 200, resp.text
+    name = unquote(resp.headers["content-disposition"].split("filename*=utf-8''")[1])
+    assert name == "TẤT CẢ ĐƠN SHOP ONLINE 101126-121126.xlsx"
+    ws = load_workbook(BytesIO(resp.content)).active
+    assert ws.title == "TẤT CẢ ĐƠN - KHÔNG DÁN"
+    assert [ws.cell(r, 18).value for r in range(2, ws.max_row + 1)] == ["A-1", "A-2"]
+    assert [_count(db, m) for m in tables] == before
+    assert (sorted(export_dir.rglob("*")) if export_dir.exists() else []) == files
+    _download(admin)  # the real file is unchanged: it still holds both delivered orders
+    assert _count(db, SalesHistoryFileOrder) == 2
+
+
+@pytest.mark.parametrize(
+    "query",
+    [
+        "from=2026-11-12&to=2026-11-10",
+        "from=2026-11-10",
+        "to=2026-11-10",
+        "from=abc&to=2026-11-10",
+        "from=2026-11-10&to=2026-13-40",
+    ],
+)
+def test_all_orders_refuses_a_bad_range(db, login, query):
+    setup.order(db, "A-1", datetime(2026, 11, 10, 9))
+    admin = login("admin")
+
+    resp = _all(admin, query)
+
+    assert resp.status_code in (302, 303) and resp.headers["location"] == "/sales-history"
+    assert "content-disposition" not in resp.headers
+
+
+def test_all_orders_with_no_order_says_so(db, login):
+    admin = login("admin")
+
+    resp = admin.get("/sales-history/all?from=2026-01-01&to=2026-01-02", follow_redirects=True)
+
+    assert "Không có đơn nào trong khoảng này." in resp.text
+
+
+def test_a_viewer_downloads_all_orders_and_the_page_offers_the_form(db, login):
+    setup.report_name(db)
+    setup.order(db, "A-1", datetime(2026, 11, 10, 9))
+    viewer = login("viewer")
+
+    page = viewer.get(PAGE).text
+
+    assert 'action="/sales-history/all"' in page
+    assert 'name="from" value="2026-11-01"' in page and 'name="to" value="2026-11-30"' in page
+    assert _all(viewer).status_code == 200

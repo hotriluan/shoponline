@@ -41,13 +41,16 @@ from shoponline.db.models import (
 )
 from shoponline.domain import states
 from shoponline.exports.sales_history_workbook import (
+    ALL_SHEET,
     CUSTOMER,
     REPORT_NAME,
     SETTLEMENT,
     TAX_INVOICE,
     HistoryRows,
     build_history_workbook,
+    collect_all_rows,
     collect_rows,
+    history_all_file_name,
     history_draft_file_name,
     history_file_name,
     is_draftable,
@@ -192,6 +195,7 @@ def sales_history_page(
         "sales_history.html",
         user,
         month=month,
+        first_day=first_day,
         until=until,
         invoice_range=invoice_range,
         waiting_invoice=waiting_invoice,
@@ -271,13 +275,48 @@ def download_draft_file(
     if not result.rows:
         flash(request, "Không có đơn nào để xuất nháp.", "error")
         return redirect(_back(month))
+    return _xlsx_response(
+        build_history_workbook(result.rows, draft=True), history_draft_file_name(today_vn())
+    )
+
+
+def _xlsx_response(workbook, file_name: str) -> Response:
     buffer = BytesIO()
-    build_history_workbook(result.rows, draft=True).save(buffer)
-    name = quote(history_draft_file_name(today_vn()))
+    workbook.save(buffer)
     return Response(
         buffer.getvalue(),
         media_type=XLSX,
-        headers={"Content-Disposition": f"attachment; filename*=utf-8''{name}"},
+        headers={"Content-Disposition": f"attachment; filename*=utf-8''{quote(file_name)}"},
+    )
+
+
+@router.get("/sales-history/all")
+def download_all_orders(
+    request: Request,
+    first: str | None = Query(None, alias="from"),
+    last: str | None = Query(None, alias="to"),
+    db: Session = Depends(get_db),
+    user: AppUser = Depends(current_user),
+):
+    """Every order placed in the range, in any status, pasted or not, for reconciling only.
+
+    Nothing is stored: no generated file, no order record, so it cannot be confirmed as pasted.
+    """
+    try:
+        start, end = date.fromisoformat(first or ""), date.fromisoformat(last or "")
+    except ValueError:
+        flash(request, "Chọn đủ Từ ngày và Đến ngày (đúng định dạng ngày).", "error")
+        return redirect("/sales-history")
+    if start > end:
+        flash(request, "Từ ngày phải trước hoặc bằng Đến ngày.", "error")
+        return redirect("/sales-history")
+    rows = collect_all_rows(db, start, end)
+    if not rows:
+        flash(request, "Không có đơn nào trong khoảng này.", "error")
+        return redirect("/sales-history")
+    return _xlsx_response(
+        build_history_workbook(rows, draft=True, title=ALL_SHEET),
+        history_all_file_name(start, end),
     )
 
 
