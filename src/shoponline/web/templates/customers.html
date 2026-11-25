@@ -25,6 +25,12 @@
   <input type="hidden" name="return_to" value="{{ request.url.path }}?{{ request.url.query }}">
   <button>Lưu</button>
 </form>
+<h2>Đọc khách từ phiếu vận đơn</h2>
+<form class="card row" method="post" action="/customers/labels" enctype="multipart/form-data">
+  <label>File PDF (tối đa 10 file mỗi lần)<input type="file" name="pdfs" accept="application/pdf,.pdf" multiple required></label>
+  <button>Tải lên và đọc</button>
+  <span class="muted">Phiếu vận đơn Shopee (SPX) và TikTok (J&amp;T); file không được lưu.</span>
+</form>
 {% endif %}
 
 {% from "pager.html" import search, links, empty_search %}

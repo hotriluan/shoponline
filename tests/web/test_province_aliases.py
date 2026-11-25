@@ -95,3 +95,27 @@ def test_a_customer_address_gets_its_province_when_saved(db, login):
     info = db.scalar(select(CustomerInfo).where(CustomerInfo.platform_order_id == "P-1"))
     db.refresh(info)
     assert info.province == "Hồ Chí Minh"
+
+
+def test_editing_only_the_name_keeps_the_address_source(db, login):
+    setup.order(db, "P-2", __import__("datetime").datetime(2026, 11, 12, 9))
+    info = db.scalar(select(CustomerInfo).where(CustomerInfo.platform_order_id == "P-2"))
+    if info is None:
+        info = CustomerInfo(platform="SHOPEE", platform_order_id="P-2")
+        db.add(info)
+    info.customer_name, info.address, info.address_source = "A", setup.ADDRESS, "label"
+    db.commit()
+    admin = login("admin")
+    form = {"platform": "SHOPEE", "platform_order_id": "P-2", "address": setup.ADDRESS}
+
+    admin.post("/customers/save", data={**form, "customer_name": "Tên mới"})
+    db.refresh(info)
+    assert (info.customer_name, info.address_source) == ("Tên mới", "label")
+
+    admin.post("/customers/save", data={**form, "customer_name": "Tên mới", "address": "Số 9"})
+    db.refresh(info)
+    assert (info.address, info.address_source) == ("Số 9", "admin")
+
+    admin.post("/customers/save", data={**form, "customer_name": "Tên mới", "address": ""})
+    db.refresh(info)
+    assert (info.address, info.address_source) == (None, None)

@@ -11,6 +11,7 @@ docs/*.xlsx
 docs/*.XLSX
 docs/*.xls
 docs/*.pdf
+docs/**/*.pdf
 docs/*.png
 docs/**/*.xlsx
 docs/**/*.XLSX

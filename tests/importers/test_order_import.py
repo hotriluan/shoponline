@@ -168,6 +168,38 @@ def test_customer_default_address_not_overwritten(db, tmp_path):
     assert customer.address == "Số 1 đường Thử, Phường Một"
 
 
+def test_file_addresses_are_marked_with_their_source(db, tmp_path):
+    _map(db)
+    path = shopee_orders_file(tmp_path / "s.xlsx", [shopee_row("A1")])
+    import_orders(db, read_shopee_orders(path), "SHOPEE", D, "test")
+    customer = db.scalar(select(CustomerInfo).where(CustomerInfo.platform_order_id == "A1"))
+    assert customer.address_source == "file"
+
+
+def test_a_blank_address_filled_from_the_file_is_marked_file(db, tmp_path):
+    _map(db)
+    db.add(CustomerInfo(platform="SHOPEE", platform_order_id="A1", customer_name="Người Thử"))
+    db.flush()
+    path = shopee_orders_file(tmp_path / "s.xlsx", [shopee_row("A1")])
+    import_orders(db, read_shopee_orders(path), "SHOPEE", D, "test")
+    customer = db.scalar(select(CustomerInfo).where(CustomerInfo.platform_order_id == "A1"))
+    assert customer.address and customer.address_source == "file"
+
+
+def test_an_address_the_file_does_not_overwrite_keeps_its_source(db, tmp_path):
+    _map(db)
+    db.add(
+        CustomerInfo(
+            platform="SHOPEE", platform_order_id="A1", address="Số 1", address_source="label"
+        )
+    )
+    db.flush()
+    path = shopee_orders_file(tmp_path / "s.xlsx", [shopee_row("A1")])
+    import_orders(db, read_shopee_orders(path), "SHOPEE", D, "test")
+    customer = db.scalar(select(CustomerInfo).where(CustomerInfo.platform_order_id == "A1"))
+    assert (customer.address, customer.address_source) == ("Số 1", "label")
+
+
 def test_events_do_not_contain_customer_data(db, tmp_path):
     _map(db)
     path = shopee_orders_file(tmp_path / "s.xlsx", [shopee_row("A1", district="Phường Riêng")])

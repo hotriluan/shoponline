@@ -297,6 +297,7 @@ def _ensure_customer(session: Session, platform: str, parsed: ParsedOrder) -> No
                 address=parsed.default_address,
                 province=province_of(parsed.default_address),
                 place_key=place_key(parsed.default_address),
+                address_source="file" if parsed.default_address else None,
             )
         )
         return
@@ -304,5 +305,6 @@ def _ensure_customer(session: Session, platform: str, parsed: ParsedOrder) -> No
         existing.address = parsed.default_address
         existing.province = province_of(parsed.default_address)
         existing.place_key = place_key(parsed.default_address)
+        existing.address_source = "file" if parsed.default_address else None
     if not existing.customer_name and parsed.customer_name:
         existing.customer_name = parsed.customer_name

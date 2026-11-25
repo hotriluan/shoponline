@@ -193,6 +193,8 @@ class CustomerInfo(Base):
     province: Mapped[str | None] = mapped_column(String(30))
     # Folded last part of the address (domain.provinces.place_key), looked up in province_alias.
     place_key: Mapped[str | None] = mapped_column(String(100))
+    # Who wrote the address: 'file' (order file), 'label' (shipping label), 'admin'; NULL = unknown.
+    address_source: Mapped[str | None] = mapped_column(String(10))
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
     )

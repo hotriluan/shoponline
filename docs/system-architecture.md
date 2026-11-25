@@ -54,7 +54,7 @@ Tải file lên và robot đi qua cùng một hàm, [report_ingest.py](../src/sh
 | `config.py`, `cli.py` | Đọc biến môi trường; các lệnh `shoponline …` |
 | `db/` | Model SQLAlchemy, phiên; schema đổi qua Alembic trong `migrations/versions/` |
 | `domain/` | Trạng thái đơn và chuyển trạng thái, ánh xạ SKU, ngày goods issue, giá trị SO dự kiến |
-| `importers/` | Đọc file Shopee, TikTok, Lazada, file quyết toán Shopee/TikTok, `zrsd001`, `zrsd003`, `zrsd004`, bảng ánh xạ; nhận cột theo tên, thiếu cột bắt buộc thì từ chối cả file |
+| `importers/` | Đọc file Shopee, TikTok, Lazada, PDF phiếu vận đơn Shopee/TikTok ([shipping_label_pdf.py](../src/shoponline/importers/shipping_label_pdf.py); [customer_labels.py](../src/shoponline/importers/customer_labels.py) ghi kết quả vào `customer_info` theo cột nguồn địa chỉ `address_source`), file quyết toán Shopee/TikTok, `zrsd001`, `zrsd003`, `zrsd004`, bảng ánh xạ; nhận cột theo tên, thiếu cột bắt buộc thì từ chối cả file |
 | `exports/` | File `ĐƠN HÀNG ONLINE`, dòng cho file lịch sử Shop Online và file gửi kế toán (một file `zrsd004`: giữ nguyên, chèn ba cột; nhiều file: gộp, lọc, tính lại dòng tổng) |
 | `accounting/` | Sổ DO đã gửi kế toán và mốc ngày (`ledger.py`); đợt xuất: cặp sàn × ngày cần đọc, đối chiếu, bản nháp, chốt, hủy (`runs.py`) |
 | `clock.py` | "Hôm nay" theo múi giờ `Asia/Saigon`, dùng chung cho cả ứng dụng |

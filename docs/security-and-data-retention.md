@@ -54,6 +54,8 @@ Phiếu trả hàng (`sales_return`) giữ bản chụp tên và địa chỉ ng
 
 PDF hóa đơn tải lên không được ứng dụng lưu vào kho file, nhưng máy chủ web có thể tạm đặt upload lớn (hơn 1 MB) vào thư mục tạm của hệ điều hành trước khi route chạy; PDF chỉ nhận từ admin, tối đa 5 MB và 5 trang.
 
+PDF phiếu vận đơn Shopee và TikTok (trang **Khách hàng**) cũng không được lưu: chỉ admin tải lên, tối đa 10 file mỗi lần, mỗi file 40 MB và 500 trang, đọc từ bộ nhớ bằng lớp chữ có sẵn (không OCR, không gửi ra ngoài) trong thời gian tối đa 60 giây mỗi file. Route đóng mọi file upload ngay sau khi đọc, kể cả khi lỗi hoặc quá thời gian, nên bản tạm của máy chủ web bị xóa ngay. Tên và địa chỉ đọc được chỉ vào `customer_info`; thông báo, log và `event_log` chỉ có số lượng và số trang. Cột `customer_info.address_source` (`file`, `label`, `admin`, hoặc rỗng khi chưa rõ) ghi ai viết địa chỉ hiện tại, để biết khi nào phiếu được thay địa chỉ mà không hỏi.
+
 ### Bản sao lưu
 
 Xoay vòng ([retention.py](../src/shoponline/backup/retention.py)) áp dụng như nhau cho từng thư mục đích và cho Google Drive, và chỉ nơi nào đã nhận bản mới mới được dọn. Mặc định (đổi trên trang **Sao lưu**):

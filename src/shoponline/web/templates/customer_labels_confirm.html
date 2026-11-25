@@ -1,0 +1,30 @@
+{% extends "base.html" %}
+{% from "_macros.html" import page_header %}
+{% block title %}Xác nhận khách theo phiếu vận đơn{% endblock %}
+{% block content %}
+{{ page_header('Xác nhận khách theo phiếu vận đơn', 'Các đơn dưới đây khác với dữ liệu đang lưu nên chưa được ghi. Chọn dòng nào lấy theo phiếu vận đơn.', '/customers', 'Khách hàng') }}
+<form method="post" action="/customers/labels/confirm">
+  <div class="scroll"><table>
+    <tr><th>Ghi đè</th><th>Sàn</th><th>Mã đơn</th><th>Tên hiện có</th><th>Tên trên phiếu</th><th>Địa chỉ hiện có</th><th>Địa chỉ trên phiếu</th></tr>
+    {% for p in pending %}
+    <tr>
+      <td><input type="checkbox" name="pick" value="{{ loop.index0 }}" aria-label="Ghi đè đơn {{ p.order_id }}">
+        <input type="hidden" name="platform" value="{{ p.platform }}">
+        <input type="hidden" name="order_id" value="{{ p.order_id }}">
+        <input type="hidden" name="name" value="{{ p.label_name }}">
+        <input type="hidden" name="address" value="{{ p.label_address }}"></td>
+      <td>{{ p.platform }}</td>
+      <td>{{ p.order_id }}{% if p.conflicting %} <span class="tag warn">các trang lệch nhau</span>{% endif %}</td>
+      <td>{{ p.current_name or '—' }}</td>
+      <td{% if p.name_differs %} class="attention"{% endif %}>{{ p.label_name }}</td>
+      <td>{{ p.current_address or '—' }}</td>
+      <td{% if p.address_differs %} class="attention"{% endif %}>{{ p.label_address }}</td>
+    </tr>
+    {% endfor %}
+  </table></div>
+  <div class="row">
+    <button class="danger">Ghi đè các dòng đã chọn</button>
+    <a class="button secondary" href="/customers">Giữ nguyên tất cả</a>
+  </div>
+</form>
+{% endblock %}
