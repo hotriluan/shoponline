@@ -28,13 +28,19 @@ def _back(month: str) -> str:
 
 
 def _page(request: Request, db: Session, user: AppUser, month: str, paste: str = "", preview=None):
+    pending = manual.pending_orders(db, _month(month))
+    entered = manual.entered(db)
     return render(
         request,
         "lazada_settlements.html",
         user,
         month=month if _month(month) else "",
-        pending=manual.pending_orders(db, _month(month)),
-        entered=manual.entered(db),
+        pending=pending,
+        invoices=manual.invoice_numbers(db, pending),
+        entered=entered,
+        entered_invoices=manual.invoice_numbers_by_order(
+            db, [s.platform_order_id for s in entered]
+        ),
         today=today_vn(),
         paste=paste,
         preview=preview,

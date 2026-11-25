@@ -46,7 +46,7 @@
 
 <h2>Đơn đã có DO, chưa có tiền về ({{ pending|length }})</h2>
 <div class="scroll"><table>
-  <tr><th>Mã đơn</th><th>Ngày đặt</th><th>DO</th>{% if admin %}<th>Tiền nhận (đồng)</th><th>Ngày nhận</th><th></th>{% endif %}</tr>
+  <tr><th>Mã đơn</th><th>Ngày đặt</th><th>DO</th><th>Số hóa đơn</th>{% if admin %}<th>Tiền nhận (đồng)</th><th>Ngày nhận</th><th></th>{% endif %}</tr>
   {% for o in pending %}
   <tr>
     <td>{{ o.platform_order_id }}
@@ -56,6 +56,7 @@
       </form>{% endif %}</td>
     <td>{{ o.ordered_at.strftime('%d/%m/%Y') }}</td>
     <td>{{ o.do_number }}</td>
+    <td>{{ invoices.get(o.do_number, '') }}</td>
     {% if admin %}
     <td><input form="set-{{ o.id }}" type="text" name="amount" size="14" inputmode="numeric" required></td>
     <td><input form="set-{{ o.id }}" type="date" name="settled_on" value="{{ today.isoformat() }}" max="{{ today.isoformat() }}" required></td>
@@ -63,13 +64,13 @@
     {% endif %}
   </tr>
   {% else %}
-  <tr><td colspan="6" class="muted">Không còn đơn nào chờ tiền về.</td></tr>
+  <tr><td colspan="7" class="muted">Không còn đơn nào chờ tiền về.</td></tr>
   {% endfor %}
 </table></div>
 
 <h2>Đã nhập ({{ entered|length }})</h2>
 <div class="scroll"><table>
-  <tr><th>Mã đơn</th><th>Số tiền</th><th>Ngày nhận</th><th>Người nhập</th>{% if admin %}<th>Sửa</th><th></th>{% endif %}</tr>
+  <tr><th>Mã đơn</th><th>Số hóa đơn</th><th>Số tiền</th><th>Ngày nhận</th><th>Người nhập</th>{% if admin %}<th>Sửa</th><th></th>{% endif %}</tr>
   {% for s in entered %}
   <tr>
     <td>{{ s.platform_order_id }}
@@ -81,6 +82,7 @@
         <input type="hidden" name="order_id" value="{{ s.platform_order_id }}">
         <input type="hidden" name="month" value="{{ month }}">
       </form>{% endif %}</td>
+    <td>{{ entered_invoices.get(s.platform_order_id, '') }}</td>
     <td>{{ s.amount|money }}</td>
     <td>{{ s.settled_at.strftime('%d/%m/%Y') }}</td>
     <td>{{ s.entered_by }}</td>
@@ -94,7 +96,7 @@
     {% endif %}
   </tr>
   {% else %}
-  <tr><td colspan="6" class="muted">Chưa nhập đơn nào.</td></tr>
+  <tr><td colspan="7" class="muted">Chưa nhập đơn nào.</td></tr>
   {% endfor %}
 </table></div>
 {% endblock %}

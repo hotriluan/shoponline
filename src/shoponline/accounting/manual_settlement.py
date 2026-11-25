@@ -17,7 +17,7 @@ from sqlalchemy import and_, select
 from sqlalchemy.orm import Session
 
 from shoponline.clock import today_vn
-from shoponline.db.models import PlatformSettlement, SalesOrder
+from shoponline.db.models import PlatformSettlement, SalesOrder, SapTaxInvoice
 from shoponline.domain import states
 
 PLATFORM = "LAZADA"
@@ -187,6 +187,31 @@ def pending_orders(session: Session, month: date | None = None) -> list[SalesOrd
             )
         )
     return list(session.scalars(stmt.order_by(SalesOrder.ordered_at, SalesOrder.platform_order_id)))
+
+
+def invoice_numbers(session: Session, orders: list[SalesOrder]) -> dict[str, str]:
+    """Tax invoice number (8 digits) per DO, for the orders whose DO has an invoice in SAP data."""
+    dos = [o.do_number for o in orders if o.do_number]
+    if not dos:
+        return {}
+    rows = session.execute(
+        select(SapTaxInvoice.delivery, SapTaxInvoice.tax_invoice_doc).where(
+            SapTaxInvoice.delivery.in_(dos)
+        )
+    )
+    return {delivery: doc.zfill(8) for delivery, doc in rows}
+
+
+def invoice_numbers_by_order(session: Session, order_ids: list[str]) -> dict[str, str]:
+    """Tax invoice number (8 digits) per Lazada order id, for orders whose DO has an invoice."""
+    if not order_ids:
+        return {}
+    rows = session.execute(
+        select(SalesOrder.platform_order_id, SapTaxInvoice.tax_invoice_doc)
+        .join(SapTaxInvoice, SapTaxInvoice.delivery == SalesOrder.do_number)
+        .where(SalesOrder.platform == PLATFORM, SalesOrder.platform_order_id.in_(order_ids))
+    )
+    return {order_id: doc.zfill(8) for order_id, doc in rows}
 
 
 def entered(session: Session) -> list[PlatformSettlement]:
