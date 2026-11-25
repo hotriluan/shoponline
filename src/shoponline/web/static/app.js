@@ -15,6 +15,21 @@
   if (scrim) scrim.addEventListener('click', function () { setOpen(false); });
 })();
 
+/* Desktop sidebar: the « and ☰ buttons hide or show it; the choice is remembered in this browser. */
+(function () {
+  var root = document.documentElement;
+  var buttons = document.querySelectorAll('[data-nav-collapse]');
+  if (!buttons.length) return;
+  buttons.forEach(function (b) {
+    b.addEventListener('click', function () {
+      var collapsed = root.classList.toggle('nav-collapsed');
+      try { localStorage.setItem('nav-collapsed', collapsed ? '1' : '0'); } catch (e) { /* ignore */ }
+      var next = document.querySelector(collapsed ? '.nav-expand' : '.nav-collapse');
+      if (next) next.focus();
+    });
+  });
+})();
+
 /* Autosave: an element with data-autosave="<url>" (a table row or a form) posts all its named
    fields to that url shortly after any of them changes, and shows the result in its
    [data-autosave-status]. data-autosave-require lists fields that must be filled before

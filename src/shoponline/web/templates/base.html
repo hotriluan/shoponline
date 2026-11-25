@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{% block title %}Shop online{% endblock %}</title>
 {% block head %}{% endblock %}
+<script>try { if (localStorage.getItem('nav-collapsed') === '1') document.documentElement.classList.add('nav-collapsed'); } catch (e) { /* storage blocked: keep the menu open */ }</script>
 <link rel="stylesheet" href="/static/app.css?v={{ static_version('app.css') }}">
 <script src="/static/app.js?v={{ static_version('app.js') }}" defer></script>
 </head>
@@ -16,7 +17,10 @@
     <strong>Shop online</strong>
   </div>
   <aside class="sidebar" id="sidebar">
-    <a class="brand" href="/">Shop online</a>
+    <div class="brand-row">
+      <a class="brand" href="/">Shop online</a>
+      <button type="button" class="nav-collapse" data-nav-collapse aria-controls="sidebar" aria-label="Ẩn menu" title="Ẩn menu">«</button>
+    </div>
     {% include "_nav.html" %}
     <div class="sidebar-foot">
       <div class="who"><strong>{{ user.username }}</strong> ({{ user.role }})</div>
@@ -24,6 +28,7 @@
     </div>
   </aside>
   <div class="scrim" data-nav-scrim></div>
+  <button type="button" class="nav-expand" data-nav-collapse aria-controls="sidebar" aria-label="Hiện menu" title="Hiện menu">☰</button>
   {% endif %}
   <div class="content">
     {% if user and backup_warning %}<div class="banner">⚠ {{ backup_warning }}</div>{% endif %}

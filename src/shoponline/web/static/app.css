@@ -84,7 +84,27 @@ code { font: 13px ui-monospace, Consolas, monospace; background: var(--neutral-b
   position: sticky; top: 0; height: 100vh; overflow-y: auto;
   display: flex; flex-direction: column; padding: var(--s4) var(--s3);
 }
+.brand-row { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--s2); }
 .brand { color: var(--sidebar-ink-strong); font-size: 17px; font-weight: 700; padding: var(--s1) var(--s2) var(--s4); text-decoration: none; display: block; }
+.nav-collapse {
+  background: transparent; border-color: var(--sidebar-control-line); color: var(--sidebar-ink-strong);
+  min-height: 28px; min-width: 32px; padding: 0 var(--s2); font-size: 16px;
+}
+.nav-collapse:hover { background: var(--sidebar-hover); border-color: var(--sidebar-control-line); }
+.nav-expand {
+  display: none; position: fixed; top: var(--s3); left: var(--s3); z-index: 25;
+  min-width: 36px; padding: 0 var(--s2); font-size: 18px;
+  background: var(--surface); color: var(--ink-2); border-color: var(--control-line); box-shadow: var(--shadow);
+}
+.nav-expand:hover { background: var(--accent-soft); color: var(--accent); border-color: var(--accent); }
+@media (max-width: 1023px) { .nav-collapse { display: none; } }
+@media (min-width: 1024px) {
+  html.nav-collapsed .app:not(.single) { grid-template-columns: 0 minmax(0, 1fr); }
+  html.nav-collapsed .sidebar { display: none; }
+  html.nav-collapsed .nav-expand { display: inline-flex; }
+  html.nav-collapsed .content { padding-left: var(--s6); }
+  html.nav-collapsed main { padding-top: 56px; }
+}
 .nav-group { margin-top: var(--s3); }
 .nav-title { font-size: 11px; letter-spacing: .06em; text-transform: uppercase; color: var(--sidebar-title); padding: var(--s1) var(--s2); margin-bottom: var(--s1); }
 .nav-link {
@@ -268,6 +288,19 @@ tr.tt-filters select { width: 100%; max-width: 180px; min-height: 28px; padding:
 .tt-pages button, .tt-pages a.button { min-width: 32px; min-height: 32px; padding: 2px var(--s2); }
 .tt-pages button[aria-current], .tt-pages a.button[aria-current] { background: var(--accent); color: var(--accent-ink); }
 .tt-pages button:disabled { opacity: .45; cursor: default; }
+
+/* Orders table: short columns stay on one line, only the product name wraps, so the table
+   fits the page instead of scrolling sideways. */
+.orders-table { font-size: 13px; }
+.orders-table th, .orders-table td { padding: 6px var(--s2); }
+.orders-table th { white-space: nowrap; }
+.orders-table td { white-space: nowrap; }
+.orders-table td.product { white-space: normal; min-width: 220px; max-width: 360px; line-height: 1.4; }
+.orders-table td.status { white-space: normal; min-width: 96px; }
+.orders-table td.cust { white-space: normal; min-width: 90px; }
+.orders-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--s2) var(--s3); margin: var(--s6) 0 var(--s2); }
+.orders-head h2 { margin: 0; }
+.orders-head p { margin: 0; display: flex; gap: var(--s2); flex-wrap: wrap; }
 
 .sticky-bottom { position: sticky; bottom: 0; background: var(--surface); border-top: 1px solid var(--line); padding: var(--s2) var(--s3); margin-top: var(--s3); z-index: 2; }
 
