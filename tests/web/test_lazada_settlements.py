@@ -62,6 +62,38 @@ def test_a_bad_amount_is_reported_and_nothing_is_saved(db, login):
     assert _typed(db) == {}
 
 
+def test_autosave_saves_a_row_and_reports_errors_as_json(db, login):
+    setup.order(db, "LZ-1", WHEN, platform="LAZADA")
+    db.commit()
+    admin = login("admin")
+    headers = {"x-autosave": "1"}
+
+    ok = admin.post(
+        f"{PAGE}/set",
+        data={"order_id": "LZ-1", "amount": "90.000", "settled_on": _day(), "month": ""},
+        headers=headers,
+    )
+    assert ok.status_code == 200 and ok.json()["ok"] is True
+    assert _typed(db) == {"LZ-1": 90000}
+
+    bad = admin.post(
+        f"{PAGE}/set",
+        data={"order_id": "LZ-1", "amount": "abc", "settled_on": _day()},
+        headers=headers,
+    )
+    assert bad.status_code == 422 and bad.json()["ok"] is False
+    assert _typed(db) == {"LZ-1": 90000}
+
+
+def test_pending_rows_autosave_and_have_no_save_form(db, login):
+    setup.order(db, "LZ-1", WHEN, platform="LAZADA")
+    db.commit()
+
+    page = login("admin").get(PAGE).text
+
+    assert 'data-autosave="/settlements/lazada/set"' in page
+
+
 def test_viewer_cannot_write(db, login):
     setup.order(db, "LZ-1", WHEN, platform="LAZADA")
     db.commit()

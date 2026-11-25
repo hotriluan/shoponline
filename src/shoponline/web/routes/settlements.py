@@ -10,7 +10,16 @@ from sqlalchemy.orm import Session
 from shoponline.accounting import manual_settlement as manual
 from shoponline.clock import today_vn
 from shoponline.db.models import AppUser
-from shoponline.web.app import current_user, flash, get_db, redirect, render, require_admin
+from shoponline.web.app import (
+    autosave_reply,
+    current_user,
+    flash,
+    get_db,
+    is_autosave,
+    redirect,
+    render,
+    require_admin,
+)
 
 router = APIRouter()
 PAGE = "/settlements/lazada"
@@ -72,9 +81,13 @@ def set_settlement(
         day = datetime.strptime(settled_on, "%Y-%m-%d").date()
         manual.set_amount(db, order_id, value, day, user.username)
     except ValueError as exc:  # SettlementError, or a date the browser sent in another shape
+        if is_autosave(request):
+            return autosave_reply(str(exc), ok=False)
         flash(request, f"Đơn {order_id}: {exc}", "error")
         return redirect(_back(month))
     db.commit()
+    if is_autosave(request):
+        return autosave_reply(f"Đã lưu {value:,} đồng")
     flash(request, f"Đã lưu tiền về {value:,} đồng cho đơn {order_id}.")
     return redirect(_back(month))
 

@@ -48,19 +48,17 @@
 <div class="scroll"><table>
   <tr><th>Mã đơn</th><th>Ngày đặt</th><th>DO</th><th>Số hóa đơn</th>{% if admin %}<th>Tiền nhận (đồng)</th><th>Ngày nhận</th><th></th>{% endif %}</tr>
   {% for o in pending %}
-  <tr>
+  <tr{% if admin %} data-autosave="/settlements/lazada/set" data-autosave-require="amount,settled_on"{% endif %}>
     <td>{{ o.platform_order_id }}
-      {% if admin %}<form method="post" action="/settlements/lazada/set" id="set-{{ o.id }}">
-        <input type="hidden" name="order_id" value="{{ o.platform_order_id }}">
-        <input type="hidden" name="month" value="{{ month }}">
-      </form>{% endif %}</td>
+      {% if admin %}<input type="hidden" name="order_id" value="{{ o.platform_order_id }}">
+      <input type="hidden" name="month" value="{{ month }}">{% endif %}</td>
     <td>{{ o.ordered_at.strftime('%d/%m/%Y') }}</td>
     <td>{{ o.do_number }}</td>
     <td>{{ invoices.get(o.do_number, '') }}</td>
     {% if admin %}
-    <td><input form="set-{{ o.id }}" type="text" name="amount" size="14" inputmode="numeric" required></td>
-    <td><input form="set-{{ o.id }}" type="date" name="settled_on" value="{{ today.isoformat() }}" max="{{ today.isoformat() }}" required></td>
-    <td><button form="set-{{ o.id }}">Lưu</button></td>
+    <td><input type="text" name="amount" size="14" inputmode="numeric"></td>
+    <td><input type="date" name="settled_on" value="{{ today.isoformat() }}" max="{{ today.isoformat() }}"></td>
+    <td data-autosave-status class="muted">Nhập số tiền là tự lưu</td>
     {% endif %}
   </tr>
   {% else %}
@@ -72,12 +70,10 @@
 <div class="scroll"><table>
   <tr><th>Mã đơn</th><th>Số hóa đơn</th><th>Số tiền</th><th>Ngày nhận</th><th>Người nhập</th>{% if admin %}<th>Sửa</th><th></th>{% endif %}</tr>
   {% for s in entered %}
-  <tr>
+  <tr{% if admin %} data-autosave="/settlements/lazada/set" data-autosave-require="amount,settled_on"{% endif %}>
     <td>{{ s.platform_order_id }}
-      {% if admin %}<form method="post" action="/settlements/lazada/set" id="edit-{{ s.id }}">
-        <input type="hidden" name="order_id" value="{{ s.platform_order_id }}">
-        <input type="hidden" name="month" value="{{ month }}">
-      </form>
+      {% if admin %}<input type="hidden" name="order_id" value="{{ s.platform_order_id }}">
+      <input type="hidden" name="month" value="{{ month }}">
       <form method="post" action="/settlements/lazada/remove" id="del-{{ s.id }}">
         <input type="hidden" name="order_id" value="{{ s.platform_order_id }}">
         <input type="hidden" name="month" value="{{ month }}">
@@ -88,9 +84,9 @@
     <td>{{ s.entered_by }}</td>
     {% if admin %}
     <td>
-      <input form="edit-{{ s.id }}" type="text" name="amount" size="14" value="{{ s.amount }}" required>
-      <input form="edit-{{ s.id }}" type="date" name="settled_on" value="{{ s.settled_at.strftime('%Y-%m-%d') }}" max="{{ today.isoformat() }}" required>
-      <button form="edit-{{ s.id }}" class="secondary">Lưu</button>
+      <input type="text" name="amount" size="14" value="{{ s.amount }}">
+      <input type="date" name="settled_on" value="{{ s.settled_at.strftime('%Y-%m-%d') }}" max="{{ today.isoformat() }}">
+      <span data-autosave-status class="muted">Sửa là tự lưu</span>
     </td>
     <td><button form="del-{{ s.id }}" class="secondary">Xóa</button></td>
     {% endif %}
