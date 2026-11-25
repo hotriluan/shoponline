@@ -67,6 +67,18 @@ File lịch sử của kế toán `Shop Online 2022-2026` (sheet1, 17 cột; fil
 
 Quên xác nhận thì lần xuất sau có lại các đơn đó (lặp chứ không sót); bảng **File đã tải** ghi "Chưa xác nhận" để nhắc. File sẽ không bao giờ được dán (tải thử, tải trùng) thì bấm **Xóa** ở dòng đó để làm sạch bảng; file và danh sách đơn của nó bị xóa, các đơn chưa xác nhận vẫn có trong lần xuất sau. File đã xác nhận không xóa được: gỡ xác nhận trước. Chỉ admin xác nhận, gỡ xác nhận và xóa.
 
+## Khách hủy hoặc trả đơn đã có hóa đơn
+
+Chỉ admin. Mở trang đơn (đơn đã giao, đã có hóa đơn) và bấm **Lập phiếu trả hàng**.
+
+1. Chọn lý do (hủy đơn hoặc trả lại hàng), sửa số lượng trả nếu chỉ trả một phần, kiểm tên và địa chỉ người mua.
+2. Nếu trang báo thiếu tên trên hóa đơn của một mã vật tư, tải PDF hóa đơn Bkav của **đúng đơn đó**: hệ thống đọc và nhớ tên cho các lần sau (xem hoặc sửa ở **Tên trên hóa đơn**). Mã đã có thì không cần PDF.
+3. Nếu báo thiếu tiền hóa đơn, bấm xếp robot đọc lại zrsd003 của tháng hóa đơn (hoặc tải file zrsd003 ở Báo cáo SAP), rồi quay lại.
+4. Xem trước, bấm **Phát hành phiếu**, tải hai file ở trang phiếu và in. Ngày, tháng ở dòng "Hôm nay" và ô No, Date của file Excel để trống cho người ký điền.
+5. Lập nhầm thì hủy phiếu (có lý do): số cũ không dùng lại, đơn lập lại nhận số mới.
+
+Đơn hủy trước khi có DO chưa có hóa đơn nên không lập phiếu. Đơn kit lập theo dòng cha, đúng như hóa đơn.
+
 ## Duyệt bảng dài
 
 Mọi bảng có dòng tiêu đề đều bấm được vào tên cột để sắp xếp (lần 1 tăng dần, lần 2 giảm dần, lần 3 về thứ tự gốc). Bảng từ 8 dòng trở lên có thêm ô **Tìm trong bảng** (không phân biệt hoa thường và dấu), ô chọn lọc ngay dưới tiêu đề cho cột chỉ có vài giá trị (sàn, trạng thái…), nút **Xóa bộ lọc**, và phân trang 10/25/50/100 dòng (lựa chọn được nhớ trên trình duyệt). Các dòng của cùng một đơn (đơn nhiều sản phẩm) luôn đi cùng nhau. Các danh sách lịch sử (Lô đơn, khách hàng theo sàn, hàng đợi robot, đợt gửi kế toán, lần tải báo cáo SAP, file Shop Online đã tải) được tìm và phân trang ngay trên máy chủ: ô **Tìm** quét toàn bộ dữ liệu cũ (không chỉ trang đang xem), có chọn 10/25/50/100 dòng/trang và liên kết số trang; tìm không phân biệt hoa thường nhưng phân biệt dấu. Ở các bảng này bấm tên cột chỉ sắp xếp các dòng của trang đang xem.

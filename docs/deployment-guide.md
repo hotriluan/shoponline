@@ -146,6 +146,13 @@ Không dùng web: `uv run --extra robot shoponline drive set-client --client-id 
 - **Bản của người khác gửi, hay bản từ máy cũ:** **Tải lên bản sao lưu** (tối đa 1 GB, chỉ file `.7z` của hệ thống này, phải mở được bằng mật khẩu sao lưu); file sai mật khẩu, bị sửa hay không mã hóa bị từ chối và xóa ngay.
 - **Phục hồi:** xem [operations-runbook.md](operations-runbook.md#phục-hồi-dữ-liệu). Phục hồi thật chạy qua tác vụ `shoponline-restore`; lần đầu trên máy thật, kiểm tra tiến trình web quyền thường có chạy được `schtasks /Run` cho tác vụ đăng ký bằng quyền quản trị không. Nếu không, yêu cầu nằm lại và trang báo "tác vụ phục hồi không chạy" sau 2 phút: bấm chạy tay tác vụ trong Task Scheduler hoặc dùng dòng lệnh.
 
+## Phiếu trả hàng: việc một lần khi bật
+
+- Nhập số của biên bản đầu tiên, lấy từ người dùng: `uv run shoponline return-number start <số>` (một lần duy nhất; `return-number show` để xem). Số thử trên máy phát triển không mang sang.
+- Ký hiệu hóa đơn suy ra từ biến `SHOPONLINE_INVOICE_SYMBOL_PATTERN` (mặc định `1C{yy}TAL`, `yy` là hai số cuối năm hóa đơn); sai mẫu thì ứng dụng không khởi động.
+- Hóa đơn nhập trước khi có cột tiền thì thiếu tiền: đọc lại zrsd003 của các tháng có hóa đơn cần trả.
+- **Không `downgrade` migration `0012` khi đã có phiếu**: bảng bị xóa thì số đã in có thể bị cấp lại. Khôi phục bản sao lưu cũ thì chạy `uv run shoponline return-number repair` rồi so với số cao nhất đã in.
+
 ## Cập nhật phiên bản
 
 Khi đã cài runner (mục 5b), chỉ cần push lên `main`. Cập nhật tay, khi không có runner (nhớ tạm tắt `shoponline-backup` nếu nó đang chạy, vì nó giữ file trong `.venv`):

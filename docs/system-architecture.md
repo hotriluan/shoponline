@@ -72,6 +72,16 @@ Trang `/sales-history` dựng dòng nối tiếp cho file lịch sử của kế
 
 Bảng `sales_history_file_order` ghi các đơn có trong từng file đã tải (`generated_file` kind `sales_history`); `sales_history_exported` (khóa chính `sales_order_id`) ghi đơn đã được xác nhận là đã dán, kèm file đã xác nhận. Xác nhận chép danh sách đơn của file sang sổ, bỏ qua đơn đã có; gỡ xác nhận xóa đúng các dòng của file đó.
 
+## Trả hàng sau hóa đơn
+
+Đơn `DELIVERED` đã có hóa đơn (`sap_tax_invoice`) có thể lập phiếu trả hàng: admin chọn lý do, dòng và số lượng trả; hệ thống chụp hóa đơn và người mua vào `sales_return` / `sales_return_line`, cấp số `NNN/MM.YYYY ALK-KH.STMĐT` từ `document_counter` (reset mỗi năm, số bắt đầu nhập một lần bằng `shoponline return-number start`), rồi sinh Biên bản điều chỉnh hóa đơn (`.docx`) và REQUEST to RETURN GOODS (`.xlsx`) từ hai mẫu trong `src/shoponline/exports/templates/`. Không ghi gì vào SAP hay Bkav.
+
+- Tiền hóa đơn lấy từ zrsd003 (`sap_tax_invoice.net_value_vnd`, `tax_vnd`); tiền từng dòng chia từ giá trị dòng SO, chỉ dòng chính (Bkav in dòng cha của kit). Mã: [returns/amounts.py](../src/shoponline/returns/amounts.py).
+- Tên hàng và ĐVT trên hóa đơn (file Word) lấy từ master `invoice_item_text`, nạp từ PDF hóa đơn Bkav ([importers/invoice_pdf.py](../src/shoponline/importers/invoice_pdf.py), [returns/master.py](../src/shoponline/returns/master.py)) hoặc sửa tay ở `/invoice-texts`. File Excel dùng tên SAP của dòng.
+- Phát hành và hủy: [returns/service.py](../src/shoponline/returns/service.py). Phát hành dựng lại bản xem trước trong giao dịch và so `fingerprint` với bản admin đã duyệt; chỉ mục unique từng phần chặn hai phiếu chưa hủy cho một đơn.
+- File Excel được điền bằng cách sửa trực tiếp XML của sheet mẫu ([exports/return_request_workbook.py](../src/shoponline/exports/return_request_workbook.py)) để mọi định dạng khác giữ nguyên như mẫu; test so với `tests/support/template_baseline.json`.
+- Route: [web/routes/returns.py](../src/shoponline/web/routes/returns.py), [web/routes/invoice_texts.py](../src/shoponline/web/routes/invoice_texts.py).
+
 ## Sao lưu, khôi phục và chuyển máy
 
 Mã ở [src/shoponline/backup/](../src/shoponline/backup/). Trang **Sao lưu** trên web và các lệnh `uv run shoponline backup ...` dùng chung một lõi; Task Scheduler chỉ gọi lệnh, không có logic riêng.

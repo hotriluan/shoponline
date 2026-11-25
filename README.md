@@ -48,6 +48,7 @@ uv run shoponline web
 | `SHOPONLINE_SAP_CONNECTION`, `SHOPONLINE_SAP_USER`, `SHOPONLINE_SAP_PASSWORD`, `SHOPONLINE_SAP_LANGUAGE` | Đăng nhập lại SAP trên máy robot |
 | `SHOPONLINE_ROBOT_MAX_FAILURES`, `SHOPONLINE_ROBOT_EVIDENCE_KEEP_DAYS` | Ngưỡng lỗi liên tiếp để robot tự dừng (3); số ngày giữ ảnh lỗi (30) |
 | `SHOPONLINE_RETENTION_DAYS` | Số ngày giữ tên, địa chỉ khách và file tải lên, file xuất ra (90) |
+| `SHOPONLINE_INVOICE_SYMBOL_PATTERN` | Mẫu ký hiệu hóa đơn trên biên bản trả hàng, `{yy}` là hai số cuối năm hóa đơn (`1C{yy}TAL`) |
 
 Bí mật (mật khẩu database, khóa phiên, mật khẩu sao lưu) nằm trong kho bí mật của chủ dự án, không nằm trong repo.
 
@@ -75,6 +76,10 @@ Bí mật (mật khẩu database, khóa phiên, mật khẩu sao lưu) nằm tro
 | `pwsh -File scripts\windows\register-tasks.ps1 -User <tài khoản> [-RetentionApply]` | Đăng ký web, sao lưu (mỗi 15 phút), phục hồi (chạy khi web gọi) và xóa theo thời hạn trong Task Scheduler (máy chạy thật) |
 | `pwsh -File scripts\windows\register-tasks.ps1 -RobotUser <tài khoản>` | Đăng ký robot chạy khi tài khoản robot đăng nhập |
 | `uv run python tests/fixtures/build_fixtures.py <thư mục>` | Sinh bộ file mẫu tự dựng để thử web |
+
+## Trả hàng sau hóa đơn
+
+Admin lập phiếu trả hàng từ trang đơn đã giao có hóa đơn: hệ thống cấp số biên bản và sinh Biên bản điều chỉnh hóa đơn (.docx) cùng REQUEST to RETURN GOODS (.xlsx) từ mẫu. Mô-đun `src/shoponline/returns/`; lệnh `shoponline return-number start|show|repair` quản lý số; cấu hình `SHOPONLINE_INVOICE_SYMBOL_PATTERN`. Xem `docs/system-architecture.md` và `docs/daily-operations.md`.
 
 ## Cấu trúc
 

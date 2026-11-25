@@ -129,3 +129,7 @@ def test_the_filled_form_has_the_sample_format_for_two_lines():
 def test_the_filled_form_has_the_sample_format_for_a_partial_return():
     lines = [line(1, net=55556, ret=0), line(2, name="SƠN LÓT", qty=2, ret=1, net=55555)]
     assert _no_format_difference(sales_return(lines), 1, 0) == []
+
+
+def test_runs_of_spaces_in_buyer_text_collapse():
+    assert clean_text("85/8  Lê   Hồng\t phong") == "85/8 Lê Hồng phong"

@@ -55,6 +55,12 @@ Với `--apply`, lệnh `shoponline retention`:
 
 Không có `--apply` thì lệnh chỉ liệt kê dữ liệu khách sẽ bị xóa.
 
+### Phiếu trả hàng
+
+Phiếu trả hàng (`sales_return`) giữ bản chụp tên và địa chỉ người mua, và hai file của phiếu, **không giới hạn thời gian**: đây là chứng từ điều chỉnh hóa đơn. Quy tắc 90 ngày không áp dụng cho chúng. Quét file giữ mọi `generated_file` mà một phiếu trỏ tới, theo dữ liệu chứ không theo loại file, nên hoàn tác mã cũng không làm mất phiếu. Chỉ admin xem tên, địa chỉ và tải hai file; viewer chỉ thấy danh sách và số liệu. Bản sao lưu `db` hằng ngày chép hai file này cùng file kế toán.
+
+PDF hóa đơn tải lên không được ứng dụng lưu vào kho file, nhưng máy chủ web có thể tạm đặt upload lớn (hơn 1 MB) vào thư mục tạm của hệ điều hành trước khi route chạy; PDF chỉ nhận từ admin, tối đa 5 MB và 5 trang.
+
 ### Bản sao lưu
 
 Xoay vòng ([retention.py](../src/shoponline/backup/retention.py)) áp dụng như nhau cho từng thư mục đích và cho Google Drive, và chỉ nơi nào đã nhận bản mới mới được dọn. Mặc định (đổi trên trang **Sao lưu**):
