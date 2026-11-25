@@ -25,6 +25,8 @@ def committed(db_engine):
         connection.execute(text("UPDATE accounting_baseline SET cutoff_date = '2000-01-01'"))
     yield db_engine
     tables = (
+        "sales_return_line",
+        "sales_return",
         "accounting_sent_delivery",
         "accounting_run_source",
         "accounting_run_read",

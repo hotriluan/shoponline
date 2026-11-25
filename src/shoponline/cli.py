@@ -484,6 +484,30 @@ def _cmd_accounting_run(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_return_number(args: argparse.Namespace) -> int:
+    from shoponline.clock import today_vn
+    from shoponline.db.session import session_scope
+    from shoponline.returns import numbering
+
+    settings = load_settings()
+    year = getattr(args, "year", 0) or today_vn().year
+    with session_scope(settings.database_url) as session:
+        if args.action == "start":
+            numbering.set_start(session, year, args.number, getpass.getuser())
+            first = numbering.format_doc_no(args.number, today_vn().month, year)
+            print(f"Đã đặt số bắt đầu của năm {year}: phiếu đầu tiên sẽ là {first}.")
+        elif args.action == "repair":
+            old, new = numbering.repair(session, year, getpass.getuser())
+            print(f"Năm {year}: số kế tiếp đổi từ {old} thành {new}. So với số cao nhất đã in.")
+        else:
+            rows = numbering.counters(session)
+            if not rows:
+                print("Chưa nhập số bắt đầu. Chạy `shoponline return-number start <số>`.")
+            for counter_year, next_seq in rows:
+                print(f"Năm {counter_year}: số kế tiếp {next_seq:03d}")
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     for stream in (sys.stdout, sys.stderr):
         if hasattr(stream, "reconfigure"):
@@ -532,6 +556,18 @@ def main(argv: list[str] | None = None) -> int:
     revoke.add_argument("run_id", type=int)
     revoke.add_argument("--yes", action="store_true", help="Gỡ thật thay vì chỉ xem")
     run.set_defaults(func=_cmd_accounting_run)
+
+    number = sub.add_parser("return-number", help="Số biên bản điều chỉnh hóa đơn (trả hàng)")
+    number_actions = number.add_subparsers(dest="action", required=True)
+    number_start = number_actions.add_parser("start", help="Nhập số bắt đầu (một lần duy nhất)")
+    number_start.add_argument("number", type=int, help="Số của biên bản đầu tiên, ví dụ 80")
+    number_start.add_argument("--year", type=int, default=0, help="Năm của số đó (mặc định: nay)")
+    number_actions.add_parser("show", help="Xem số kế tiếp của từng năm")
+    number_repair = number_actions.add_parser(
+        "repair", help="Đặt số kế tiếp bằng số cao nhất đã cấp + 1 (sau khi khôi phục sao lưu)"
+    )
+    number_repair.add_argument("--year", type=int, default=0, help="Năm cần sửa (mặc định: nay)")
+    number.set_defaults(func=_cmd_return_number)
 
     backup = sub.add_parser("backup", help="Sao lưu mã hóa (database, ứng dụng, toàn bộ)")
     backup_actions = backup.add_subparsers(dest="action", required=True)

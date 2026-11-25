@@ -115,6 +115,11 @@ def ingest_zrsd003(session: Session, record: ImportBatch, actor: str) -> TaxInvo
                     "billing_doc": stmt.excluded.billing_doc,
                     "billing_date": stmt.excluded.billing_date,
                     "bill_to": stmt.excluded.bill_to,
+                    # A file without the money columns must not erase money already stored.
+                    "net_value_vnd": func.coalesce(
+                        stmt.excluded.net_value_vnd, SapTaxInvoice.net_value_vnd
+                    ),
+                    "tax_vnd": func.coalesce(stmt.excluded.tax_vnd, SapTaxInvoice.tax_vnd),
                     "import_batch_id": stmt.excluded.import_batch_id,
                     "updated_at": func.now(),
                 },
@@ -128,6 +133,8 @@ def ingest_zrsd003(session: Session, record: ImportBatch, actor: str) -> TaxInvo
                     "billing_doc": row.billing_doc,
                     "billing_date": row.billing_date,
                     "bill_to": row.bill_to,
+                    "net_value_vnd": row.net_value_vnd,
+                    "tax_vnd": row.tax_vnd,
                     "import_batch_id": record.id,
                 }
                 for row in kept.values()

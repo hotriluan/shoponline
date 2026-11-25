@@ -47,6 +47,8 @@ def test_upgrade_moves_accounts_with_their_data(db_engine, alembic_cfg):
 
 def test_rerun_after_restore_keeps_live_accounts(db_engine, alembic_cfg):
     """A restored old dump brings back public.app_user and alembic_version 0009."""
+    # The dump predates later public tables, so they are gone after a restore (ops stays live).
+    command.downgrade(alembic_cfg, "0011_drive_connection")
     with db_engine.begin() as conn:
         conn.execute(
             text(

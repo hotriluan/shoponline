@@ -19,6 +19,7 @@ from sqlalchemy import (
     Time,
     UniqueConstraint,
     func,
+    text,
 )
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
@@ -236,6 +237,9 @@ class SapTaxInvoice(Base):
     billing_doc: Mapped[str] = mapped_column(String(20))
     billing_date: Mapped[date] = mapped_column(Date)
     bill_to: Mapped[str] = mapped_column(String(20))
+    # Invoice totals before tax and of tax; NULL for invoices read from a file without the columns.
+    net_value_vnd: Mapped[int | None] = mapped_column(BigInteger)
+    tax_vnd: Mapped[int | None] = mapped_column(BigInteger)
     import_batch_id: Mapped[int | None] = mapped_column(ForeignKey("import_batch.id"))
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
@@ -441,6 +445,109 @@ class SalesHistoryExported(Base):
     confirmed_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )
+
+
+class InvoiceItemText(Base):
+    """How a material is written on the tax invoice (read from the invoice PDF or typed in)."""
+
+    __tablename__ = "invoice_item_text"
+
+    material_number: Mapped[str] = mapped_column(String(20), primary_key=True)
+    invoice_name: Mapped[str] = mapped_column(Text)
+    invoice_unit: Mapped[str] = mapped_column(Text)
+    stock_unit: Mapped[str] = mapped_column(String(10), server_default="PC")
+    source: Mapped[str] = mapped_column(String(40))  # the invoice number read, or "manual"
+    updated_by: Mapped[str] = mapped_column(String(50))
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+
+class DocumentCounter(Base):
+    """The next number of a document type for one year; issuing locks the row."""
+
+    __tablename__ = "document_counter"
+
+    doc_type: Mapped[str] = mapped_column(String(30), primary_key=True)
+    year: Mapped[int] = mapped_column(Integer, primary_key=True)
+    next_seq: Mapped[int] = mapped_column(Integer)
+
+
+class SalesReturn(Base):
+    """An issued invoice adjustment for a delivered order. Holds a snapshot of the invoice and
+    the buyer, so the two files can be produced again after customer_info is purged."""
+
+    __tablename__ = "sales_return"
+    __table_args__ = (
+        UniqueConstraint("doc_year", "doc_seq"),
+        CheckConstraint("reason_kind IN ('CANCEL', 'RETURN')", name="ck_sales_return_reason"),
+        CheckConstraint("status IN ('ISSUED', 'VOID')", name="ck_sales_return_status"),
+        Index(
+            "uq_sales_return_one_issued",
+            "sales_order_id",
+            unique=True,
+            postgresql_where=text("status = 'ISSUED'"),
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    sales_order_id: Mapped[int] = mapped_column(ForeignKey("sales_order.id"))
+    reason_kind: Mapped[str] = mapped_column(String(10))
+    status: Mapped[str] = mapped_column(String(10), default="ISSUED")
+    doc_year: Mapped[int] = mapped_column(Integer)
+    doc_seq: Mapped[int] = mapped_column(Integer)
+    doc_no: Mapped[str] = mapped_column(String(60), unique=True)
+    full_return: Mapped[bool] = mapped_column(Boolean)
+    delivery: Mapped[str] = mapped_column(String(20))
+    tax_invoice_doc: Mapped[str] = mapped_column(String(20))
+    invoice_symbol: Mapped[str] = mapped_column(String(20))
+    billing_date: Mapped[date] = mapped_column(Date)
+    invoice_net: Mapped[int] = mapped_column(BigInteger)
+    invoice_tax: Mapped[int] = mapped_column(BigInteger)
+    vat_rate: Mapped[int] = mapped_column(Integer)
+    returned_net: Mapped[int] = mapped_column(BigInteger)
+    returned_tax: Mapped[int] = mapped_column(BigInteger)
+    buyer_name: Mapped[str] = mapped_column(Text)
+    buyer_address: Mapped[str] = mapped_column(Text)
+    platform_name: Mapped[str] = mapped_column(String(100))
+    docx_file_id: Mapped[int | None] = mapped_column(ForeignKey("generated_file.id"))
+    xlsx_file_id: Mapped[int | None] = mapped_column(ForeignKey("generated_file.id"))
+    issued_by: Mapped[str] = mapped_column(String(50))
+    issued_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    voided_by: Mapped[str | None] = mapped_column(String(50))
+    voided_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    void_reason: Mapped[str | None] = mapped_column(Text)
+
+    order: Mapped[SalesOrder] = relationship()
+    lines: Mapped[list[SalesReturnLine]] = relationship(
+        back_populates="sales_return",
+        cascade="all, delete-orphan",
+        order_by="SalesReturnLine.line_no",
+    )
+
+
+class SalesReturnLine(Base):
+    """Every invoice line, returned or not: the "before adjustment" table is drawn from these."""
+
+    __tablename__ = "sales_return_line"
+
+    return_id: Mapped[int] = mapped_column(
+        ForeignKey("sales_return.id", ondelete="CASCADE"), primary_key=True
+    )
+    line_no: Mapped[int] = mapped_column(Integer, primary_key=True)
+    so_item_no: Mapped[int] = mapped_column(Integer)
+    material_number: Mapped[str] = mapped_column(String(20))
+    sap_name: Mapped[str] = mapped_column(Text)
+    invoice_name: Mapped[str] = mapped_column(Text)
+    invoice_unit: Mapped[str] = mapped_column(Text)
+    stock_unit: Mapped[str] = mapped_column(String(10))
+    invoice_qty: Mapped[float] = mapped_column(Numeric(15, 3))
+    return_qty: Mapped[float] = mapped_column(Numeric(15, 3))
+    unit_price: Mapped[int] = mapped_column(BigInteger)
+    amount_before: Mapped[int] = mapped_column(BigInteger)
+    amount_returned: Mapped[int] = mapped_column(BigInteger)
+
+    sales_return: Mapped[SalesReturn] = relationship(back_populates="lines")
 
 
 # Schema ops: operational records that must survive a restore of schema public on the same

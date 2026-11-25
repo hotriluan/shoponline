@@ -156,3 +156,51 @@ def test_a_broken_row_of_a_platform_customer_still_rejects_the_file(db, tmp_path
         ingest_zrsd003(db, _record(path), "t")
 
     assert db.scalar(select(func.count()).select_from(SapTaxInvoice)) == 0
+
+
+def _with_money(row, net, tax):
+    return {**row, "Net Value (VND)": net, "Tax (VND)": tax}
+
+
+def test_reads_the_invoice_net_and_tax_in_dong(tmp_path):
+    path = zrsd003_file(
+        tmp_path / "money.xlsx",
+        [_with_money(zrsd003_row("1910061168", "7914", "1200001146"), 111111, 8889)],
+    )
+    (row,) = read_zrsd003(path)
+    assert (row.net_value_vnd, row.tax_vnd) == (111111, 8889)
+
+
+def test_a_file_without_the_money_columns_still_reads_with_none(tmp_path):
+    headers = [h for h in ZRSD003_HEADERS if h not in ("Net Value (VND)", "Tax (VND)")]
+    path = zrsd003_file(tmp_path / "old.xlsx", [zrsd003_row("1910061168", "7914")], headers=headers)
+    (row,) = read_zrsd003(path)
+    assert (row.net_value_vnd, row.tax_vnd) == (None, None)
+
+
+def test_a_blank_money_cell_is_unknown_not_zero(tmp_path):
+    path = zrsd003_file(
+        tmp_path / "blank.xlsx", [_with_money(zrsd003_row("1910061168", "7914"), "", "")]
+    )
+    (row,) = read_zrsd003(path)
+    assert (row.net_value_vnd, row.tax_vnd) == (None, None)
+
+
+def test_ingest_stores_money_and_keeps_it_when_a_file_without_money_is_read_again(db, tmp_path):
+    full = zrsd003_file(
+        tmp_path / "full.xlsx",
+        [_with_money(zrsd003_row("1910061168", "7914", "1200001146"), 111111, 8889)],
+    )
+    ingest_zrsd003(db, _record(full), "t")
+    db.expire_all()
+    invoice = db.get(SapTaxInvoice, "1910061168")
+    assert (invoice.net_value_vnd, invoice.tax_vnd) == (111111, 8889)
+
+    headers = [h for h in ZRSD003_HEADERS if h not in ("Net Value (VND)", "Tax (VND)")]
+    old = zrsd003_file(
+        tmp_path / "old.xlsx", [zrsd003_row("1910061168", "7914", "1200001146")], headers=headers
+    )
+    ingest_zrsd003(db, _record(old), "t")
+    db.expire_all()
+    invoice = db.get(SapTaxInvoice, "1910061168")
+    assert (invoice.net_value_vnd, invoice.tax_vnd) == (111111, 8889)

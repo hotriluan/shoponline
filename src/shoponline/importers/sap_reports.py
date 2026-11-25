@@ -152,6 +152,15 @@ class TaxInvoiceRow:
     billing_doc: str
     billing_date: date
     bill_to: str
+    net_value_vnd: int | None = None
+    tax_vnd: int | None = None
+
+
+def _optional_money(row, column: str) -> int | None:
+    """A money column that older files may lack: absent or blank is None, not zero."""
+    if column not in row.columns or not row[column].strip():
+        return None
+    return parse_money(row[column], column)
 
 
 def read_zrsd003(
@@ -178,6 +187,8 @@ def read_zrsd003(
                     billing_doc=row["Billing Doc."],
                     billing_date=parse_report_date(row["Billing Date"], "Billing Date"),
                     bill_to=row["Bill-to"],
+                    net_value_vnd=_optional_money(row, "Net Value (VND)"),
+                    tax_vnd=_optional_money(row, "Tax (VND)"),
                 )
             )
         except ValueError as exc:

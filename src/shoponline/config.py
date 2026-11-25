@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 from dataclasses import dataclass, field
+from datetime import date
 from pathlib import Path
 
 REQUIRED_VARS = (
@@ -11,6 +12,9 @@ REQUIRED_VARS = (
     "SHOPONLINE_SECRET_KEY",
     "SHOPONLINE_DATA_DIR",
 )
+
+
+DEFAULT_INVOICE_SYMBOL_PATTERN = "1C{yy}TAL"
 
 
 class ConfigError(RuntimeError):
@@ -30,6 +34,11 @@ class Settings:
     backup_password: str = field(default="", repr=False)
     backup_dirs: tuple[Path, ...] = ()
     restore_database_url: str = field(default="", repr=False)
+    # Invoice series printed on return documents; {yy} is the last two digits of the billing year.
+    invoice_symbol_pattern: str = DEFAULT_INVOICE_SYMBOL_PATTERN
+
+    def invoice_symbol(self, billing_date: date) -> str:
+        return self.invoice_symbol_pattern.format(yy=f"{billing_date.year % 100:02d}")
 
     @property
     def upload_dir(self) -> Path:
@@ -94,7 +103,26 @@ def load_settings(env: dict[str, str] | None = None) -> Settings:
             if part.strip()
         ),
         restore_database_url=env.get("SHOPONLINE_RESTORE_DATABASE_URL") or "",
+        invoice_symbol_pattern=_invoice_symbol_pattern(env),
     )
+
+
+def _invoice_symbol_pattern(env: dict[str, str]) -> str:
+    pattern = (env.get("SHOPONLINE_INVOICE_SYMBOL_PATTERN") or "").strip()
+    if not pattern:
+        return DEFAULT_INVOICE_SYMBOL_PATTERN
+    try:
+        sample = pattern.format(yy="26")
+    except (KeyError, IndexError, ValueError) as exc:
+        raise ConfigError(
+            "SHOPONLINE_INVOICE_SYMBOL_PATTERN chỉ được dùng {yy}, ví dụ 1C{yy}TAL"
+        ) from exc
+    if "{yy}" not in pattern or len(sample) > 20 or any(c.isspace() for c in sample):
+        raise ConfigError(
+            "SHOPONLINE_INVOICE_SYMBOL_PATTERN phải chứa {yy}, không có khoảng trắng, "
+            "và dài tối đa 20 ký tự"
+        )
+    return pattern
 
 
 def _positive_int(env: dict[str, str], name: str, default: int) -> int:
