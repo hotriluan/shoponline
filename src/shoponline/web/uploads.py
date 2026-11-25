@@ -79,3 +79,29 @@ def save_generated(
     session.add(record)
     session.flush()
     return record
+
+
+def save_generated_bytes(
+    session: Session,
+    settings: Settings,
+    data: bytes,
+    suffix: str,
+    file_name: str,
+    kind: str,
+    actor: str,
+) -> GeneratedFile:
+    """Like save_generated, for a file that is already bytes (a .docx or a rendered .xlsx)."""
+    settings.export_dir.mkdir(parents=True, exist_ok=True)
+    stamp = f"{datetime.now():%Y%m%d-%H%M%S}"
+    path = settings.export_dir / f"{stamp}-{kind}-{secrets.token_hex(4)}{suffix}"
+    path.write_bytes(data)
+    record = GeneratedFile(
+        kind=kind,
+        file_name=file_name[:300],
+        stored_path=str(path),
+        sha256=hashlib.sha256(data).hexdigest(),
+        created_by=actor,
+    )
+    session.add(record)
+    session.flush()
+    return record

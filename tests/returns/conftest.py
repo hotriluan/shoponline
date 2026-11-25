@@ -29,3 +29,28 @@ def committed(db_engine):
     with db_engine.begin() as connection:
         for table in tables:
             connection.execute(text(f"DELETE FROM {table}"))
+
+
+@pytest.fixture
+def settings(tmp_path):
+    from shoponline.config import Settings
+
+    return Settings(database_url="unused", secret_key="s" * 40, data_dir=tmp_path / "data")
+
+
+@pytest.fixture
+def issue_day(monkeypatch):
+    """The day documents are issued: 25/11/2026 in Vietnam, whatever the clock says."""
+    from datetime import date
+
+    day = date(2026, 11, 25)
+    monkeypatch.setattr("shoponline.returns.service.today_vn", lambda *a, **k: day)
+    return day
+
+
+@pytest.fixture
+def numbered(db, issue_day):
+    """The first number is entered once: 080."""
+    from shoponline.returns import numbering
+
+    numbering.set_start(db, 2026, 80, "t")

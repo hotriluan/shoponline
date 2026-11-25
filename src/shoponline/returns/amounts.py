@@ -20,6 +20,8 @@ class Blocked:
     """Why a figure cannot be worked out; each reason says what is wrong and how to clear it."""
 
     reasons: tuple[str, ...]
+    # What can clear it: "missing_texts", "missing_money" or "numbering"; the page offers that fix.
+    codes: frozenset[str] = frozenset()
 
     @property
     def reason(self) -> str:

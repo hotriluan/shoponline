@@ -60,8 +60,17 @@ def test_layout_and_values():
     assert ws["E5"].value == "TIKTOK"
     assert ws["E6"].value == 1200001146
     header = [ws.cell(9, c).value for c in range(1, 10)]
-    assert header == ["Ngày", "Đơn Hàng", "Mã Số Đơn Hàng", "Tên Sản Phẩm", "Mã SP",
-                      "Số Lượng", "Đơn Giá", "Thành Tiền", "Sale"]
+    assert header == [
+        "Ngày",
+        "Đơn Hàng",
+        "Mã Số Đơn Hàng",
+        "Tên Sản Phẩm",
+        "Mã SP",
+        "Số Lượng",
+        "Đơn Giá",
+        "Thành Tiền",
+        "Sale",
+    ]
 
     ids = [ws.cell(r, 3).value for r in range(10, 13)]
     # no-discount orders by order time, discounted order last

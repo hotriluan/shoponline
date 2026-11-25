@@ -249,9 +249,7 @@ def xlsx_format(source: bytes | str | Path) -> dict:
         workbook = etree.fromstring(z.read("xl/workbook.xml"))
         sheet = etree.fromstring(z.read(sheets[0]))
     sheet_names = [s.get("name") for s in workbook.iterfind(".//s:sheet", NS)]
-    defined = sorted(
-        [d.get("name"), d.text] for d in workbook.iterfind(".//s:definedName", NS)
-    )
+    defined = sorted([d.get("name"), d.text] for d in workbook.iterfind(".//s:definedName", NS))
     rows: dict[int, dict] = {}
     for row in sheet.iterfind(".//s:sheetData/s:row", NS):
         cells = {}
@@ -298,7 +296,7 @@ def _shift_ref(ref: str, first_data_row: int, extra: int) -> str:
         row = int(match.group(2))
         return f"{match.group(1)}{row + extra if row > first_data_row else row}"
 
-    return re.sub(r"([A-Z]+)(\d+)", shift, ref)
+    return re.sub(r"(\$?[A-Z]+\$?)(\d+)", shift, ref)
 
 
 def xlsx_expected(baseline: dict, *, data_row: int = 14, extra_rows: int = 0) -> dict:

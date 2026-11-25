@@ -50,7 +50,9 @@ def test_inserts_three_columns_and_keeps_everything_else(tmp_path):
     for before, after in zip(original, out, strict=True):
         assert after[: so_index + 1] + after[so_index + 4 :] == before
     assert out[1][so_index + 1 : so_index + 4] == [
-        "2611110AAAAAAA", "Người Một", "Phường Một, Tỉnh Thử, Việt Nam",
+        "2611110AAAAAAA",
+        "Người Một",
+        "Phường Một, Tỉnh Thử, Việt Nam",
     ]
     assert out[3][so_index + 1] == "587000000000000001"
     assert out[-1][so_index + 1 : so_index + 4] == [None, None, None]
