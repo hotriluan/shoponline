@@ -37,7 +37,7 @@ OVERVIEW_COLUMNS = (
     ("Phí sàn", "platform_fee", "money"),
     ("Số đơn", "orders", "num"),
     ("Giá trị đơn trung bình", "average_order", "money"),
-    ("Giá trị trả", "returned_value", "money"),
+    ("Giá trị trả (hóa đơn có thuế)", "returned_value", "money"),
     ("Tỷ lệ trả", "return_rate", "percent"),
     ("Chờ hóa đơn", "missing_invoice", "num"),
     ("Chờ tiền về", "missing_settlement", "num"),
@@ -67,7 +67,8 @@ RETURN_COLUMNS = (
     ("Tháng", "label", "text"),
     ("Lý do", "reason", "text"),
     ("Số phiếu", "documents", "num"),
-    ("Giá trị trả", "returned_value", "money"),
+    ("Giá trị trả theo hóa đơn (có thuế)", "returned_value", "money"),
+    ("Giá trị trả trên sàn", "returned_marketplace_value", "money"),
 )
 REASONS = {"CANCEL": "Hủy đơn", "RETURN": "Trả hàng"}
 

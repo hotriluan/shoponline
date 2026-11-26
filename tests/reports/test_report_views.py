@@ -2,11 +2,10 @@ from datetime import date, datetime
 
 from sqlalchemy import text
 
-from shoponline.db.models import ProvinceAlias, SalesReturnLine
+from shoponline.db.models import ProvinceAlias
 from shoponline.reports import REPORTING_CUTOVER
 from tests import sales_history_setup as setup
 from tests.history_setup import line, write
-from tests.returns.factory import sales_return
 
 AFTER = datetime(2026, 11, 12, 9)
 BEFORE = datetime(2026, 11, 10, 23, 59)
@@ -124,22 +123,57 @@ def test_a_lazada_order_gets_its_hand_typed_money(db):
     assert _revenue(db)[order.id]["settled_value"] == 70000
 
 
-def test_returns_count_issued_documents_only(db):
+def test_returns_count_issued_documents_only_at_invoice_value_with_vat(db):
     order = setup.order(db, "S-1", AFTER)
-    issued = sales_return(db, order, year=2026, seq=1)
-    voided = sales_return(db, order, year=2026, seq=2, status="VOID")
-    for doc, amount in ((issued, 30000), (voided, 99999)):
-        db.add(
-            SalesReturnLine(
-                return_id=doc.id, line_no=1, so_item_no=10, material_number=setup.MATERIAL,
-                sap_name="x", invoice_name="x", invoice_unit="x", stock_unit="PC",
-                invoice_qty=1, return_qty=1, unit_price=amount, amount_before=amount,
-                amount_returned=amount,
-            )
-        )  # fmt: skip
-    db.flush()
+    setup.returned(db, order, 1)
+    setup.returned(db, order, 2, status="VOID")
 
-    assert _revenue(db)[order.id]["returned_value"] == 30000
+    row = _revenue(db)[order.id]
+    assert row["returned_value"] == 111111 + 8889
+    assert row["returned_marketplace_value"] == 120000
+    assert row["marketplace_value"] == 0
+
+
+def test_a_whole_return_adds_negative_lines_dated_like_the_order(db):
+    setup.report_name(db)
+    order = setup.order(db, "S-1", AFTER, lines=((setup.MATERIAL, 2, 120000, 20000),))
+    setup.returned(db, order, 1)
+
+    (back,) = _lines(db, "return")
+    assert (back["quantity"], back["customer_paid"]) == (-2, -200000)
+    assert back["ordered_on"] == AFTER.date() and back["order_key"] == str(order.id)
+    assert sum(r["customer_paid"] for r in _lines(db)) == 0
+
+
+def test_a_partial_return_subtracts_only_what_came_back(db):
+    order = setup.order(db, "S-1", AFTER, lines=((setup.MATERIAL, 3, 50000, 0),))
+    setup.returned(db, order, 1, taken={1: 1})
+    assert sum(r["customer_paid"] for r in _lines(db)) == 100000
+
+
+def test_a_void_return_subtracts_nothing(db):
+    order = setup.order(db, "S-1", AFTER)
+    setup.returned(db, order, 1, status="VOID")
+    assert _lines(db, "return") == []
+
+
+def test_the_report_matches_the_shop_online_file_month_by_month(db):
+    from shoponline.exports.sales_history_workbook import collect_rows
+
+    setup.report_name(db)
+    whole = setup.order(db, "S-1", AFTER, lines=((setup.MATERIAL, 2, 60000, 0),))
+    part = setup.order(db, "S-2", AFTER, lines=((setup.MATERIAL, 3, 50000, 5000),))
+    setup.returned(db, whole, 1)
+    setup.returned(db, part, 2, taken={1: 1})
+
+    file = collect_rows(db, date(2026, 11, 30)).all_rows
+    view = db.execute(
+        text(
+            "SELECT SUM(customer_paid), SUM(quantity) FROM report_sale_line"
+            " WHERE source <> 'history'"
+        )
+    ).one()
+    assert (sum(r.customer_paid for r in file), sum(r.quantity for r in file)) == tuple(view)
 
 
 def test_one_invoice_per_order_so_revenue_is_not_doubled(db):

@@ -3,7 +3,7 @@
 {% from "reports/_table.html" import data_table %}
 {% block title %}{{ title }}{% endblock %}
 {% block content %}
-{{ page_header(title, 'Phiếu điều chỉnh hóa đơn đã phát hành theo tháng và lý do (từ 11/11/2026).') }}
+{{ page_header(title, 'Phiếu điều chỉnh hóa đơn đã phát hành theo tháng đặt đơn và lý do (từ 11/11/2026). Giá trị trên sàn ở các trang báo cáo khác đã trừ hàng trả; tỷ lệ trả tính theo hóa đơn có thuế.') }}
 {% include "reports/_filters.html" %}
 {{ data_table(columns, rows) }}
 {% endblock %}

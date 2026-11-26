@@ -64,29 +64,54 @@ def test_platform_fee_only_counts_orders_that_have_both_figures(db):
     assert no_invoice.id  # the third order is delivered but has no invoice
 
 
-def test_return_rate_is_returns_over_invoice_revenue(db):
-    from shoponline.db.models import SalesReturnLine
-    from tests.returns.factory import sales_return
-
-    order = setup.order(db, "S-1", AFTER)
-    _invoice(db, order, 100000, 0)
-    doc = sales_return(db, order, year=2026, seq=1)
-    db.add(
-        SalesReturnLine(
-            return_id=doc.id, line_no=1, so_item_no=10, material_number=setup.MATERIAL,
-            sap_name="x", invoice_name="x", invoice_unit="x", stock_unit="PC", invoice_qty=1,
-            return_qty=1, unit_price=25000, amount_before=25000, amount_returned=25000,
-        )
-    )  # fmt: skip
+def test_return_rate_is_returns_over_invoice_revenue_including_vat(db):
+    setup.report_name(db)
+    order = setup.order(db, "S-1", AFTER, lines=((setup.MATERIAL, 4, 30000, 0),))
+    _invoice(db, order, 111111, 8889)
+    doc = setup.returned(db, order, 1, taken={1: 1})
+    doc.full_return, doc.returned_net, doc.returned_tax = False, 27778, 2222
     db.flush()
 
     row = queries.monthly_overview(db, Filters(from_period=NOV))[0]
     by_reason = queries.returns(db, Filters(from_period=NOV))
 
-    assert row["returned_value"] == 25000 and row["return_rate"] == 0.25
+    assert row["returned_value"] == 30000 and row["return_rate"] == 0.25
+    assert row["marketplace_value"] == 90000 and row["orders"] == 1
     assert by_reason == [
-        {"period": NOV, "reason_kind": "CANCEL", "documents": 1, "returned_value": 25000}
+        {
+            "period": NOV,
+            "reason_kind": "CANCEL",
+            "documents": 1,
+            "returned_value": 30000,
+            "returned_marketplace_value": 30000,
+        }
     ]
+
+
+def test_an_order_returned_whole_is_no_longer_counted(db):
+    setup.report_name(db)
+    kept = setup.order(db, "S-1", AFTER)
+    gone = setup.order(db, "S-2", AFTER)
+    setup.returned(db, gone, 1)
+    del kept
+
+    (row,) = queries.monthly_overview(db, Filters(from_period=NOV))
+    assert (row["orders"], row["marketplace_value"]) == (1, 120000)
+    assert row["average_order"] == 120000
+    (channel,) = queries.by_channel(db, Filters(from_period=NOV))
+    assert (channel["orders"], channel["quantity"]) == (1, 1)
+    (province,) = queries.by_province(db, Filters(from_period=NOV))
+    assert province["orders"] == 1
+    (product,) = queries.by_product(db, Filters(from_period=NOV))
+    assert product["quantity"] == 1
+    assert any("đã trừ hàng trả" in n for n in queries.data_notes(db, Filters()))
+
+
+def test_a_month_whose_only_order_was_returned_has_no_average(db):
+    setup.report_name(db)
+    setup.returned(db, setup.order(db, "S-1", AFTER), 1)
+    (row,) = queries.monthly_overview(db, Filters(from_period=NOV))
+    assert (row["orders"], row["marketplace_value"], row["average_order"]) == (0, 0, None)
 
 
 def test_filters_narrow_by_platform_shop_and_months(db, settings, tmp_path):

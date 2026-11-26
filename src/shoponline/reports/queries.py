@@ -4,6 +4,10 @@ history and system) and report_order_revenue (the three revenue figures per syst
 Every function takes the same Filters, so a page and its Excel export show the same numbers.
 Figures that history cannot give (invoice, money received) are None, never 0, for months
 without system orders.
+
+Issued returns come in as negative 'return' lines dated like the original order, so values are
+net of returns. An order counts only while its quantity in the filter stays above zero: an order
+returned whole is no longer counted, one returned in part still is.
 """
 
 from __future__ import annotations
@@ -48,6 +52,22 @@ def _where(f: Filters, params: dict, *, prefix: str = "") -> str:
     return " AND ".join(clauses)
 
 
+def _lines(f: Filters, params: dict) -> str:
+    """The filtered sale lines with `order_net`, the order's quantity over those lines, and
+    `counted_key`, the order to count (NULL once returns brought it to zero). History and system
+    keys never mix: a 'return' line belongs to the system order it comes from."""
+    return f"""
+        (SELECT l.*,
+                CASE WHEN SUM(l.quantity) OVER w > 0
+                     THEN (l.source = 'history')::text || ':' || l.order_key END AS counted_key
+         FROM report_sale_line l WHERE {_where(f, params, prefix="l.")}
+         WINDOW w AS (PARTITION BY l.source = 'history', l.order_key)) lines
+    """
+
+
+ORDERS = "COUNT(DISTINCT counted_key)"
+
+
 def _run(session: Session, sql: str, params: dict) -> list[dict]:
     return [dict(r) for r in session.execute(text(sql), params).mappings()]
 
@@ -65,8 +85,8 @@ def monthly_overview(session: Session, f: Filters) -> list[dict]:
         session,
         f"""
         SELECT period, SUM(customer_paid)::bigint AS marketplace_value,
-               COUNT(DISTINCT order_key) AS orders
-        FROM report_sale_line WHERE {_where(f, params)}
+               {ORDERS} AS orders
+        FROM {_lines(f, params)}
         GROUP BY period ORDER BY period
         """,
         params,
@@ -99,7 +119,8 @@ def monthly_overview(session: Session, f: Filters) -> list[dict]:
     rows = []
     for sale in sales:
         extra = revenue.get(sale["period"])
-        row = {**sale, "average_order": sale["marketplace_value"] // sale["orders"]}
+        orders = sale["orders"]
+        row = {**sale, "average_order": sale["marketplace_value"] // orders if orders else None}
         for key in (
             "invoice_value",
             "settled_value",
@@ -124,8 +145,8 @@ def by_channel(session: Session, f: Filters) -> list[dict]:
         SELECT platform, shop_code, division,
                SUM(quantity)::bigint AS quantity,
                SUM(customer_paid)::bigint AS marketplace_value,
-               COUNT(DISTINCT order_key) AS orders
-        FROM report_sale_line WHERE {_where(f, params)}
+               {ORDERS} AS orders
+        FROM {_lines(f, params)}
         GROUP BY platform, shop_code, division
         ORDER BY marketplace_value DESC
         """,
@@ -158,8 +179,8 @@ def by_province(session: Session, f: Filters) -> list[dict]:
         SELECT COALESCE(province, :unknown) AS province,
                SUM(quantity)::bigint AS quantity,
                SUM(customer_paid)::bigint AS marketplace_value,
-               COUNT(DISTINCT order_key) AS orders
-        FROM report_sale_line WHERE {_where(f, params)}
+               {ORDERS} AS orders
+        FROM {_lines(f, params)}
         GROUP BY 1
         ORDER BY (COALESCE(province, :unknown) = :unknown), marketplace_value DESC
         """,
@@ -168,16 +189,22 @@ def by_province(session: Session, f: Filters) -> list[dict]:
 
 
 def returns(session: Session, f: Filters) -> list[dict]:
-    """Issued return documents by month and reason (CANCEL / RETURN), system orders only."""
+    """Issued return documents by month of the order and reason (CANCEL / RETURN), system
+    orders only: the value at the invoice including VAT (the basis of the return rate) and at
+    the marketplace price (what the sales figures subtract)."""
     params: dict = {}
     return _run(
         session,
         f"""
         SELECT v.period, r.reason_kind,
-               COUNT(DISTINCT r.id) AS documents,
-               SUM(l.amount_returned)::bigint AS returned_value
+               COUNT(*) AS documents,
+               SUM(r.returned_net + r.returned_tax)::bigint AS returned_value,
+               SUM(COALESCE(m.value, 0))::bigint AS returned_marketplace_value
         FROM sales_return r
-        JOIN sales_return_line l ON l.return_id = r.id
+        LEFT JOIN (
+            SELECT return_id, SUM(customer_paid)::bigint AS value
+            FROM sales_return_sale_line GROUP BY return_id
+        ) m ON m.return_id = r.id
         JOIN report_order_revenue v ON v.sales_order_id = r.sales_order_id
         WHERE r.status = 'ISSUED' AND {_where(f, params, prefix="v.")}
         GROUP BY v.period, r.reason_kind
@@ -198,7 +225,8 @@ def data_notes(session: Session, f: Filters) -> list[str]:
                COUNT(*) FILTER (WHERE source = 'history'
                                 AND period >= :cutover_month) AS history_cutover_lines,
                COUNT(*) FILTER (WHERE source = 'system'
-                                AND period = :cutover_month) AS system_cutover_lines
+                                AND period = :cutover_month) AS system_cutover_lines,
+               COUNT(*) FILTER (WHERE source = 'return') AS return_lines
         FROM report_sale_line WHERE {_where(f, params)}
         """,
         {**params, "cutover_month": CUTOVER_MONTH},
@@ -207,6 +235,11 @@ def data_notes(session: Session, f: Filters) -> list[str]:
         notes.append(
             "Số liệu trước 11/11/2026 lấy từ file lịch sử của kế toán: chỉ có giá trị trên sàn, "
             "không có doanh thu hóa đơn và tiền thực nhận."
+        )
+    if counts["return_lines"]:
+        notes.append(
+            "Giá trị trên sàn và số đơn đã trừ hàng trả theo phiếu trả hàng (tính vào tháng đặt "
+            "đơn gốc); đơn trả cả đơn không còn được đếm. Tỷ lệ trả tính theo hóa đơn có thuế."
         )
     covers_cutover_month = (f.from_period is None or f.from_period <= CUTOVER_MONTH) and (
         f.to_period is None or f.to_period >= CUTOVER_MONTH
