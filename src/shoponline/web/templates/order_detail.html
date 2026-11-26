@@ -1,10 +1,11 @@
 {% extends "base.html" %}
-{% from "_macros.html" import page_header %}
+{% from "_macros.html" import page_header, return_flag %}
 {% block title %}Đơn {{ order.platform_order_id }}{% endblock %}
 {% block content %}
 {{ page_header('Đơn ' ~ order.platform ~ ' ' ~ order.platform_order_id, '', '/batches/' ~ order.order_batch_id, 'Lô ' ~ order.batch.processing_date.strftime('%d/%m/%Y')) }}
 <div class="card">
   <p><span class="tag s-{{ order.status }}">{{ STATUS_LABELS[order.status] }}</span>
+     {{ return_flag(flag, user.role == 'admin') }}
      {% if order.status_reason %}<span class="muted">{{ order.status_reason }}</span>{% endif %}</p>
   <p>Đặt lúc {{ order.ordered_at.strftime('%d/%m/%Y %H:%M') }} ·
      <a href="/batches/{{ order.order_batch_id }}">Lô {{ order.batch.processing_date.strftime('%d/%m/%Y') }}</a> ·
@@ -30,9 +31,12 @@
     {% endif %}
     {% if can_cancel %}
     <form method="post" action="/orders/{{ order.id }}/cancel" class="row" onsubmit="return confirm('Đánh dấu hủy đơn này?')">
-      <input type="text" name="reason" placeholder="Lý do hủy">
+      <input type="text" name="reason" placeholder="Lý do hủy" required>
       <button class="danger">Đánh dấu hủy</button>
     </form>
+    {% if order.status == 'DELIVERED' %}
+    <p class="muted">Đơn đã có DO nhưng chưa có hóa đơn: chỉ dùng khi DO đã hủy trong SAP.</p>
+    {% endif %}
     {% endif %}
   </div>
   {% endif %}

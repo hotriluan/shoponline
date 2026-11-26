@@ -11,6 +11,7 @@ from shoponline.db.models import (
     InvoiceItemText,
     SalesReturn,
     SalesReturnLine,
+    SalesReturnSaleLine,
     SkuMapping,
 )
 from shoponline.domain import states
@@ -271,4 +272,41 @@ def test_a_failure_while_rendering_removes_the_files_already_written(
     monkeypatch.setattr(service.return_request_workbook, "render", broken)
     with pytest.raises(RuntimeError, match="render failed"):
         issue(db, settings, order)
+    assert exports_dir(settings) == []
+
+
+def test_issue_records_what_the_return_takes_off_each_platform_line(db, settings, numbered):
+    order = factory.delivered_order(
+        db, lines=((factory.MATERIAL, 1, 60000), ("100002222", 2, 60000))
+    )
+    created = issue(db, settings, order, "RETURN", selection={20: 1})
+    second = next(i for i in order.items if i.material_number == "100002222")
+    assert [(s.sales_order_item_id, s.quantity, s.customer_paid) for s in created.sale_lines] == [
+        (second.id, 1, 30000)
+    ]
+
+
+def test_a_return_that_cannot_be_split_onto_the_platform_lines_takes_no_number(
+    db, settings, numbered
+):
+    order = factory.delivered_order(db, lines=((factory.MATERIAL, 2, 120000),))
+    order.items[0].quantity = 1
+    order.items.append(
+        order.items[0].__class__(
+            line_no=2,
+            product_name="P",
+            variation_name="V2",
+            quantity=1,
+            unit_price=50000,
+            unit_subsidy=0,
+            material_number=factory.MATERIAL,
+        )
+    )
+    db.flush()
+    draft = preview(db, settings, order, "RETURN", selection={10: 1})
+    assert isinstance(draft, Blocked) and "không chia đúng" in draft.reason
+    with pytest.raises(ReturnBlocked):
+        service.issue(db, settings, order.id, "RETURN", {10: 1}, Buyer(), "x", "admin")
+    assert db.scalar(select(func.count()).select_from(SalesReturn)) == 0
+    assert db.scalar(select(func.count()).select_from(SalesReturnSaleLine)) == 0
     assert exports_dir(settings) == []

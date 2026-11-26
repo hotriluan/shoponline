@@ -6,7 +6,7 @@ import json
 
 from sqlalchemy.orm import Session
 
-from shoponline.db.models import EventLog, SalesOrder
+from shoponline.db.models import AccountingSentDelivery, EventLog, SalesOrder, SapTaxInvoice
 
 NEW = "NEW"
 READY = "READY"
@@ -25,7 +25,8 @@ ALLOWED: dict[str, frozenset[str]] = {
     MAPPING_ERROR: frozenset({READY, NEED_REVIEW, SO_LINKED, CANCELLED}),
     NEED_REVIEW: frozenset({READY, MAPPING_ERROR, SO_LINKED, CANCELLED}),
     SO_LINKED: frozenset({DELIVERED, CANCELLED}),
-    DELIVERED: frozenset(),
+    # Only through cancel_order(): a delivered order may be cancelled while its DO has no invoice.
+    DELIVERED: frozenset({CANCELLED}),
     CANCELLED: frozenset(),
 }
 
@@ -65,14 +66,24 @@ def log_event(
 
 
 def transition(
-    session: Session, order: SalesOrder, new_status: str, actor: str, reason: str | None = None
+    session: Session,
+    order: SalesOrder,
+    new_status: str,
+    actor: str,
+    reason: str | None = None,
+    *,
+    invoice_checked: bool = False,
 ) -> bool:
-    """Move order to new_status. Returns False when the status is unchanged."""
+    """Move order to new_status. Returns False when the status is unchanged.
+
+    invoice_checked: set only by cancel_order(), which refuses a delivered order whose DO already
+    has an invoice; any other caller cancelling a delivered order is refused here."""
     old = order.status
     if old == new_status:
         order.status_reason = reason
         return False
-    if new_status not in ALLOWED.get(old, frozenset()):
+    unchecked = old == DELIVERED and new_status == CANCELLED and not invoice_checked
+    if unchecked or new_status not in ALLOWED.get(old, frozenset()):
         raise InvalidTransition(
             f"Không chuyển được đơn {order.platform_order_id} từ {old} sang {new_status}"
         )
@@ -87,3 +98,40 @@ def transition(
         detail={"from": old, "to": new_status, "reason": reason},
     )
     return True
+
+
+class CancelRefused(ValueError):
+    pass
+
+
+def can_cancel(session: Session, order: SalesOrder) -> bool:
+    """Open, SO_LINKED, or DELIVERED while the DO has no invoice in zrsd003."""
+    if CANCELLED not in ALLOWED.get(order.status, frozenset()):
+        return False
+    if order.status == DELIVERED:
+        return not (order.do_number and session.get(SapTaxInvoice, order.do_number))
+    return True
+
+
+def cancel_order(session: Session, order: SalesOrder, actor: str, reason: str) -> str | None:
+    """Mark an order cancelled. Returns a warning for the admin, or None.
+
+    A delivered order is cancelled only when its DO was cancelled in SAP before any invoice: an
+    invoiced order takes a return document instead."""
+    text = (reason or "").strip()
+    if not text:
+        raise CancelRefused("Nhập lý do hủy")
+    if order.status == DELIVERED and not can_cancel(session, order):
+        raise CancelRefused("Đơn đã có hóa đơn: lập phiếu trả hàng")
+    warning = None
+    if (
+        order.status == DELIVERED
+        and order.do_number
+        and session.get(AccountingSentDelivery, order.do_number) is not None
+    ):
+        warning = "DO đã gửi kế toán ở đợt đã chốt: báo kế toán bằng tay"
+    try:
+        transition(session, order, CANCELLED, actor, text, invoice_checked=True)
+    except InvalidTransition as exc:
+        raise CancelRefused(str(exc)) from exc
+    return warning

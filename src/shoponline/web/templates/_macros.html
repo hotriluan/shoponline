@@ -1,4 +1,4 @@
-{# Shared components. Import with: {% from "_macros.html" import page_header, card, stat, status_badge, empty_state %} #}
+{# Shared components. Import with: {% from "_macros.html" import page_header, card, stat, status_badge, empty_state, return_flag %} #}
 
 {% macro page_header(title, subtitle='', crumb_href='', crumb_label='') %}
 <div class="page-header">
@@ -25,6 +25,12 @@
 {# kind: "s" for order statuses, "j" for robot job statuses. #}
 {% macro status_badge(status, kind='s') %}
 <span class="tag {{ kind }}-{{ status }}">{{ (STATUS_LABELS if kind == 's' else JOB_LABELS).get(status, status) }}</span>
+{% endmacro %}
+
+{# A return document's label on an order; only admins get the link (the document shows the buyer). #}
+{% macro return_flag(flag, admin=false) %}
+{% if flag %}<span class="tag warn">{{ flag.label }}</span>
+<span class="muted">{% if admin %}<a href="/returns/{{ flag.return_id }}">{{ flag.doc_no }}</a>{% else %}{{ flag.doc_no }}{% endif %}</span>{% endif %}
 {% endmacro %}
 
 {% macro empty_state(text) %}

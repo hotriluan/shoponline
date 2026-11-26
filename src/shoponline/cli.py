@@ -547,6 +547,19 @@ def _cmd_return_number(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_return_sale_lines(_args: argparse.Namespace) -> int:
+    from shoponline.db.session import session_scope
+    from shoponline.returns import sale_lines
+
+    settings = load_settings()
+    with session_scope(settings.database_url) as session:
+        written, blocked = sale_lines.backfill(session)
+    print(f"Đã bổ sung dòng trừ cho {len(written)} phiếu.")
+    for doc_no, reason in blocked:
+        print(f"  Chưa bổ sung {doc_no}: {reason}")
+    return 1 if blocked else 0
+
+
 def main(argv: list[str] | None = None) -> int:
     for stream in (sys.stdout, sys.stderr):
         if hasattr(stream, "reconfigure"):
@@ -621,6 +634,15 @@ def main(argv: list[str] | None = None) -> int:
     )
     number_repair.add_argument("--year", type=int, default=0, help="Năm cần sửa (mặc định: nay)")
     number.set_defaults(func=_cmd_return_number)
+
+    sale = sub.add_parser(
+        "return-sale-lines", help="Dòng trừ theo giá sàn của phiếu trả hàng (file Shop Online)"
+    )
+    sale_actions = sale.add_subparsers(dest="action", required=True)
+    sale_actions.add_parser(
+        "backfill", help="Tính dòng trừ cho các phiếu lập trước khi có bảng này (chạy lại được)"
+    )
+    sale.set_defaults(func=_cmd_return_sale_lines)
 
     backup = sub.add_parser("backup", help="Sao lưu mã hóa (database, ứng dụng, toàn bộ)")
     backup_actions = backup.add_subparsers(dest="action", required=True)

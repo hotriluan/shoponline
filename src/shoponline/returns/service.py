@@ -29,13 +29,14 @@ from shoponline.db.models import (
     SalesOrder,
     SalesReturn,
     SalesReturnLine,
+    SalesReturnSaleLine,
     SapSoRef,
     SapTaxInvoice,
     SkuMapping,
 )
 from shoponline.domain import states
 from shoponline.exports import invoice_adjustment_doc, return_request_workbook
-from shoponline.returns import numbering
+from shoponline.returns import numbering, sale_lines
 from shoponline.returns.amounts import Blocked, InvoiceLines, invoice_lines, returned
 from shoponline.web.uploads import save_generated_bytes
 
@@ -98,6 +99,7 @@ class Preview:
     buyer_name: str
     buyer_address: str
     platform_name: str
+    sale_lines: tuple[sale_lines.SaleLine, ...]
     fingerprint: str
 
 
@@ -270,8 +272,24 @@ def build_preview(
         if selection is not None
         else {line.so_item_no: line.quantity for line in figures.lines},
     )
+    taken: list[sale_lines.SaleLine] = []
     if isinstance(chosen, Blocked):
         reasons += chosen.reasons
+    else:
+        returned_qty = {line.so_item_no: line.return_qty for line in chosen.lines}
+        split = sale_lines.split(
+            order.items,
+            (
+                sale_lines.ReturnedQuantity(
+                    line.material_number, line.quantity, returned_qty[line.so_item_no]
+                )
+                for line in figures.lines
+            ),
+        )
+        if isinstance(split, Blocked):
+            reasons += split.reasons
+        else:
+            taken = split
     if reasons:
         return Blocked(tuple(reasons), frozenset(codes))
 
@@ -313,6 +331,7 @@ def build_preview(
         ],
         "figures": [chosen.net, chosen.tax, figures.net, figures.tax, figures.vat_rate],
         "invoice": [invoice.tax_invoice_doc, invoice.billing_date, invoice.delivery, symbol],
+        "sale_lines": [(t.sales_order_item_id, t.quantity, t.customer_paid) for t in taken],
     }
     return Preview(
         order_id=order.id,
@@ -332,6 +351,7 @@ def build_preview(
         buyer_address=buyer_address,
         platform_name=PLATFORM_BRAND.get(order.platform)
         or (platform.display_name if platform else order.platform).title(),
+        sale_lines=tuple(taken),
         fingerprint=_fingerprint(fields),
     )
 
@@ -404,6 +424,14 @@ def issue(
             amount_returned=line.amount_returned,
         )
         for number, line in enumerate(preview.lines, start=1)
+    ]
+    sales_return.sale_lines = [
+        SalesReturnSaleLine(
+            sales_order_item_id=line.sales_order_item_id,
+            quantity=line.quantity,
+            customer_paid=line.customer_paid,
+        )
+        for line in preview.sale_lines
     ]
     session.add(sales_return)
     try:

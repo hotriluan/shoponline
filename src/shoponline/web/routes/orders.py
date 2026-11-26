@@ -13,6 +13,7 @@ from shoponline.db.models import (
 from shoponline.domain import shops, states
 from shoponline.domain.expected_value import expected_so_value
 from shoponline.importers.order_import import evaluate_order
+from shoponline.returns import flags
 from shoponline.web.app import current_user, flash, get_db, redirect, render, require_admin
 
 router = APIRouter()
@@ -66,9 +67,10 @@ def order_detail(
         customer=customer,
         events=events,
         issued_return=issued_return,
+        flag=flags.of(db, [order.id]).get(order.id),
         can_return=can_return,
         expected=expected_so_value(order.items),
-        can_cancel=states.CANCELLED in states.ALLOWED[order.status],
+        can_cancel=states.can_cancel(db, order),
         shop_choices=shops.active_shops(db, order.platform),
     )
 
@@ -112,12 +114,14 @@ def cancel_order(
 ):
     order = _order(db, order_id)
     try:
-        states.transition(db, order, states.CANCELLED, user.username, reason.strip() or "Admin hủy")
-    except states.InvalidTransition as exc:
+        warning = states.cancel_order(db, order, user.username, reason)
+    except states.CancelRefused as exc:
         flash(request, str(exc), "error")
         return redirect(f"/orders/{order_id}")
     db.commit()
     flash(request, f"Đã đánh dấu hủy đơn {order.platform_order_id}.")
+    if warning:
+        flash(request, warning, "error")
     return redirect(f"/orders/{order_id}")
 
 

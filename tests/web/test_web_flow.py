@@ -1,5 +1,5 @@
 import hashlib
-from datetime import date
+from datetime import date, datetime
 from io import BytesIO
 from pathlib import Path
 
@@ -294,6 +294,52 @@ def test_cancel_order(app, db, tmp_path):
     db.refresh(order)
     assert order.status == states.CANCELLED
     assert "khách hủy" in client.get(f"/orders/{order.id}").text
+
+
+def test_cancel_without_a_reason_is_refused(app, db, tmp_path):
+    client = _client(app, "admin", "admin-password")
+    shopee = shopee_orders_file(tmp_path / "s.xlsx", [shopee_row("A1")])
+    _upload(client, "/imports", shopee, platform="SHOPEE", processing_date="2026-11-11")
+    order = db.scalar(select(SalesOrder))
+    page = client.post(f"/orders/{order.id}/cancel", data={"reason": " "})
+    db.refresh(order)
+    assert order.status != states.CANCELLED and "Nhập lý do hủy" in page.text
+
+
+def test_an_invoiced_delivered_order_has_no_cancel_button_and_is_refused(app, db):
+    from tests import sales_history_setup as setup
+
+    order = setup.order(db, "INV", datetime(2026, 11, 11))
+    client = _client(app, "admin", "admin-password")
+    assert "Đánh dấu hủy" not in client.get(f"/orders/{order.id}").text
+    page = client.post(f"/orders/{order.id}/cancel", data={"reason": "x"})
+    db.refresh(order)
+    assert order.status == states.DELIVERED and "lập phiếu trả hàng" in page.text
+
+
+def test_an_uninvoiced_delivered_order_can_be_cancelled_from_its_page(app, db):
+    from tests import sales_history_setup as setup
+
+    order = setup.order(db, "NOINV", datetime(2026, 11, 11), invoice=None)
+    client = _client(app, "admin", "admin-password")
+    page = client.get(f"/orders/{order.id}").text
+    assert "Đánh dấu hủy" in page and "DO đã hủy trong SAP" in page
+    client.post(f"/orders/{order.id}/cancel", data={"reason": "DO đã hủy"})
+    db.refresh(order)
+    assert order.status == states.CANCELLED
+
+
+def test_the_order_page_shows_the_return_label_and_links_it_for_admins_only(app, db):
+    from tests.returns import factory
+
+    order = factory.delivered_order(db)
+    created = factory.sales_return(db, order, year=2026, seq=80)
+    admin = _client(app, "admin", "admin-password").get(f"/orders/{order.id}").text
+    viewer = _client(app, "viewer", "viewer-password").get(f"/orders/{order.id}").text
+    linked = f'<a href="/returns/{created.id}">{created.doc_no}</a>'
+    assert "Hủy sau HĐ" in admin and linked in admin
+    assert "Hủy sau HĐ" in viewer and linked not in viewer
+    assert f'<span class="muted">{created.doc_no}</span>' in viewer
 
 
 def _three_unmapped_orders(client, tmp_path):

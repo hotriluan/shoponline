@@ -12,6 +12,7 @@ def committed(db_engine):
 
     yield db_engine
     tables = (
+        "sales_return_sale_line",
         "sales_return_line",
         "sales_return",
         "document_counter",

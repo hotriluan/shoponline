@@ -596,6 +596,9 @@ class SalesReturn(Base):
         cascade="all, delete-orphan",
         order_by="SalesReturnLine.line_no",
     )
+    sale_lines: Mapped[list[SalesReturnSaleLine]] = relationship(
+        cascade="all, delete-orphan", order_by="SalesReturnSaleLine.sales_order_item_id"
+    )
 
 
 class SalesReturnLine(Base):
@@ -620,6 +623,61 @@ class SalesReturnLine(Base):
     amount_returned: Mapped[int] = mapped_column(BigInteger)
 
     sales_return: Mapped[SalesReturn] = relationship(back_populates="lines")
+
+
+class SalesReturnSaleLine(Base):
+    """What a return takes off one platform order line, at the marketplace price (unit price less
+    the platform subsidy), so the Shop Online file and the reports subtract the same figures."""
+
+    __tablename__ = "sales_return_sale_line"
+    __table_args__ = (
+        CheckConstraint("quantity > 0", name="ck_sales_return_sale_line_quantity"),
+        CheckConstraint("customer_paid >= 0", name="ck_sales_return_sale_line_paid"),
+    )
+
+    return_id: Mapped[int] = mapped_column(
+        ForeignKey("sales_return.id", ondelete="CASCADE"), primary_key=True
+    )
+    sales_order_item_id: Mapped[int] = mapped_column(
+        ForeignKey("sales_order_item.id"), primary_key=True
+    )
+    quantity: Mapped[int] = mapped_column(Integer)
+    customer_paid: Mapped[int] = mapped_column(BigInteger)
+
+    item: Mapped[SalesOrderItem] = relationship()
+
+
+class SalesHistoryFileReturn(Base):
+    """A return's rows in one downloaded Shop Online file: ISSUE are the negative rows, VOID the
+    rows that reverse them after the return was cancelled."""
+
+    __tablename__ = "sales_history_file_return"
+    __table_args__ = (
+        CheckConstraint("kind IN ('ISSUE', 'VOID')", name="ck_sales_history_file_return_kind"),
+    )
+
+    generated_file_id: Mapped[int] = mapped_column(
+        ForeignKey("generated_file.id"), primary_key=True
+    )
+    return_id: Mapped[int] = mapped_column(ForeignKey("sales_return.id"), primary_key=True)
+    kind: Mapped[str] = mapped_column(String(10), primary_key=True)
+
+
+class SalesReturnHistoryExported(Base):
+    """A return's rows confirmed as pasted into the history file; at most once per kind."""
+
+    __tablename__ = "sales_return_history_exported"
+    __table_args__ = (
+        CheckConstraint("kind IN ('ISSUE', 'VOID')", name="ck_sales_return_history_exported_kind"),
+    )
+
+    return_id: Mapped[int] = mapped_column(ForeignKey("sales_return.id"), primary_key=True)
+    kind: Mapped[str] = mapped_column(String(10), primary_key=True)
+    generated_file_id: Mapped[int] = mapped_column(ForeignKey("generated_file.id"), index=True)
+    confirmed_by: Mapped[str] = mapped_column(String(50))
+    confirmed_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
 
 
 # Schema ops: operational records that must survive a restore of schema public on the same
