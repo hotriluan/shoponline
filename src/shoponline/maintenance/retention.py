@@ -47,7 +47,9 @@ from shoponline.db.models import (
     ImportBatch,
     SalesHistoryExported,
     SalesHistoryFileOrder,
+    SalesHistoryFileReturn,
     SalesReturn,
+    SalesReturnHistoryExported,
     SapJob,
 )
 from shoponline.domain import states
@@ -110,6 +112,18 @@ def kept_files(session: Session, settings: Settings, now: datetime | None = None
         )
         .where(SalesHistoryExported.sales_order_id.is_(None))
     )
+    unconfirmed_returns = (
+        select(GeneratedFile.stored_path)
+        .join(SalesHistoryFileReturn, SalesHistoryFileReturn.generated_file_id == GeneratedFile.id)
+        .outerjoin(
+            SalesReturnHistoryExported,
+            and_(
+                SalesReturnHistoryExported.return_id == SalesHistoryFileReturn.return_id,
+                SalesReturnHistoryExported.kind == SalesHistoryFileReturn.kind,
+            ),
+        )
+        .where(SalesReturnHistoryExported.return_id.is_(None))
+    )
     # Return documents are kept by the rows that point at them, not by their kind: reverting the
     # code that made them, or a kind this code no longer knows, must not let the sweep delete them.
     returns = select(GeneratedFile.stored_path).where(
@@ -120,7 +134,16 @@ def kept_files(session: Session, settings: Settings, now: datetime | None = None
     )
     history = select(ImportBatch.stored_path).where(ImportBatch.kind == "history_sales")
     paths: set[Path] = set()
-    for stmt in (attached, read, waiting, accounting, unconfirmed, returns, history):
+    for stmt in (
+        attached,
+        read,
+        waiting,
+        accounting,
+        unconfirmed,
+        unconfirmed_returns,
+        returns,
+        history,
+    ):
         paths.update(Path(p).resolve() for p in session.scalars(stmt))
     return paths
 

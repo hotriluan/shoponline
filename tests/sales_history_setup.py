@@ -150,3 +150,89 @@ def tax_invoice(db: Session, delivery: str, number: str) -> SapTaxInvoice:
     db.add(row)
     db.flush()
     return row
+
+
+def returned(
+    db: Session,
+    order: SalesOrder,
+    seq: int,
+    *,
+    taken: dict[int, int] | None = None,
+    reason: str = "CANCEL",
+    status: str = "ISSUED",
+):
+    """An issued return of the order with its sale lines. taken: line_no -> quantity returned;
+    None returns the whole order."""
+    from shoponline.db.models import SalesReturn, SalesReturnSaleLine
+
+    quantities = taken or {i.line_no: i.quantity for i in order.items}
+    full = taken is None
+    created = SalesReturn(
+        sales_order_id=order.id,
+        reason_kind=reason,
+        status=status,
+        doc_year=2026,
+        doc_seq=seq,
+        doc_no=f"{seq:03d}/11.2026 ALK-KH.STMĐT",
+        full_return=full,
+        delivery=order.do_number,
+        tax_invoice_doc=f"HD{order.platform_order_id}",
+        invoice_symbol="1C26TAL",
+        billing_date=date(2026, 11, 13),
+        invoice_net=111111,
+        invoice_tax=8889,
+        vat_rate=8,
+        returned_net=111111,
+        returned_tax=8889,
+        buyer_name="Nguyễn Văn A",
+        buyer_address=ADDRESS,
+        platform_name="Shopee",
+        issued_by="t",
+    )
+    created.sale_lines = [
+        SalesReturnSaleLine(
+            sales_order_item_id=item.id,
+            quantity=quantities[item.line_no],
+            customer_paid=(item.unit_price - item.unit_subsidy) * quantities[item.line_no],
+        )
+        for item in order.items
+        if quantities.get(item.line_no)
+    ]
+    db.add(created)
+    db.flush()
+    return created
+
+
+def pasted_order(db: Session, order: SalesOrder, file_id: int) -> None:
+    from shoponline.db.models import SalesHistoryExported
+
+    db.add(
+        SalesHistoryExported(sales_order_id=order.id, generated_file_id=file_id, confirmed_by="t")
+    )
+    db.flush()
+
+
+def pasted_return(db: Session, sales_return, kind: str, file_id: int) -> None:
+    from shoponline.db.models import SalesReturnHistoryExported
+
+    db.add(
+        SalesReturnHistoryExported(
+            return_id=sales_return.id, kind=kind, generated_file_id=file_id, confirmed_by="t"
+        )
+    )
+    db.flush()
+
+
+def history_file(db: Session) -> int:
+    from shoponline.db.models import GeneratedFile
+
+    record = GeneratedFile(
+        kind="sales_history",
+        file_name="f.xlsx",
+        stored_path="f.xlsx",
+        sha256="0" * 64,
+        created_by="t",
+    )
+    db.add(record)
+    db.flush()
+    return record.id

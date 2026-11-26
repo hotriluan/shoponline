@@ -1,7 +1,8 @@
 """Rows for the accountants' Shop Online history file: preview, download, confirm as pasted.
 
-A downloaded file remembers its orders (sales_history_file_order). Confirming the file moves
-them into sales_history_exported, so the next download leaves them out; unconfirming takes back
+A downloaded file remembers its orders (sales_history_file_order) and its return rows
+(sales_history_file_return). Confirming the file moves them into sales_history_exported and
+sales_return_history_exported, so the next download leaves them out; unconfirming takes back
 exactly what that file confirmed.
 """
 
@@ -26,7 +27,7 @@ from fastapi import (
     UploadFile,
 )
 from fastapi.responses import FileResponse
-from sqlalchemy import and_, delete, exists, func, literal, select
+from sqlalchemy import and_, delete, exists, func, literal, or_, select, tuple_
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import Session
 
@@ -37,7 +38,10 @@ from shoponline.db.models import (
     GeneratedFile,
     SalesHistoryExported,
     SalesHistoryFileOrder,
+    SalesHistoryFileReturn,
     SalesOrder,
+    SalesReturn,
+    SalesReturnHistoryExported,
 )
 from shoponline.domain import states
 from shoponline.exports.sales_history_workbook import (
@@ -46,6 +50,7 @@ from shoponline.exports.sales_history_workbook import (
     REPORT_NAME,
     SETTLEMENT,
     TAX_INVOICE,
+    VOID,
     HistoryRows,
     build_history_workbook,
     collect_all_rows,
@@ -160,11 +165,27 @@ def _recent_files(request: Request, db: Session) -> tuple[Page, list[dict]]:
             .group_by(SalesHistoryExported.generated_file_id)
         ).all()
     )
+    returns = dict(
+        db.execute(
+            select(SalesHistoryFileReturn.generated_file_id, func.count())
+            .where(SalesHistoryFileReturn.generated_file_id.in_(ids))
+            .group_by(SalesHistoryFileReturn.generated_file_id)
+        ).all()
+    )
+    returns_confirmed = dict(
+        db.execute(
+            select(SalesReturnHistoryExported.generated_file_id, func.count())
+            .where(SalesReturnHistoryExported.generated_file_id.in_(ids))
+            .group_by(SalesReturnHistoryExported.generated_file_id)
+        ).all()
+    )
     return page, [
         dict(
             file=f,
             orders=in_file.get(f.id, 0),
             confirmed=confirmed.get(f.id, 0),
+            returns=returns.get(f.id, 0),
+            returns_confirmed=returns_confirmed.get(f.id, 0),
             stored=Path(f.stored_path).is_file(),
         )
         for f in files
@@ -203,6 +224,8 @@ def sales_history_page(
         orders=len(result.order_ids),
         draft_orders=len(result.order_ids) + sum(is_draftable(b.reasons) for b in result.blocked),
         lines=len(result.rows),
+        return_docs=len(result.return_ids),
+        return_lines=len(result.return_rows),
         blocked=blocked,
         waiting_settlement=waiting_settlement,
         settlement_count=settlement_count,
@@ -226,19 +249,19 @@ def download_history_file(
     month, _, until = _month_bounds(month)
     back = _back(month)
     result = collect_rows(db, until)
-    if not result.rows:
+    if not result.all_rows:
         if result.blocked:
             message = "Chưa có đơn nào sẵn sàng xuất: các đơn còn lại đang chờ hoặc bị chặn."
         else:
             message = "Không có đơn nào chờ xuất."
         flash(request, message, "error")
         return redirect(back)
-    overlapping = _unconfirmed_files_holding(db, result.order_ids)
+    overlapping = _unconfirmed_files_holding(db, result.order_ids, result.return_ids)
     file_name = history_file_name(today_vn())
     record = save_generated(
         db,
         request.app.state.settings,
-        build_history_workbook(result.rows),
+        build_history_workbook(result.all_rows),
         file_name,
         KIND,
         user.username,
@@ -246,6 +269,10 @@ def download_history_file(
     db.add_all(
         SalesHistoryFileOrder(generated_file_id=record.id, sales_order_id=order_id)
         for order_id in result.order_ids
+    )
+    db.add_all(
+        SalesHistoryFileReturn(generated_file_id=record.id, return_id=return_id, kind=kind)
+        for return_id, kind in result.return_ids
     )
     db.commit()
     if overlapping:
@@ -272,11 +299,11 @@ def download_draft_file(
     """
     month, _, until = _month_bounds(month)
     result = collect_rows(db, until, draft=True)
-    if not result.rows:
+    if not result.all_rows:
         flash(request, "Không có đơn nào để xuất nháp.", "error")
         return redirect(_back(month))
     return _xlsx_response(
-        build_history_workbook(result.rows, draft=True), history_draft_file_name(today_vn())
+        build_history_workbook(result.all_rows, draft=True), history_draft_file_name(today_vn())
     )
 
 
@@ -412,18 +439,32 @@ async def upload_settlement(
 
 
 def _unconfirmed_files_holding(
-    db: Session, order_ids: Sequence[int], *, besides: int | None = None
+    db: Session,
+    order_ids: Sequence[int],
+    return_keys: Sequence[tuple[int, str]] = (),
+    *,
+    besides: int | None = None,
 ) -> list[int]:
-    """Ids of history files with no confirmed order that hold any of these orders."""
+    """Ids of history files with nothing confirmed that hold any of these orders or return rows
+    (return id, ISSUE | VOID)."""
+    holds_order = exists().where(
+        SalesHistoryFileOrder.generated_file_id == GeneratedFile.id,
+        SalesHistoryFileOrder.sales_order_id.in_(order_ids),
+    )
+    holds_return = exists().where(
+        SalesHistoryFileReturn.generated_file_id == GeneratedFile.id,
+        tuple_(SalesHistoryFileReturn.return_id, SalesHistoryFileReturn.kind).in_(
+            list(return_keys)
+        ),
+    )
     stmt = (
         select(GeneratedFile.id)
-        .join(SalesHistoryFileOrder, SalesHistoryFileOrder.generated_file_id == GeneratedFile.id)
         .where(
             GeneratedFile.kind == KIND,
-            SalesHistoryFileOrder.sales_order_id.in_(order_ids),
+            or_(holds_order, holds_return) if return_keys else holds_order,
             ~exists().where(SalesHistoryExported.generated_file_id == GeneratedFile.id),
+            ~exists().where(SalesReturnHistoryExported.generated_file_id == GeneratedFile.id),
         )
-        .distinct()
         .order_by(GeneratedFile.id)
     )
     if besides is not None:
@@ -431,11 +472,25 @@ def _unconfirmed_files_holding(
     return list(db.scalars(stmt))
 
 
+def _returns_in(db: Session, file_id: int) -> list[tuple[int, str]]:
+    return [
+        (return_id, kind)
+        for return_id, kind in db.execute(
+            select(SalesHistoryFileReturn.return_id, SalesHistoryFileReturn.kind).where(
+                SalesHistoryFileReturn.generated_file_id == file_id
+            )
+        )
+    ]
+
+
 def _drop_unconfirmed_file(db: Session, actor: str, record: GeneratedFile, **detail) -> str:
     """Delete a history file that was never confirmed and its order list; returns its path.
     The caller commits, then removes the stored file."""
     db.execute(
         delete(SalesHistoryFileOrder).where(SalesHistoryFileOrder.generated_file_id == record.id)
+    )
+    db.execute(
+        delete(SalesHistoryFileReturn).where(SalesHistoryFileReturn.generated_file_id == record.id)
     )
     path = record.stored_path
     states.log_event(
@@ -494,6 +549,23 @@ def confirm_file(
         ).all()
     )
     skipped = total - confirmed
+    returns_in_file = select(
+        SalesHistoryFileReturn.return_id,
+        SalesHistoryFileReturn.kind,
+        literal(record.id),
+        literal(user.username),
+    ).where(SalesHistoryFileReturn.generated_file_id == record.id)
+    # Return rows already confirmed through another file keep that file, like orders.
+    returns_confirmed = len(
+        db.execute(
+            insert(SalesReturnHistoryExported)
+            .from_select(
+                ["return_id", "kind", "generated_file_id", "confirmed_by"], returns_in_file
+            )
+            .on_conflict_do_nothing(index_elements=["return_id", "kind"])
+            .returning(SalesReturnHistoryExported.return_id)
+        ).all()
+    )
     in_this_file = list(
         db.scalars(
             select(SalesHistoryFileOrder.sales_order_id).where(
@@ -501,6 +573,7 @@ def confirm_file(
             )
         )
     )
+    returns_here = _returns_in(db, record.id)
     # Another file never confirmed that holds the same orders would paste them a second time:
     # drop it (it was never recorded as pasted, so nothing is lost; its other orders go into the
     # next download).
@@ -509,7 +582,7 @@ def confirm_file(
         for other in db.scalars(
             select(GeneratedFile).where(
                 GeneratedFile.id.in_(
-                    _unconfirmed_files_holding(db, in_this_file, besides=record.id)
+                    _unconfirmed_files_holding(db, in_this_file, returns_here, besides=record.id)
                 )
             )
         )
@@ -518,24 +591,36 @@ def confirm_file(
         db,
         user.username,
         "sales_history_confirmed",
-        detail={"file_id": record.id, "confirmed": confirmed, "skipped": skipped},
+        detail={
+            "file_id": record.id,
+            "confirmed": confirmed,
+            "skipped": skipped,
+            "returns_confirmed": returns_confirmed,
+        },
     )
     db.commit()
-    # This file, and any other file sharing its orders, goes once all its orders are confirmed.
+    # This file, and any other file sharing its orders, goes once all its rows are confirmed.
     sharing = select(SalesHistoryFileOrder.sales_order_id).where(
         SalesHistoryFileOrder.generated_file_id == record.id
     )
-    paths = db.scalars(
-        select(GeneratedFile.stored_path)
-        .join(SalesHistoryFileOrder, SalesHistoryFileOrder.generated_file_id == GeneratedFile.id)
-        .where(SalesHistoryFileOrder.sales_order_id.in_(sharing))
-        .distinct()
-    ).all()
+    paths = [
+        record.stored_path,
+        *db.scalars(
+            select(GeneratedFile.stored_path)
+            .join(
+                SalesHistoryFileOrder, SalesHistoryFileOrder.generated_file_id == GeneratedFile.id
+            )
+            .where(SalesHistoryFileOrder.sales_order_id.in_(sharing))
+            .distinct()
+        ).all(),
+    ]
     retention.discard_unused(db, request.app.state.settings, [*paths, *superseded])
     note = f" Đã xóa {len(superseded)} file chưa xác nhận chứa cùng đơn." if superseded else ""
+    returned = f", {returns_confirmed} phiếu trả hàng" if returns_here else ""
     flash(
         request,
-        f"Đã xác nhận {confirmed} đơn, bỏ qua {skipped} đơn đã xác nhận ở file khác.{note}",
+        f"Đã xác nhận {confirmed} đơn{returned}, bỏ qua {skipped} đơn đã xác nhận ở file khác."
+        f"{note}",
     )
     return redirect("/sales-history")
 
@@ -572,17 +657,53 @@ def unconfirm_file(
             "error",
         )
         return redirect("/sales-history")
+    # A reversal pasted later stands on these negative rows: that file comes off first.
+    issued_here = select(SalesReturnHistoryExported.return_id).where(
+        SalesReturnHistoryExported.generated_file_id == record.id,
+        SalesReturnHistoryExported.kind == "ISSUE",
+    )
+    reversed_later = db.execute(
+        select(SalesReturn.doc_no, GeneratedFile.file_name)
+        .join(SalesReturnHistoryExported, SalesReturnHistoryExported.return_id == SalesReturn.id)
+        .join(GeneratedFile, GeneratedFile.id == SalesReturnHistoryExported.generated_file_id)
+        .where(
+            SalesReturnHistoryExported.kind == VOID,
+            SalesReturnHistoryExported.return_id.in_(issued_here),
+            SalesReturnHistoryExported.generated_file_id != record.id,
+        )
+        .order_by(SalesReturn.doc_no)
+    ).all()
+    if reversed_later:
+        flash(
+            request,
+            "Không gỡ xác nhận được: dòng đảo của phiếu "
+            + ", ".join(doc for doc, _ in reversed_later)
+            + " đã xác nhận ở file sau ("
+            + ", ".join(dict.fromkeys(name for _, name in reversed_later))
+            + "); gỡ xác nhận file đó trước.",
+            "error",
+        )
+        return redirect("/sales-history")
     removed = db.execute(
         delete(SalesHistoryExported).where(SalesHistoryExported.generated_file_id == record.id)
+    ).rowcount
+    returns_removed = db.execute(
+        delete(SalesReturnHistoryExported).where(
+            SalesReturnHistoryExported.generated_file_id == record.id
+        )
     ).rowcount
     states.log_event(
         db,
         user.username,
         "sales_history_unconfirmed",
-        detail={"file_id": record.id, "removed": removed},
+        detail={"file_id": record.id, "removed": removed, "returns_removed": returns_removed},
     )
     db.commit()
-    flash(request, f"Đã gỡ xác nhận {removed} đơn; các đơn này sẽ có lại trong lần xuất sau.")
+    returned = f" và {returns_removed} phiếu trả hàng" if returns_removed else ""
+    flash(
+        request,
+        f"Đã gỡ xác nhận {removed} đơn{returned}; các dòng này sẽ có lại trong lần xuất sau.",
+    )
     return redirect("/sales-history")
 
 
@@ -601,6 +722,10 @@ def delete_file(
         select(func.count())
         .select_from(SalesHistoryExported)
         .where(SalesHistoryExported.generated_file_id == record.id)
+    ) or db.scalar(
+        select(func.count())
+        .select_from(SalesReturnHistoryExported)
+        .where(SalesReturnHistoryExported.generated_file_id == record.id)
     )
     if confirmed:
         flash(request, "File đã xác nhận đã dán: gỡ xác nhận trước khi xóa.", "error")
