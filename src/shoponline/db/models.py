@@ -118,7 +118,10 @@ class OrderBatch(Base):
 
 class SalesOrder(Base):
     __tablename__ = "sales_order"
-    __table_args__ = (UniqueConstraint("platform", "platform_order_id"),)
+    __table_args__ = (
+        UniqueConstraint("platform", "platform_order_id"),
+        Index("ix_sales_order_platform_order_id_upper", func.upper(text("platform_order_id"))),
+    )
 
     id: Mapped[int] = mapped_column(primary_key=True)
     platform: Mapped[str] = mapped_column(ForeignKey("platform_setting.platform"))
@@ -130,7 +133,7 @@ class SalesOrder(Base):
     status_reason: Mapped[str | None] = mapped_column(Text)
     review_note: Mapped[str | None] = mapped_column(Text)
     so_number: Mapped[str | None] = mapped_column(String(20), index=True)
-    do_number: Mapped[str | None] = mapped_column(String(20))
+    do_number: Mapped[str | None] = mapped_column(String(20), index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
@@ -294,6 +297,9 @@ class SapTaxInvoice(Base):
     """The tax invoice of one platform delivery, as seen in zrsd003 (one invoice per DO)."""
 
     __tablename__ = "sap_tax_invoice"
+    __table_args__ = (
+        Index("ix_sap_tax_invoice_doc_trimmed", func.ltrim(text("tax_invoice_doc"), "0")),
+    )
 
     delivery: Mapped[str] = mapped_column(String(20), primary_key=True)
     tax_invoice_doc: Mapped[str] = mapped_column(String(20))

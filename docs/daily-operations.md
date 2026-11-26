@@ -100,9 +100,20 @@ Sau khi phát hành, đơn mang nhãn **Hủy sau HĐ** (hủy cả đơn), **Tr
 - **Báo cáo:** nhóm **Báo cáo** ở đầu menu; chọn khoảng tháng, sàn, shop rồi bấm Xem. **Tải Excel** trả đúng bảng đang xem kèm bộ lọc và ghi chú dữ liệu. Ghi chú dưới tiêu đề nói số liệu nào còn thiếu (ví dụ doanh thu hóa đơn và tiền thực nhận chỉ có từ 11/11/2026). Giá trị trên sàn và số đơn đã trừ hàng trả theo phiếu trả hàng, tính vào tháng đặt đơn gốc, nên khớp với file Shop Online theo tháng; đơn trả cả đơn không còn được đếm. Tỷ lệ trả = giá trị trả theo hóa đơn có thuế / doanh thu hóa đơn; trang **Trả hàng** ghi cả giá trị theo hóa đơn và theo giá trên sàn. Số đơn và giá trị của các tháng có phiếu trả vì vậy nhỏ hơn số đã xem trước bản này.
 - **Quy đổi tỉnh (admin):** dòng "Chưa xác định" của báo cáo theo tỉnh là các tên huyện chưa biết thuộc tỉnh nào. Mở **Quy đổi tỉnh**, chọn tỉnh cho từng tên rồi Lưu; báo cáo đổi ngay.
 
+## Tra cứu nhanh đơn hàng
+
+Ô **Tra cứu** nằm trên cùng thanh menu (cạnh nút ☰ khi menu đang thu gọn, trên thanh đầu trang với màn hình hẹp). Nhấn `/` ở bất kỳ trang nào, ngoài một ô nhập, để đưa con trỏ vào ô. Dán một trong các loại mã sau rồi nhấn Enter:
+
+- mã đơn của sàn (không phân biệt hoa thường, khoảng trắng hoặc tab thừa được bỏ);
+- số hóa đơn VAT, có hay không có số 0 ở đầu đều được;
+- số SO hoặc số DO;
+- số phiếu trả hàng, đầy đủ hoặc chỉ phần đầu `NNN/MM.YYYY`; phiếu đã hủy vẫn tìm được và được ghi "đã hủy".
+
+Khớp đúng một đơn thì mở thẳng trang đơn. Khớp nhiều đơn (ví dụ cùng mã trên hai sàn) thì hiện danh sách; cột **Khớp theo** cho biết mã đã khớp loại nào. Không khớp đủ mã mà từ khóa có từ 4 ký tự thì hệ thống thử khớp một phần theo mã đơn, SO, DO (tối đa 50 đơn, nhãn "Khớp một phần") và không tự mở đơn nào. Không có kết quả thì trang báo "Không tìm thấy" và giữ từ khóa. Ô này không tìm theo tên khách, số điện thoại, sản phẩm hay số billing SAP.
+
 ## Duyệt bảng dài
 
-Mọi bảng có dòng tiêu đề đều bấm được vào tên cột để sắp xếp (lần 1 tăng dần, lần 2 giảm dần, lần 3 về thứ tự gốc). Bảng từ 8 dòng trở lên có thêm ô **Tìm trong bảng** (không phân biệt hoa thường và dấu), ô chọn lọc ngay dưới tiêu đề cho cột chỉ có vài giá trị (sàn, trạng thái…), nút **Xóa bộ lọc**, và phân trang 10/25/50/100 dòng (lựa chọn được nhớ trên trình duyệt). Các dòng của cùng một đơn (đơn nhiều sản phẩm) luôn đi cùng nhau. Các danh sách lịch sử (Lô đơn, khách hàng theo sàn, hàng đợi robot, đợt gửi kế toán, lần tải báo cáo SAP, file Shop Online đã tải) được tìm và phân trang ngay trên máy chủ: ô **Tìm** quét toàn bộ dữ liệu cũ (không chỉ trang đang xem), có chọn 10/25/50/100 dòng/trang và liên kết số trang; tìm không phân biệt hoa thường nhưng phân biệt dấu. Ở các bảng này bấm tên cột chỉ sắp xếp các dòng của trang đang xem.
+Mọi bảng có dòng tiêu đề đều bấm được vào tên cột để sắp xếp (lần 1 tăng dần, lần 2 giảm dần, lần 3 về thứ tự gốc). Bảng từ 8 dòng trở lên có thêm ô **Tìm trong bảng** (không phân biệt hoa thường và dấu), ô chọn lọc ngay dưới tiêu đề cho cột chỉ có vài giá trị (sàn, trạng thái…), nút **Xóa bộ lọc**, và phân trang 10/25/50/100 dòng (lựa chọn được nhớ trên trình duyệt). Các dòng của cùng một đơn (đơn nhiều sản phẩm) luôn đi cùng nhau. Các danh sách lịch sử (Lô đơn, khách hàng theo sàn, hàng đợi robot, đợt gửi kế toán, lần tải báo cáo SAP, file Shop Online đã tải) được tìm và phân trang ngay trên máy chủ: ô **Tìm** quét toàn bộ dữ liệu cũ (không chỉ trang đang xem; muốn tìm một đơn theo mã thì dùng ô **Tra cứu** ở menu), có chọn 10/25/50/100 dòng/trang và liên kết số trang; tìm không phân biệt hoa thường nhưng phân biệt dấu. Ở các bảng này bấm tên cột chỉ sắp xếp các dòng của trang đang xem.
 
 ## Khi có sự cố
 

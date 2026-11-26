@@ -9,18 +9,22 @@
 <link rel="stylesheet" href="/static/app.css?v={{ static_version('app.css') }}">
 <script src="/static/app.js?v={{ static_version('app.js') }}" defer></script>
 </head>
+{% from "_macros.html" import quick_search %}
+{% set lookup = request.query_params.get("q", "") if request.url.path == "/search" else "" %}
 <body>
 <div class="app{{ '' if user else ' single' }}">
   {% if user %}
   <div class="topbar">
     <button type="button" class="menu-btn" data-nav-toggle aria-expanded="false" aria-controls="sidebar" aria-label="Mở menu">☰</button>
     <strong>Shop online</strong>
+    {{ quick_search(lookup, "in-topbar") }}
   </div>
   <aside class="sidebar" id="sidebar">
     <div class="brand-row">
       <a class="brand" href="/">Shop online</a>
       <button type="button" class="nav-collapse" data-nav-collapse aria-controls="sidebar" aria-label="Ẩn menu" title="Ẩn menu">«</button>
     </div>
+    {{ quick_search(lookup) }}
     {% include "_nav.html" %}
     <div class="sidebar-foot">
       <div class="who"><strong>{{ user.username }}</strong> ({{ user.role }})</div>
@@ -29,6 +33,7 @@
   </aside>
   <div class="scrim" data-nav-scrim></div>
   <button type="button" class="nav-expand" data-nav-collapse aria-controls="sidebar" aria-label="Hiện menu" title="Hiện menu">☰</button>
+  {{ quick_search(lookup, "in-collapsed") }}
   {% endif %}
   <div class="content">
     {% if user and backup_warning %}<div class="banner">⚠ {{ backup_warning }}</div>{% endif %}

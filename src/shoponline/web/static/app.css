@@ -105,6 +105,18 @@ code { font: 13px ui-monospace, Consolas, monospace; background: var(--neutral-b
   html.nav-collapsed .content { padding-left: var(--s6); }
   html.nav-collapsed main { padding-top: 56px; }
 }
+.quick-search { margin: 0 0 var(--s2); }
+.quick-search input {
+  width: 100%; min-height: 34px; background: var(--sidebar-hover); color: var(--sidebar-ink-strong);
+  border: 1px solid var(--sidebar-control-line); border-radius: var(--radius-sm); padding: 0 var(--s2);
+}
+.quick-search input::placeholder { color: var(--sidebar-title); }
+.quick-search.in-topbar { display: none; margin: 0; flex: 1; min-width: 0; }
+.quick-search.in-collapsed { display: none; position: fixed; top: var(--s3); left: calc(var(--s3) + 44px); z-index: 25; width: min(320px, 40vw); margin: 0; }
+.quick-search.in-collapsed input { min-height: 36px; background: var(--surface); color: var(--ink); border-color: var(--control-line); box-shadow: var(--shadow); }
+.quick-search.in-collapsed input::placeholder { color: var(--ink-3, var(--ink-2)); }
+@media (min-width: 1024px) { html.nav-collapsed .quick-search.in-collapsed { display: block; } }
+@media (max-width: 1023px) { .quick-search.in-topbar { display: block; } }
 .nav-group { margin-top: var(--s3); }
 .nav-title { font-size: 11px; letter-spacing: .06em; text-transform: uppercase; color: var(--sidebar-title); padding: var(--s1) var(--s2); margin-bottom: var(--s1); }
 .nav-link {

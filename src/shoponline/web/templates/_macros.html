@@ -40,3 +40,10 @@
 {% macro action_bar() %}
 <div class="action-bar">{{ caller() }}</div>
 {% endmacro %}
+
+{# The quick order lookup box; the "/" key focuses the visible one (see app.js). #}
+{% macro quick_search(value='', cls='') %}
+<form class="quick-search {{ cls }}" role="search" method="get" action="/search">
+  <input type="search" name="q" value="{{ value }}" data-quick-search placeholder="Mã đơn, hóa đơn, SO, DO, phiếu trả" aria-label="Tra cứu đơn hàng" autocomplete="off" maxlength="100">
+</form>
+{% endmacro %}

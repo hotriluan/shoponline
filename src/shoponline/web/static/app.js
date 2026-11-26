@@ -30,6 +30,19 @@
   });
 })();
 
+/* Quick order lookup: "/" outside a text field focuses the visible lookup box. */
+(function () {
+  document.addEventListener('keydown', function (e) {
+    if (e.key !== '/' || e.ctrlKey || e.metaKey || e.altKey) return;
+    var t = e.target;
+    if (t && t.closest && t.closest('input, textarea, select, [contenteditable]')) return;
+    var boxes = document.querySelectorAll('[data-quick-search]');
+    for (var i = 0; i < boxes.length; i++) {
+      if (boxes[i].offsetParent !== null) { e.preventDefault(); boxes[i].focus(); boxes[i].select(); return; }
+    }
+  });
+})();
+
 /* Autosave: an element with data-autosave="<url>" (a table row or a form) posts all its named
    fields to that url shortly after any of them changes, and shows the result in its
    [data-autosave-status]. data-autosave-require lists fields that must be filled before

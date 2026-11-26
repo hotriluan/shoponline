@@ -1,0 +1,25 @@
+{% extends "base.html" %}
+{% from "_macros.html" import page_header, empty_state %}
+{% block title %}Tra cứu đơn{% endblock %}
+{% block content %}
+{{ page_header('Tra cứu đơn', 'Mã đơn sàn, số hóa đơn VAT, SO, DO hoặc số phiếu trả hàng.') }}
+{% if not orders %}
+{{ empty_state('Không tìm thấy đơn nào khớp với «' ~ q ~ '».') }}
+{% else %}
+<p class="sub">{{ orders|length }} đơn khớp với «{{ q }}».</p>
+<div class="scroll"><table data-server>
+  <tr><th>Khớp theo</th><th>Sàn</th><th>Mã đơn</th><th>Shop</th><th>Lô</th><th>Trạng thái</th><th>Ngày đặt</th></tr>
+  {% for o in orders %}
+  <tr>
+    <td>{% for label in matches[o.id] %}<span class="tag">{{ label }}</span> {% endfor %}</td>
+    <td><span class="tag">{{ o.platform }}</span></td>
+    <td><a href="/orders/{{ o.id }}">{{ o.platform_order_id }}</a></td>
+    <td>{{ o.shop_code }}</td>
+    <td><a href="/batches/{{ o.order_batch_id }}">{{ o.batch.processing_date.strftime('%d/%m/%Y') }}</a></td>
+    <td><span class="tag s-{{ o.status }}">{{ STATUS_LABELS.get(o.status, o.status) }}</span></td>
+    <td>{{ o.ordered_at.strftime('%d/%m/%Y %H:%M') }}</td>
+  </tr>
+  {% endfor %}
+</table></div>
+{% endif %}
+{% endblock %}
