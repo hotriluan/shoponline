@@ -5,13 +5,15 @@ from __future__ import annotations
 from datetime import date, datetime
 
 from fastapi import APIRouter, Depends, File, Form, Request, UploadFile
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from shoponline.accounting import manual_settlement as manual
 from shoponline.accounting import settlement_invoice_file as invoice_file
 from shoponline.clock import today_vn
-from shoponline.db.models import AppUser
+from shoponline.db.models import AppUser, SalesOrder
 from shoponline.importers.excel_table import FileRejected
+from shoponline.returns import flags
 from shoponline.web.app import (
     autosave_reply,
     current_user,
@@ -39,6 +41,21 @@ def _back(month: str) -> str:
     return f"{PAGE}?month={month}" if _month(month) else PAGE
 
 
+def _flags_by_order_id(db: Session, order_ids: set[str]) -> dict[str, flags.ReturnFlag]:
+    """Lazada order id -> its return flag, for the orders on the page that have one."""
+    if not order_ids:
+        return {}
+    ids = dict(
+        db.execute(
+            select(SalesOrder.id, SalesOrder.platform_order_id).where(
+                SalesOrder.platform == manual.PLATFORM,
+                SalesOrder.platform_order_id.in_(order_ids),
+            )
+        ).all()
+    )
+    return {ids[order_id]: flag for order_id, flag in flags.of(db, ids).items()}
+
+
 def _page(
     request: Request,
     db: Session,
@@ -51,6 +68,9 @@ def _page(
 ):
     pending = manual.pending_orders(db, _month(month))
     entered = manual.entered(db)
+    shown = {o.platform_order_id for o in pending}
+    shown |= {r["line"].order_id for r in preview or [] if r["line"].order_id}
+    shown |= {r.order_id for r in file_preview or [] if r.order_id}
     return render(
         request,
         "lazada_settlements.html",
@@ -67,6 +87,7 @@ def _page(
         preview=preview,
         file_preview=file_preview,
         carry=carry,
+        flags=_flags_by_order_id(db, shown),
     )
 
 

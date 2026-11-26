@@ -26,6 +26,7 @@ from shoponline.db.models import (
 from shoponline.importers.excel_table import FileRejected
 from shoponline.maintenance import retention
 from shoponline.reconcile.report_ingest import ingest_zrsd004
+from shoponline.returns import flags
 from shoponline.sapjobs import queue
 from shoponline.web.app import (
     current_user,
@@ -144,12 +145,14 @@ def run_page(
     statuses = runs.run_status(db, run)
     context: dict = {"run": run, "statuses": statuses, "retryable": RETRYABLE}
     context["reading"] = any(s.state == runs.READING for s in statuses)
+    deliveries: set[str] = set()
     context["can_retry"] = target is not None
     if run.status == ledger.OPEN:
         context["uploads"] = runs.available_uploads(db)
         if not context["reading"]:
             try:
                 context["rec"] = runs.reconcile(db, run, today)
+                deliveries = context["rec"].deliveries
             except FileRejected as exc:
                 context["rec_error"] = str(exc)
     else:
@@ -161,6 +164,15 @@ def run_page(
         context["reads"] = db.scalars(
             select(AccountingRunRead).where(AccountingRunRead.run_id == run.id)
         ).all()
+        deliveries = set(
+            db.scalars(
+                select(AccountingSentDelivery.delivery).where(
+                    AccountingSentDelivery.run_id == run.id
+                )
+            )
+        )
+    # For information only: the file sent to accounting is not changed by a return.
+    context["returned"] = flags.by_delivery(db, deliveries)
     return render(request, "accounting_run.html", user, **context)
 
 

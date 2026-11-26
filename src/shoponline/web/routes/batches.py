@@ -15,6 +15,7 @@ from shoponline.exports.order_workbook import build_order_workbook
 from shoponline.maintenance import retention
 from shoponline.reconcile.order_progress import batch_progress, order_progress
 from shoponline.reconcile.so_link import LinkError, batch_report, link_manually
+from shoponline.returns import flags
 from shoponline.sapjobs.queue import DuplicateJob
 from shoponline.sapjobs.report_requests import job_ids_text, request_zrsd001
 from shoponline.web.app import (
@@ -145,6 +146,7 @@ def batch_detail(
         open_orders=open_orders,
         steps=batch_steps(orders, batch.confirmed_at is not None, bool(report and report.clean)),
         progress=progress,
+        flags=flags.of(db, [o.id for o in orders]),
         invoiced=sum(1 for p in progress.values() if p.invoice),
         paid=sum(1 for p in progress.values() if p.paid is not None),
     )

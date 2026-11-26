@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% from "_macros.html" import page_header, stat %}
+{% from "_macros.html" import page_header, stat, return_flag %}
 {% block title %}Đợt gửi kế toán #{{ run.id }}{% endblock %}
 {% block head %}{% if reading %}<meta http-equiv="refresh" content="10">{% endif %}{% endblock %}
 {% block content %}
@@ -12,6 +12,14 @@
     <p class="sub">Tạo bởi {{ run.created_by }} lúc {{ run.created_at|localtime }}{% if run.finalized_at %}; chốt bởi {{ run.finalized_by }} lúc {{ run.finalized_at|localtime }}{% endif %}</p>
   </div>
 </div>
+
+{% if returned %}
+<div class="card">
+  <h2>DO của đơn có phiếu trả hàng ({{ returned|length }})</h2>
+  <p class="muted">Chỉ để báo: file gửi kế toán không đổi. Kế toán điều chỉnh theo biên bản.</p>
+  <ul>{% for d in returned %}<li>DO {{ d.delivery }} – đơn <a href="/orders/{{ d.order_id }}">{{ d.platform }} {{ d.platform_order_id }}</a>: {{ return_flag(d.flag, user.role == 'admin') }}</li>{% endfor %}</ul>
+</div>
+{% endif %}
 
 {% if run.status != 'OPEN' %}
 <div class="card">

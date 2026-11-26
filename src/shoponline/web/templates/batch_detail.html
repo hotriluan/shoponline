@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% from "_macros.html" import page_header %}
+{% from "_macros.html" import page_header, return_flag %}
 {% block title %}Lô {{ batch.platform }} {{ batch.processing_date.strftime('%d/%m/%Y') }}{% endblock %}
 {% block content %}
 {% call page_header('Lô ' ~ batch.platform ~ ' ngày ' ~ batch.processing_date.strftime('%d/%m/%Y'), '', '/batches', 'Lô đơn') %}
@@ -125,6 +125,7 @@
     <td>{{ i.material_number or '—' }}</td>
     {% if loop.first %}
     <td rowspan="{{ o.items|length }}" class="status"><span class="tag s-{{ o.status }}">{{ STATUS_LABELS[o.status] }}</span>
+      {% if flags.get(o.id) %}<br>{{ return_flag(flags[o.id], user.role == 'admin') }}{% endif %}
       {% if o.status_reason and o.status in ('MAPPING_ERROR','NEED_REVIEW') %}<br><span class="muted">{{ o.status_reason }}</span>{% endif %}</td>
     <td rowspan="{{ o.items|length }}">{{ o.so_number or '' }}</td>
     <td rowspan="{{ o.items|length }}">{{ o.do_number or '' }}</td>

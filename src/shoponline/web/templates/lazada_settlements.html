@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% from "_macros.html" import page_header %}
+{% from "_macros.html" import page_header, return_flag %}
 {% block title %}Tiền về Lazada{% endblock %}
 {% block content %}
 {{ page_header('Tiền về Lazada', 'File Lazada không có mã đơn nên số tiền được nhập tay theo từng đơn. Số này đi vào cột "Tiền Vô" của file Shop Online và vào báo cáo.') }}
@@ -19,7 +19,7 @@
   {% for row in preview %}
   <tr{% if row.error %} class="attention"{% endif %}>
     <td>{{ row.line.line_no }}</td>
-    <td>{{ row.line.order_id }}</td>
+    <td>{{ row.line.order_id }}{% set f = flags.get(row.line.order_id) %}{% if f %} {{ return_flag(f, user.role == 'admin') }}{% if f.full_return %}<br><span class="bad">Đơn đã hủy hoặc trả cả đơn: kiểm tra lại trước khi lưu (sàn có thể vẫn trả một phần tiền).</span>{% endif %}{% endif %}</td>
     <td>{{ row.line.amount|money }}</td>
     <td>{{ row.line.settled_on.strftime('%d/%m/%Y') if row.line.settled_on else '' }}</td>
     <td>{% if row.error %}<span class="bad">{{ row.error }}</span>{% else %}<span class="tag ok">lưu được</span>{% endif %}</td>
@@ -43,7 +43,7 @@
   <tr{% if row.error %} class="attention"{% endif %}>
     <td>{{ row.line.line_no }}</td>
     <td>{{ row.line.invoice.zfill(8) if row.line.invoice else '' }}</td>
-    <td>{{ row.order_id }}</td>
+    <td>{{ row.order_id }}{% set f = flags.get(row.order_id) %}{% if f %} {{ return_flag(f, user.role == 'admin') }}{% if f.full_return %}<br><span class="bad">Đơn đã hủy hoặc trả cả đơn: kiểm tra lại trước khi lưu (sàn có thể vẫn trả một phần tiền).</span>{% endif %}{% endif %}</td>
     <td>{{ row.line.amount|money if row.line.amount is not none else '' }}</td>
     <td>{{ row.line.settled_on.strftime('%d/%m/%Y') if row.line.settled_on else '' }}</td>
     <td>{% if row.error %}<span class="bad">{{ row.error }}</span>{% else %}<span class="tag ok">lưu được</span>{% endif %}</td>
@@ -82,7 +82,7 @@
   <tr><th>Mã đơn</th><th>Ngày đặt</th><th>DO</th><th>Số hóa đơn</th>{% if admin %}<th>Tiền nhận (đồng)</th><th>Ngày nhận</th><th></th>{% endif %}</tr>
   {% for o in pending %}
   <tr{% if admin %} data-autosave="/settlements/lazada/set" data-autosave-require="amount,settled_on"{% endif %}>
-    <td>{{ o.platform_order_id }}
+    <td>{{ o.platform_order_id }}{% set f = flags.get(o.platform_order_id) %}{% if f %} {{ return_flag(f, user.role == 'admin') }}{% endif %}
       {% if admin %}<input type="hidden" name="order_id" value="{{ o.platform_order_id }}">
       <input type="hidden" name="month" value="{{ month }}">{% endif %}</td>
     <td>{{ o.ordered_at.strftime('%d/%m/%Y') }}</td>
