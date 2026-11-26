@@ -153,6 +153,14 @@ Không dùng web: `uv run --extra robot shoponline drive set-client --client-id 
 - Hóa đơn nhập trước khi có cột tiền thì thiếu tiền: đọc lại zrsd003 của các tháng có hóa đơn cần trả.
 - **Không `downgrade` migration `0012` khi đã có phiếu**: bảng bị xóa thì số đã in có thể bị cấp lại. Khôi phục bản sao lưu cũ thì chạy `uv run shoponline return-number repair` rồi so với số cao nhất đã in.
 
+## Đơn hủy, trả hàng trong file Shop Online và báo cáo: việc một lần khi bật
+
+1. Sao lưu `db` (`pwsh -File scripts\windows\backup-db.ps1`). Deploy như thường; `migrate` chạy `0018` (ba bảng dòng trừ và dòng trả của file Shop Online) và `0019` (hai view báo cáo trừ hàng trả).
+2. `uv run shoponline return-sale-lines backfill`: tính dòng trừ cho các phiếu đã phát hành trước bản này (cả phiếu đã hủy). Lệnh in số phiếu được bổ sung và từng phiếu không chia được kèm lý do (mã thoát 1 khi còn phiếu như vậy); chạy lại được nhiều lần. Phiếu còn thiếu dòng trừ bị chặn ở trang File Shop Online.
+3. Trước lần dán đầu tiên, gửi kế toán mô tả cách ghi mới (mục "Dòng trả hàng" trong [daily-operations.md](daily-operations.md#xuất-dòng-cho-file-shop-online)): dòng âm, cột I là số −1/0/+1, dòng đảo. Pivot nào giả định số lượng luôn dương cần xem lại.
+
+Lùi: revert code. `downgrade` `0019` trả lại view cũ; `downgrade` `0018` xóa ba bảng mới (mất dấu dòng trả đã dán) nên chỉ làm khi chưa dán dòng trả nào.
+
 ## Báo cáo quản lý: việc một lần khi bật
 
 Làm theo thứ tự, trên máy chạy thật (migration `0013` đến `0016`):

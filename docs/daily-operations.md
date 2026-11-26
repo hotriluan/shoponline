@@ -66,6 +66,17 @@ File lịch sử của kế toán `Shop Online 2022-2026` (sheet1, 17 cột; fil
 7. Dán nhầm hoặc dán thiếu: xóa các dòng đã dán trong file lịch sử, bấm **Gỡ xác nhận** cho file đó, rồi xuất lại. 
    - Tên khách bắt đầu bằng `=`, `+`, `-` hoặc `@` được ghi thành chữ, không thành công thức Excel.
 
+**Dòng trả hàng (phiếu trả hàng và hủy phiếu).** File lịch sử chỉ được ghi thêm, không sửa dòng đã dán:
+
+- Mỗi phiếu trả hàng đã phát hành sinh **dòng âm**: một dòng cho mỗi dòng đơn sàn bị trả, `Quantity` và `Customer paid` âm, tính theo giá trên sàn (giá trừ trợ giá, cùng cơ sở với dòng bán). Tên khách, tỉnh, tên hàng, mã đơn và `Tax Invoice Doc.` như dòng gốc; `createTime`, `month`, `year` là **ngày đặt đơn gốc**, để cộng theo tháng ra giá trị bán thật của tháng đó. `Tiền Vô` để trống.
+- Dòng âm chỉ ra khi dòng của đơn đã dán hoặc nằm cùng file: phiếu lập trước khi dán thì dòng gốc và dòng âm cùng một file; phiếu lập sau khi dán thì file sau chỉ có dòng âm. Trang ghi số dòng trả hàng đang chờ dán; file chỉ có dòng trả vẫn tải được.
+- Hủy phiếu sau khi dòng âm đã được xác nhận dán thì lần xuất sau có **dòng đảo** (số dương) đưa tổng về như trước khi trả. Hủy phiếu khi dòng âm chưa dán thì không sinh dòng nào.
+- Cột `Transaction` (I) của dòng âm và dòng đảo là **số**, không phải công thức: −1 (dòng đảo: +1) ở dòng đầu của phiếu trả cả đơn, 0 ở các dòng khác. Cột `Cust + time` (H) vẫn là công thức. Nhờ vậy SUM cột I vẫn là số đơn thật và SUM `Customer paid` là giá trị bán thật. Khi Sort lại sheet, dòng âm đứng ngay sau dòng gốc (cùng `createTime` và `Cust + time`).
+- Đơn Shopee/TikTok có phiếu trả cả đơn không còn chờ tiền vô (sàn có thể không bao giờ trả tiền cho đơn đã hủy).
+- Xác nhận, gỡ xác nhận và xóa file áp dụng cho dòng trả như cho đơn. Không gỡ xác nhận được file có dòng âm khi dòng đảo của phiếu đó đã xác nhận ở file sau: gỡ file sau trước.
+- File nháp có dòng trả với cột `Trạng thái` ghi lý do, phạm vi và số biên bản; file **Tất cả đơn** ghi nhãn phiếu ở dòng đơn và thêm dòng trả, kèm `Đã xác nhận dán` hay `Chưa xác nhận`.
+- Phiếu lập trước bản này cần lệnh bổ sung dòng trừ một lần (xem [deployment-guide.md](deployment-guide.md#đơn-hủy-trả-hàng-trong-file-shop-online-và-báo-cáo-việc-một-lần-khi-bật)). Phiếu chưa có dòng trừ hiện ở bảng **Đơn bị chặn** với lý do đó.
+
 Quên xác nhận thì lần xuất sau có lại các đơn đó (lặp chứ không sót); bảng **File đã tải** ghi "Chưa xác nhận" để nhắc. File sẽ không bao giờ được dán (tải thử, tải trùng) thì bấm **Xóa** ở dòng đó để làm sạch bảng; file và danh sách đơn của nó bị xóa, các đơn chưa xác nhận vẫn có trong lần xuất sau. File đã xác nhận không xóa được: gỡ xác nhận trước. Chỉ admin xác nhận, gỡ xác nhận và xóa.
 
 ## Khách hủy hoặc trả đơn đã có hóa đơn
@@ -78,13 +89,15 @@ Chỉ admin. Mở trang đơn (đơn đã giao, đã có hóa đơn) và bấm *
 4. Xem trước, bấm **Phát hành phiếu**, tải hai file ở trang phiếu và in. Ngày, tháng ở dòng "Hôm nay" và ô No, Date của file Excel để trống cho người ký điền.
 5. Lập nhầm thì hủy phiếu (có lý do): số cũ không dùng lại, đơn lập lại nhận số mới.
 
-Đơn hủy trước khi có DO chưa có hóa đơn nên không lập phiếu. Đơn kit lập theo dòng cha, đúng như hóa đơn.
+Đơn hủy trước khi có DO chưa có hóa đơn nên không lập phiếu. Đơn kit lập theo dòng cha, đúng như hóa đơn. Phiếu chia phần trả vào các dòng của đơn sàn theo mã vật tư; nếu phần trả không chia đúng thành số nguyên (ví dụ hai dòng sàn cùng mã, trả lẻ) thì trang chặn và nêu mã, không đoán.
+
+Sau khi phát hành, đơn mang nhãn **Hủy sau HĐ** (hủy cả đơn), **Trả hàng** (trả cả đơn) hoặc **Trả một phần**, kèm số biên bản, ở trang đơn, danh sách đơn của lô, **Tiền về Lazada** (đơn trả cả đơn có thêm cảnh báo, vẫn lưu được) và trang đợt gửi kế toán (chỉ để báo; file gửi kế toán không đổi). Hủy phiếu thì nhãn mất. Phiếu sinh dòng âm trong file Shop Online (xem mục trên) và được trừ trong báo cáo.
 
 ## Chọn shop, tiền về Lazada, báo cáo
 
 - **Chọn shop khi tải file sàn:** trang **Tải file sàn** có ô Shop cho mỗi sàn; mọi đơn trong file mang shop đã chọn. Sàn chỉ có một shop đang bán thì ô đã chọn sẵn. Thêm hoặc tắt shop ở trang **Shop** (admin).
 - **Tiền về Lazada (admin):** file Lazada không có mã đơn, nên mở **Tiền về Lazada**, nhập số tiền thực nhận của từng đơn (có thể dán nhiều dòng một lúc rồi xem trước). Số nhập vào cột `Tiền Vô` của file Shop Online và vào báo cáo. Nếu kế toán có file theo số hóa đơn, dùng ô **Tải file theo số hóa đơn**: file `.xlsx`, dòng 1 là ba tên cột `Số hóa đơn`, `Ngày nhận tiền`, `Số tiền`, mỗi hóa đơn một dòng. Hệ thống tra hóa đơn ra đơn Lazada, hiện bảng xem trước, rồi bạn bấm lưu các dòng đúng. Dòng bị từ chối kèm lý do: hóa đơn chưa có trong SAP, không thuộc đơn Lazada nào, ứng với nhiều đơn, trùng trong file, ngày hoặc số tiền sai. Đơn đã có DO nhưng chưa có hóa đơn SAP thì chờ hóa đơn về hoặc nhập tay. File không được lưu lại; tải lại cùng file chỉ cập nhật số cũ.
-- **Báo cáo:** nhóm **Báo cáo** ở đầu menu; chọn khoảng tháng, sàn, shop rồi bấm Xem. **Tải Excel** trả đúng bảng đang xem kèm bộ lọc và ghi chú dữ liệu. Ghi chú dưới tiêu đề nói số liệu nào còn thiếu (ví dụ doanh thu hóa đơn và tiền thực nhận chỉ có từ 11/11/2026).
+- **Báo cáo:** nhóm **Báo cáo** ở đầu menu; chọn khoảng tháng, sàn, shop rồi bấm Xem. **Tải Excel** trả đúng bảng đang xem kèm bộ lọc và ghi chú dữ liệu. Ghi chú dưới tiêu đề nói số liệu nào còn thiếu (ví dụ doanh thu hóa đơn và tiền thực nhận chỉ có từ 11/11/2026). Giá trị trên sàn và số đơn đã trừ hàng trả theo phiếu trả hàng, tính vào tháng đặt đơn gốc, nên khớp với file Shop Online theo tháng; đơn trả cả đơn không còn được đếm. Tỷ lệ trả = giá trị trả theo hóa đơn có thuế / doanh thu hóa đơn; trang **Trả hàng** ghi cả giá trị theo hóa đơn và theo giá trên sàn. Số đơn và giá trị của các tháng có phiếu trả vì vậy nhỏ hơn số đã xem trước bản này.
 - **Quy đổi tỉnh (admin):** dòng "Chưa xác định" của báo cáo theo tỉnh là các tên huyện chưa biết thuộc tỉnh nào. Mở **Quy đổi tỉnh**, chọn tỉnh cho từng tên rồi Lưu; báo cáo đổi ngay.
 
 ## Duyệt bảng dài

@@ -68,7 +68,7 @@ Tải file lên và robot đi qua cùng một hàm, [report_ingest.py](../src/sh
 
 ## Trạng thái đơn
 
-`NEW` → `READY` (đủ ánh xạ) → `SO_LINKED` (có trong `zrsd001`) → `DELIVERED` (có trong `zrsd004`). Nhánh phụ: `MAPPING_ERROR`, `NEED_REVIEW`, `CANCELLED`. Mọi thay đổi đi qua `domain/states.transition` và được ghi vào `event_log`. Bảng chuyển trạng thái: [states.py](../src/shoponline/domain/states.py).
+`NEW` → `READY` (đủ ánh xạ) → `SO_LINKED` (có trong `zrsd001`) → `DELIVERED` (có trong `zrsd004`). Nhánh phụ: `MAPPING_ERROR`, `NEED_REVIEW`, `CANCELLED`. Mọi thay đổi đi qua `domain/states.transition` và được ghi vào `event_log`. Hủy đơn đi qua `states.cancel_order` (lý do bắt buộc); `DELIVERED → CANCELLED` chỉ được khi DO chưa có trong `sap_tax_invoice`, và `transition` tự từ chối bước này nếu không qua `cancel_order`. Không có trạng thái riêng cho đơn trả hàng: nhãn "Hủy sau HĐ", "Trả hàng", "Trả một phần" suy ra từ phiếu `ISSUED` bởi [returns/flags.py](../src/shoponline/returns/flags.py). Bảng chuyển trạng thái: [states.py](../src/shoponline/domain/states.py).
 
 ## Đợt gửi kế toán
 
@@ -79,6 +79,8 @@ Bảng `accounting_run` (một đợt: `OPEN`, `FINALIZED`, `CANCELLED`, `REVOKE
 Trang `/sales-history` dựng dòng nối tiếp cho file lịch sử của kế toán ([sales_history_workbook.py](../src/shoponline/exports/sales_history_workbook.py)): mọi đơn `DELIVERED` chưa có trong `sales_history_exported`, đặt tới hết ngày chọn, mỗi dòng sản phẩm một dòng 20 cột (17 cột của file kế toán, rồi `Mã đơn`, `Tax Invoice Doc.` và `Tiền Vô`). Số hóa đơn lấy từ `sap_tax_invoice` (khóa `delivery`, nạp từ `zrsd003` bởi `ingest_zrsd003`) theo `sales_order.do_number`; đơn chưa có hóa đơn bị chặn, và trang xếp việc robot `read_zrsd003` cho khoảng ngày cần đọc. Tiền vô lấy từ `platform_settlement` (một dòng mỗi giao dịch, khóa `(platform, line_key)`; nạp từ file quyết toán Shopee/TikTok bởi `read_settlement_file` và `ingest_settlement`, sàn nhận theo nội dung file): tổng theo `(platform, platform_order_id)`, ghi ở dòng đầu của đơn; đơn Shopee/TikTok chưa có dòng nào nằm ở hộp "Đơn chờ tiền vô", Lazada để trống. Tỉnh/thành tách từ `customer_info.address`, itemName, kích cỡ, variation lấy từ `report_item_name` theo mã vật tư (sửa ở `/report-names`, gợi ý từ `sku_mapping`; [report_names.py](../src/shoponline/domain/report_names.py)). Đơn thiếu một giá trị thì bị chặn, không đoán. `/sales-history/draft` gọi `collect_rows(draft=True)`: chấp nhận thêm đơn chỉ có lý do `tax_invoice` hoặc `settlement`, ghi thêm cột 21 `Trạng thái`, trả file từ bộ nhớ và không ghi `generated_file` hay `sales_history_file_order`. `/sales-history/all` gọi `collect_all_rows`: mọi đơn có `ordered_at` trong khoảng ngày, mọi trạng thái, không chặn đơn nào, trả file từ bộ nhớ và không ghi `generated_file`, `sales_history_file_order` hay `sales_history_exported`.
 
 Bảng `sales_history_file_order` ghi các đơn có trong từng file đã tải (`generated_file` kind `sales_history`); `sales_history_exported` (khóa chính `sales_order_id`) ghi đơn đã được xác nhận là đã dán, kèm file đã xác nhận. Xác nhận chép danh sách đơn của file sang sổ, bỏ qua đơn đã có; gỡ xác nhận xóa đúng các dòng của file đó.
+
+File lịch sử là sổ cái chỉ ghi thêm. Phiếu trả hàng sinh dòng âm (loại `ISSUE`) từ `sales_return_sale_line`, mang ngày đặt đơn gốc; phiếu `VOID` có dòng âm đã dán sinh dòng đảo (loại `VOID`). Dòng âm chỉ ra khi đơn đã có `sales_history_exported` hoặc nằm cùng file. Cột I của các dòng này là hằng số (−1/+1 ở dòng đầu của phiếu trả cả đơn, 0 ở dòng khác). `sales_history_file_return` (file, phiếu, loại) và `sales_return_history_exported` (khóa `(return_id, kind)`) theo dõi dòng trả giống hai bảng của đơn; retention giữ file còn dòng trả chưa xác nhận.
 
 ## Danh mục shop
 
@@ -101,10 +103,10 @@ File Lazada không có mã đơn, nên admin nhập tiền từng đơn ở tran
 
 ## Báo cáo
 
-Trang `/reports` và bốn trang con (sàn và shop, sản phẩm, tỉnh, trả hàng); viewer và admin đều xem, mọi trang tải được Excel bằng `?format=xlsx` ([reports.py](../src/shoponline/web/routes/reports.py), [report_workbook.py](../src/shoponline/exports/report_workbook.py)). Nguồn là hai view ở migration `0016`:
+Trang `/reports` và bốn trang con (sàn và shop, sản phẩm, tỉnh, trả hàng); viewer và admin đều xem, mọi trang tải được Excel bằng `?format=xlsx` ([reports.py](../src/shoponline/web/routes/reports.py), [report_workbook.py](../src/shoponline/exports/report_workbook.py)). Nguồn là hai view, định nghĩa hiện hành ở migration `0019`:
 
-- `report_sale_line`: một dòng mỗi dòng hàng, hợp của lịch sử và đơn hệ thống (từ mốc, không tính đơn hủy). Dùng cho giá trị trên sàn, sản phẩm, tỉnh.
-- `report_order_revenue`: một dòng mỗi đơn hệ thống, với ba con số: giá trị trên sàn = (giá − trợ giá) × số lượng; doanh thu hóa đơn = `net_value_vnd + tax_vnd`; tiền thực nhận = tổng `platform_settlement.amount`; kèm giá trị trả của phiếu `ISSUED`. Lịch sử chỉ có đường đầu.
+- `report_sale_line`: một dòng mỗi dòng hàng, hợp của lịch sử (`history`), đơn hệ thống (`system`, từ mốc, không tính đơn hủy) và dòng trả (`return`: dòng âm từ `sales_return_sale_line` của phiếu `ISSUED`, ngày theo đơn gốc). Dùng cho giá trị trên sàn, sản phẩm, tỉnh. Số đơn chỉ đếm đơn có tổng số lượng trong bộ lọc lớn hơn 0 ([reports/queries.py](../src/shoponline/reports/queries.py)).
+- `report_order_revenue`: một dòng mỗi đơn hệ thống, với ba con số: giá trị trên sàn = (giá − trợ giá) × số lượng, trừ phần trả; doanh thu hóa đơn = `net_value_vnd + tax_vnd`; tiền thực nhận = tổng `platform_settlement.amount`; kèm `returned_value` (`returned_net + returned_tax` của phiếu `ISSUED`, cùng cơ sở có thuế với doanh thu hóa đơn) và `returned_marketplace_value`. Lịch sử chỉ có đường đầu.
 
 Hai view nằm trong schema `public` (không phải schema riêng) vì khôi phục chạy `DROP SCHEMA public CASCADE` và `pg_dump` mang view theo schema `public`. Đổi view đi qua migration mới. Mốc trong SQL được test so với `REPORTING_CUTOVER`. Phí sàn và chênh giá chỉ cộng trên đơn đủ cả hai số; số đơn còn thiếu hóa đơn hoặc tiền hiện ngay trong bảng.
 
@@ -117,6 +119,7 @@ Hai view nằm trong schema `public` (không phải schema riêng) vì khôi ph�
 - Phát hành và hủy: [returns/service.py](../src/shoponline/returns/service.py). Phát hành dựng lại bản xem trước trong giao dịch và so `fingerprint` với bản admin đã duyệt; chỉ mục unique từng phần chặn hai phiếu chưa hủy cho một đơn.
 - File Excel được điền bằng cách sửa trực tiếp XML của sheet mẫu ([exports/return_request_workbook.py](../src/shoponline/exports/return_request_workbook.py)) để mọi định dạng khác giữ nguyên như mẫu; test so với `tests/support/template_baseline.json`.
 - Route: [web/routes/returns.py](../src/shoponline/web/routes/returns.py), [web/routes/invoice_texts.py](../src/shoponline/web/routes/invoice_texts.py).
+- Dòng trừ theo giá sàn: lúc phát hành, [returns/sale_lines.py](../src/shoponline/returns/sale_lines.py) chia số lượng trả của từng mã vật tư vào các dòng đơn sàn cùng mã và ghi `sales_return_sale_line` (`(unit_price − unit_subsidy) × số lượng trả`). Không chia đúng thành số nguyên thì chặn phát hành. File Shop Online và báo cáo cùng đọc bảng này. Phiếu lập trước khi có bảng: `shoponline return-sale-lines backfill`.
 
 ## Sao lưu, khôi phục và chuyển máy
 

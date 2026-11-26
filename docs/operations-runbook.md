@@ -62,9 +62,10 @@ Làm như bước 8 của [daily-operations.md](daily-operations.md) cho `zrsd00
 - **Dấu hiệu:** khách hủy sau khi sales admin đã tạo SO.
 - **Việc cần làm:**
   1. Sales admin hủy SO hoặc DO trong SAP như hiện nay.
-  2. Đơn ở "Đã có SO": mở đơn, bấm **Đánh dấu hủy**.
+  2. Đơn ở "Đã có SO": mở đơn, bấm **Đánh dấu hủy** (nhập lý do).
   3. DO đã hủy thì không còn trong `zrsd004`, nên đơn tự rơi khỏi file gửi kế toán.
-  4. Đơn đã ở "Đã có DO" (đã có trong `zrsd004`) thì web không cho hủy. Báo kế toán bằng tay.
+  4. Đơn đã ở "Đã có DO" mà **chưa có hóa đơn** trong `zrsd003`: sau khi DO đã hủy trong SAP, mở đơn, bấm **Đánh dấu hủy** (nhập lý do). Đơn rời file Shop Online, đợt gửi kế toán và báo cáo. Nếu DO đã nằm trong một đợt gửi kế toán đã chốt, web vẫn hủy và nhắc báo kế toán bằng tay.
+  5. Đơn đã có hóa đơn thì web không cho hủy: lập phiếu trả hàng (xem [daily-operations.md](daily-operations.md#khách-hủy-hoặc-trả-đơn-đã-có-hóa-đơn)).
 - **Gọi lập trình viên khi:** đơn đã hủy vẫn xuất hiện trong file gửi kế toán.
 
 ### Sàn đổi mẫu file
