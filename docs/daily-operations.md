@@ -41,6 +41,8 @@ Trang lô có thanh bước (Nhập file, Ánh xạ đủ, Gửi sales admin, X�
     - khung **DO không thuộc đơn nào trên web** (ví dụ SO sales admin tạo tay);
     - số dòng không vào file theo từng lý do, và các dòng còn thiếu mã đơn, tên khách hoặc địa chỉ (bổ sung ở trang **Khách hàng** rồi tải lại trang).
 
+    File kế toán chỉ giữ phiếu giao bán (`Delivery Type` = `ZDA1`). Phiếu nhập hàng trả về (ví dụ `ZDE1` vào kho QC `0301`) không vào file và được đếm ở lý do "không phải phiếu giao bán".
+
     Nút **Tải bản nháp** cho file có tiền tố `NHÁP`, không ghi sổ.
 13. Bấm **Chốt và ghi sổ**. Nếu còn lượt chưa có dữ liệu thì phải tích "Chốt thiếu"; nếu còn đơn chưa thấy DO thì phải tích "Tôi đã xem danh sách đơn chưa có DO". Nếu dữ liệu đổi sau khi xem bản nháp (robot đọc xong thêm, có file mới gắn vào) thì web từ chối và bảo xem lại. Chốt xong, trang đợt có link tải đúng file đã chốt.
 14. Gửi `SHOP ONLINE ddmmyy.xlsx` cho kế toán. File gộp DO của mọi sàn và mọi ngày goods issue chưa gửi, giữ nguyên mọi cột của `zrsd004`, tính lại hai dòng tổng theo quy tắc của SAP và chèn ba cột `mã đơn hàng`, `tên khách hàng`, `địa chỉ` ngay sau `SO Reference`. DO đã chốt không bao giờ vào file sau. Đơn đã hủy DO không còn trong `zrsd004` nên không có trong file.

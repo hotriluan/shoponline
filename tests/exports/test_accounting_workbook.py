@@ -67,6 +67,24 @@ def test_warns_about_missing_values(tmp_path):
     assert "SO 210000001" not in text
 
 
+def test_return_delivery_rows_are_kept_but_not_filled_or_warned(tmp_path):
+    source = zrsd004_file(
+        tmp_path / "z4.xlsx",
+        [
+            zrsd004_row("1900000001", "210000003", "100000001"),
+            zrsd004_row("1900000002", "210000009", "100000001", delivery_type="ZDE1"),
+        ],
+    )
+    result = build_accounting_workbook(source, _lookup)
+    text = "\n".join(result.warnings)
+    assert "SO 210000003" in text
+    assert "SO 210000009" not in text
+    out = _rows(result.workbook)
+    so_index = ZRSD004_HEADERS.index("SO Reference")
+    assert out[2][so_index] == "210000009"
+    assert out[2][so_index + 1 : so_index + 4] == [None, None, None]
+
+
 def test_fills_existing_columns_instead_of_inserting_twice(tmp_path):
     first = build_accounting_workbook(_source(tmp_path), _lookup)
     again_path = tmp_path / "again.xlsx"

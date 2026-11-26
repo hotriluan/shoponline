@@ -170,6 +170,42 @@ def test_drops_foreign_customers_unissued_future_cutoff_and_sent(tmp_path):
     assert len(_data(_rows_of(result.workbook))) == 1
 
 
+def test_only_sales_deliveries_are_kept_and_totals_ignore_the_rest(tmp_path):
+    rows = [
+        zrsd004_row("1900000001", "210000001", "1", 3),
+        zrsd004_row("1900000002", "210000002", "1", 5, delivery_type="ZDE1"),
+        zrsd004_row("1900000003", "210000003", "1", 7, delivery_type="ZXX1"),
+        zrsd004_row("1900000004", "210000004", "1", delivery_type="ZDE1", goods_status="A"),
+        zrsd004_row("1900000005", "210000005", "1", delivery_type="ZDE1", gi_date=None),
+    ]
+    result = _merge([zrsd004_file(tmp_path / "a.xlsx", rows)])
+
+    assert result.deliveries == {"1900000001"}
+    assert result.so_numbers == {"210000001"}
+    assert result.dropped == {mod.NOT_SALES_DELIVERY: 4}
+    assert result.skipped == []
+    out = _rows_of(result.workbook)
+    assert len(_data(out)) == 1
+    assert _totals(out)[0][_col("Delivery Qty")] == 3
+
+
+def test_missing_delivery_type_column_is_refused(tmp_path):
+    source = zrsd004_file(tmp_path / "a.xlsx", [zrsd004_row("1900000001", "1", "1")])
+    wb = load_workbook(source)
+    wb.worksheets[0].delete_cols(ZRSD004_HEADERS.index("Delivery Type") + 1)
+    wb.save(source)
+    with pytest.raises(FileRejected, match="Delivery Type"):
+        _merge([source])
+
+
+def test_only_return_deliveries_is_refused(tmp_path):
+    source = zrsd004_file(
+        tmp_path / "a.xlsx", [zrsd004_row("1900000001", "1", "1", delivery_type="ZDE1")]
+    )
+    with pytest.raises(FileRejected, match="Không có DO mới"):
+        _merge([source])
+
+
 def test_duplicate_line_keeps_the_first_source_and_rows_are_sorted(tmp_path):
     first = zrsd004_file(
         tmp_path / "a.xlsx",

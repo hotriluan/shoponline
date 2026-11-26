@@ -513,9 +513,11 @@ def zrsd004_row(
     volume: object = None,
     volume_unit: str = "",
     goods_status: str = "C",
+    delivery_type: str = "ZDA1",
 ) -> dict[str, object]:
     """One delivery line. Quantities may be Decimal-like strings; None leaves the cell empty."""
     return {
+        "Delivery Type": delivery_type,
         "Delivery Date": datetime.combine(delivery_date, datetime.min.time()),
         "Actual GI Date": datetime.combine(gi_date, datetime.min.time()) if gi_date else None,
         "Delivery": delivery,

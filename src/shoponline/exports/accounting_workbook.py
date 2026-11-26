@@ -27,6 +27,10 @@ from shoponline.reconcile.so_link import platform_by_customer
 SO_COLUMN = "SO Reference"
 SOLD_TO_COLUMN = "Sold-to Party"
 GI_COLUMN = "Actual GI Date"
+DELIVERY_TYPE_COLUMN = "Delivery Type"
+# ZDA1 is a sales delivery. ZDE1 is a returned-goods receipt into QC store 0301: it has no platform
+# order and never belongs in the accounting file.
+SALES_DELIVERY_TYPES = ("ZDA1",)
 INSERTED = ("mã đơn hàng", "tên khách hàng", "địa chỉ")
 
 
@@ -149,12 +153,15 @@ def _fill_customers(
 ) -> tuple[list[str], list[date]]:
     """Fill the three columns of every row that has an SO number; total rows stay as they are."""
     sold_col, gi_col, so_col = headers[SOLD_TO_COLUMN], headers[GI_COLUMN], headers[SO_COLUMN]
+    type_col = headers.get(DELIVERY_TYPE_COLUMN)
     warnings: list[str] = []
     gi_dates: list[date] = []
     for row in range(2, ws.max_row + 1):
         so_number = cell_text(ws.cell(row, so_col).value)
         if not so_number:
             continue  # total rows stay as they are
+        if type_col and cell_text(ws.cell(row, type_col).value) not in SALES_DELIVERY_TYPES:
+            continue  # returned-goods receipts have no customer to fill
         gi_value = ws.cell(row, gi_col).value
         if isinstance(gi_value, datetime):
             gi_dates.append(gi_value.date())
@@ -212,6 +219,7 @@ UNIT_ORDER = ("SET", "PC")
 
 # Why a source row stays out of the merged file.
 FOREIGN_CUSTOMER = "khách hàng không thuộc sàn nào"
+NOT_SALES_DELIVERY = "không phải phiếu giao bán (phiếu nhập hàng trả về hoặc loại khác)"
 NO_GI_DATE = "chưa có ngày goods issue thực hoặc ngày ở tương lai"
 NOT_COMPLETE = "chưa goods issue xong (trạng thái khác C)"
 BEFORE_CUTOFF = "ngày goods issue không sau mốc ngày"
@@ -356,8 +364,9 @@ def build_merged_accounting_workbook(
 ) -> MergedAccountingFile:
     """Several zrsd004 files -> one accounting file.
 
-    Only rows of a configured platform customer that SAP has really issued (Actual GI Date set and
-    not after `today`, status C), later than `cutoff` and not in `exclude_deliveries`, are kept.
+    Only sales-delivery rows (Delivery Type in SALES_DELIVERY_TYPES) of a configured platform
+    customer that SAP has really issued (Actual GI Date set and not after `today`, status C), later
+    than `cutoff` and not in `exclude_deliveries`, are kept.
     Source total rows are dropped; the totals are recomputed over the kept rows.
     """
     if not sources:
@@ -382,6 +391,7 @@ def build_merged_accounting_workbook(
         SO_COLUMN,
         SOLD_TO_COLUMN,
         GI_COLUMN,
+        DELIVERY_TYPE_COLUMN,
         LINE_ITEM_COLUMN,
         STATUS_COLUMN,
     )
@@ -399,6 +409,7 @@ def build_merged_accounting_workbook(
     delivery_col, so_col = columns[DELIVERY_COLUMN], columns[SO_COLUMN]
     sold_col, gi_col = columns[SOLD_TO_COLUMN], columns[GI_COLUMN]
     line_col, status_col = columns[LINE_ITEM_COLUMN], columns[STATUS_COLUMN]
+    type_col = columns[DELIVERY_TYPE_COLUMN]
     for _, ws in loaded:
         for cells in ws.iter_rows(min_row=2, max_col=len(header)):
             delivery = cell_text(cells[delivery_col - 1].value)
@@ -410,6 +421,8 @@ def build_merged_accounting_workbook(
             reason = None
             if sold_to not in customers:
                 reason = FOREIGN_CUSTOMER
+            elif cell_text(cells[type_col - 1].value) not in SALES_DELIVERY_TYPES:
+                reason = NOT_SALES_DELIVERY
             elif gi is None or gi > today:
                 reason = NO_GI_DATE
             elif cell_text(cells[status_col - 1].value) != GOODS_ISSUED:
