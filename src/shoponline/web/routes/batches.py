@@ -16,7 +16,7 @@ from shoponline.maintenance import retention
 from shoponline.reconcile.order_progress import batch_progress, order_progress
 from shoponline.reconcile.so_link import LinkError, batch_report, link_manually
 from shoponline.sapjobs.queue import DuplicateJob
-from shoponline.sapjobs.report_requests import request_zrsd001
+from shoponline.sapjobs.report_requests import job_ids_text, request_zrsd001
 from shoponline.web.app import (
     UNVERIFIED_MESSAGE,
     autosave_reply,
@@ -233,8 +233,8 @@ def confirm_batch(
             message = f"Đã xác nhận lô. {UNVERIFIED_MESSAGE}."
         else:
             try:
-                job = request_zrsd001(db, config.target, batch, user.username)
-                message = f"Đã xác nhận lô; robot sẽ đọc zrsd001 (việc #{job.id})."
+                jobs = request_zrsd001(db, config.target, batch, user.username)
+                message = f"Đã xác nhận lô; robot sẽ đọc zrsd001 (việc {job_ids_text(jobs)})."
             except DuplicateJob as exc:
                 message = f"Đã xác nhận lô. {exc}"
         db.commit()
@@ -272,12 +272,12 @@ def reread_zrsd001(
         flash(request, refusal, "error")
         return redirect(f"/batches/{batch_id}")
     try:
-        job = request_zrsd001(db, config.target, batch, user.username)
+        jobs = request_zrsd001(db, config.target, batch, user.username)
     except DuplicateJob as exc:
         flash(request, str(exc), "error")
         return redirect(f"/batches/{batch_id}")
     db.commit()
-    flash(request, f"Robot sẽ đọc lại zrsd001 (việc #{job.id}).")
+    flash(request, f"Robot sẽ đọc lại zrsd001 (việc {job_ids_text(jobs)}).")
     return redirect(f"/batches/{batch_id}")
 
 

@@ -83,12 +83,14 @@ def test_confirm_queues_zrsd001_and_button_opens_the_accounting_run(db, tmp_path
     client.post(f"/batches/{batch.id}/accounting-file")  # the second click joins the same run
     jobs = _jobs(db)
     assert [(j.kind, j.target_system, j.target_client) for j in jobs] == [
+        (queue.READ_ZRSD001, "QAS", "300"),  # one per document day, 11-11 to 11-13
+        (queue.READ_ZRSD001, "QAS", "300"),
         (queue.READ_ZRSD001, "QAS", "300"),
         (queue.READ_ZRSD004, "QAS", "300"),
         (queue.READ_ZRSD004, "QAS", "300"),
     ]
-    assert [queue.payload_of(j).get("gi_date") for j in jobs[1:]] == ["2026-11-12", "2026-11-13"]
-    assert queue.payload_of(jobs[1]) == {
+    assert [queue.payload_of(j).get("gi_date") for j in jobs[3:]] == ["2026-11-12", "2026-11-13"]
+    assert queue.payload_of(jobs[3]) == {
         "platform": "SHOPEE",
         "sold_to": "1200001145",
         "gi_date": "2026-11-12",
@@ -134,19 +136,24 @@ def _finish(db, job):
     queue.complete(db, job, {})
 
 
+def _finish_all(db):
+    for job in _jobs(db):
+        _finish(db, job)
+
+
 def test_reread_zrsd001_after_the_first_read_is_done(db, tmp_path, batch):
     client = _login(_app(db, tmp_path, QA), "admin")
     client.post(f"/batches/{batch.id}/confirm")
-    first = _jobs(db)[0]
+    first, *_, last = _jobs(db)  # one job per document day, 11-11 to 11-13
 
     page = client.post(f"/batches/{batch.id}/read-zrsd001").text
-    assert f"Đã có việc #{first.id}" in page  # still open: refused with the job number
-    assert len(_jobs(db)) == 1
+    assert f"Đã có việc #{last.id}" in page  # every day still open: refused with a job number
+    assert len(_jobs(db)) == 3
 
     _finish(db, first)
     page = client.post(f"/batches/{batch.id}/read-zrsd001").text
-    assert "Robot sẽ đọc lại zrsd001" in page
-    assert [j.kind for j in _jobs(db)] == [queue.READ_ZRSD001, queue.READ_ZRSD001]
+    assert "Robot sẽ đọc lại zrsd001" in page  # only the finished day is queued again
+    assert [j.kind for j in _jobs(db)] == [queue.READ_ZRSD001] * 4
 
 
 def test_reread_is_refused_for_unconfirmed_batch(db, tmp_path, batch):
@@ -160,7 +167,7 @@ def test_robot_form_queues_the_same_zrsd004_as_the_accounting_run(db, tmp_path, 
     client = _login(_app(db, tmp_path, QA), "admin")
     client.post(f"/batches/{batch.id}/accounting-file")
     from_run = queue.payload_of(_jobs(db)[0])
-    _finish(db, _jobs(db)[0])
+    _finish_all(db)
 
     form = {"report": "zrsd004", "platform": "SHOPEE", "gi_date": "2026-11-12"}
     assert "Robot sẽ đọc zrsd004" in client.post("/robot/jobs/new", data=form).text
@@ -211,9 +218,9 @@ def test_robot_form_zrsd001_needs_a_confirmed_batch(db, tmp_path, batch):
     assert _jobs(db) == []
 
     client.post(f"/batches/{batch.id}/confirm")
-    _finish(db, _jobs(db)[0])
+    _finish_all(db)
     assert "Robot sẽ đọc zrsd001" in client.post("/robot/jobs/new", data=form).text
-    assert len(_jobs(db)) == 2
+    assert len(_jobs(db)) == 6
     assert client.post("/robot/jobs/new", data={"report": "zrsd005"}).status_code == 400
 
 
@@ -221,13 +228,13 @@ def test_commands_are_refused_until_the_connection_is_verified(db, tmp_path, bat
     app = _app(db, tmp_path, QA)
     client = _login(app, "admin")
     client.post(f"/batches/{batch.id}/confirm")
-    _finish(db, _jobs(db)[0])
+    _finish_all(db)
     configure_sap(db, SapTarget("QAS", "400"), verified=False)  # a changed system is unchecked
     db.expire_all()
     assert UNVERIFIED_MESSAGE in client.post(f"/batches/{batch.id}/read-zrsd001").text
     form = {"report": "zrsd004", "platform": "SHOPEE", "gi_date": "2026-11-12"}
     assert UNVERIFIED_MESSAGE in client.post("/robot/jobs/new", data=form).text
-    assert len(_jobs(db)) == 1
+    assert len(_jobs(db)) == 3
     assert "Đọc zrsd001" not in client.get("/robot").text
 
 
@@ -235,7 +242,7 @@ def test_viewer_cannot_command_and_sees_no_form(db, tmp_path, batch):
     app = _app(db, tmp_path, QA)
     admin = _login(app, "admin")
     admin.post(f"/batches/{batch.id}/confirm")
-    _finish(db, _jobs(db)[0])
+    _finish_all(db)
     assert 'action="/robot/jobs/new"' in admin.get("/robot").text
     assert "Đọc lại zrsd001" in admin.get(f"/batches/{batch.id}").text
 
@@ -243,7 +250,7 @@ def test_viewer_cannot_command_and_sees_no_form(db, tmp_path, batch):
     form = {"report": "zrsd004", "platform": "SHOPEE", "gi_date": "2026-11-12"}
     viewer.post("/robot/jobs/new", data=form)
     viewer.post(f"/batches/{batch.id}/read-zrsd001")
-    assert len(_jobs(db)) == 1
+    assert len(_jobs(db)) == 3
     assert 'action="/robot/jobs/new"' not in viewer.get("/robot").text
     assert "Đọc lại zrsd001" not in viewer.get(f"/batches/{batch.id}").text
 

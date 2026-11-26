@@ -119,8 +119,12 @@ def _after_zrsd001(
             "no_data": True,
         }
     record = _stored_report(settings, out, "zrsd001")
-    batch_id = queue.payload_of(job).get("batch_id")
+    payload = queue.payload_of(job)
+    batch_id = payload.get("batch_id")
     batch = db.get(OrderBatch, batch_id) if batch_id else None
+    # Only the batch day must hold an SO of the customer; later days may be empty or partial.
+    if batch is not None and payload.get("date_from") != batch.processing_date.isoformat():
+        batch = None
     result = ingest_zrsd001(db, record, ROBOT, expect_batch=batch)
     job.import_batch_id = record.id
     return {

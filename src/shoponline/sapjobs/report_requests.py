@@ -13,27 +13,53 @@ from shoponline.sapjobs import queue
 from shoponline.sapjobs.queue import SapTarget
 
 
-def request_zrsd001(session: Session, target: SapTarget, batch: OrderBatch, actor: str) -> SapJob:
-    """zrsd001 with "Complete", filtered to the platform's SAP customer and the document dates
+def zrsd001_key(batch_id: int, day: date) -> str:
+    return f"{queue.READ_ZRSD001}:batch:{batch_id}:{day.isoformat()}"
+
+
+def request_zrsd001(
+    session: Session, target: SapTarget, batch: OrderBatch, actor: str
+) -> list[SapJob]:
+    """zrsd001 with "Complete", filtered to the platform's SAP customer, one job per document day
     from the batch day up to today: sales admin may create an SO days after the batch day, and
-    reading again must find it. One job per batch whatever the range."""
+    reading again must find it. The robot reads one document day at a time.
+
+    Days that already have an open job are left alone; DuplicateJob is raised only when every
+    day does, so the caller can tell the person nothing new was queued.
+    """
     setting = session.get(PlatformSetting, batch.platform)
-    day = batch.processing_date.isoformat()
-    return queue.enqueue(
-        session,
-        queue.READ_ZRSD001,
-        target,
-        f"{queue.READ_ZRSD001}:batch:{batch.id}",
-        {
-            "batch_id": batch.id,
-            "platform": batch.platform,
-            "sold_to": setting.sap_customer,
-            "date_from": day,
-            "date_to": max(batch.processing_date, today_vn()).isoformat(),
-            "selection": "complete",
-        },
-        actor,
-    )
+    jobs: list[SapJob] = []
+    clash: queue.DuplicateJob | None = None
+    day = batch.processing_date
+    for offset in range((max(day, today_vn()) - day).days + 1):
+        current = day + timedelta(days=offset)
+        try:
+            jobs.append(
+                queue.enqueue(
+                    session,
+                    queue.READ_ZRSD001,
+                    target,
+                    zrsd001_key(batch.id, current),
+                    {
+                        "batch_id": batch.id,
+                        "platform": batch.platform,
+                        "sold_to": setting.sap_customer,
+                        "date_from": current.isoformat(),
+                        "date_to": current.isoformat(),
+                        "selection": "complete",
+                    },
+                    actor,
+                )
+            )
+        except queue.DuplicateJob as exc:
+            clash = exc
+    if not jobs and clash is not None:
+        raise clash
+    return jobs
+
+
+def job_ids_text(jobs: list[SapJob]) -> str:
+    return ", ".join(f"#{job.id}" for job in jobs)
 
 
 def zrsd004_key(platform: str, gi_date: date) -> str:

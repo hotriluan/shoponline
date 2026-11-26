@@ -11,6 +11,7 @@ from shoponline.clock import today_vn
 from shoponline.db.models import AppUser, OrderBatch, PlatformSetting, SapJob
 from shoponline.sapjobs import queue, sap_settings
 from shoponline.sapjobs.report_requests import (
+    job_ids_text,
     request_zrsd001,
     request_zrsd003,
     request_zrsd004,
@@ -135,10 +136,12 @@ def command_robot(
                 raise ValueError("Chọn một lô để đọc zrsd001.")
             if batch.confirmed_at is None:
                 raise ValueError("Lô chưa xác nhận nên chưa đọc zrsd001 được.")
-            job = request_zrsd001(db, config.target, batch, user.username)
+            jobs = request_zrsd001(db, config.target, batch, user.username)
+            ids = job_ids_text(jobs)
             done = f"Robot sẽ đọc zrsd001 của lô {batch.platform} {batch.processing_date:%d/%m/%Y}"
         elif report == "zrsd003":
             job, done = _queue_zrsd003(db, config.target, date_from, date_to, user.username)
+            ids = f"#{job.id}"
         else:
             try:
                 day = date.fromisoformat(gi_date)
@@ -147,13 +150,14 @@ def command_robot(
             if day > today_vn():
                 raise ValueError("Ngày goods issue chưa tới nên SAP chưa có dữ liệu.")
             job = request_zrsd004(db, config.target, platform, day, user.username)
+            ids = f"#{job.id}"
             done = f"Robot sẽ đọc zrsd004 của {platform} ngày {day:%d/%m/%Y}"
     except ValueError as exc:  # includes DuplicateJob, which names the open job
         db.rollback()
         flash(request, str(exc), "error")
         return redirect("/robot")
     db.commit()
-    flash(request, f"{done} (việc #{job.id}).")
+    flash(request, f"{done} (việc {ids}).")
     return redirect("/robot")
 
 

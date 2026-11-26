@@ -98,7 +98,9 @@ def _job(db, job_id) -> SapJob:
     return db.get(SapJob, job_id)
 
 
-def test_zrsd001_read_goes_through_the_upload_functions(db, settings, batch, tmp_path):
+def test_zrsd001_read_goes_through_the_upload_functions(
+    db, settings, batch, tmp_path, frozen_today
+):
     report = zrsd001_file(
         tmp_path / "export.xlsx", [zrsd001_row("210000001", "A1", "100000001", 2, 200000)]
     )
@@ -109,7 +111,7 @@ def test_zrsd001_read_goes_through_the_upload_functions(db, settings, batch, tmp
         ctx.step()
         return TransactionResult(file=report)
 
-    job = request_zrsd001(db, QA, batch, "admin")
+    job = request_zrsd001(db, QA, batch, "admin")[0]
     worker = _worker(db, settings, _qa_session(), {queue.READ_ZRSD001: Transaction(read, False)})
     assert worker.run_once() is True
 
@@ -122,7 +124,9 @@ def test_zrsd001_read_goes_through_the_upload_functions(db, settings, batch, tmp
     record = db.get(ImportBatch, job.import_batch_id)
     assert record.kind == "zrsd001" and record.imported_by == "robot"
     assert db.get(SapSoRef, "210000001").net_value_incl == 200000
-    assert worker.run_once() is False  # queue empty
+    while worker.run_once():  # the batch day is the first of the days up to today
+        pass
+    assert {j.status for j in db.scalars(select(SapJob))} == {queue.DONE}
 
 
 def test_reading_zrsd001_twice_creates_no_duplicate_links(db, settings, batch, tmp_path):
@@ -132,7 +136,7 @@ def test_reading_zrsd001_twice_creates_no_duplicate_links(db, settings, batch, t
     txn = Transaction(lambda ctx: TransactionResult(file=report), False)
     results = []
     for _ in range(2):
-        job = request_zrsd001(db, QA, batch, "admin")
+        job = request_zrsd001(db, QA, batch, "admin")[0]
         _worker(db, settings, _qa_session(), {queue.READ_ZRSD001: txn}).run_once()
         results.append(queue.result_of(_job(db, job.id)))
 
@@ -159,7 +163,7 @@ def test_zrsd004_read_marks_delivered(db, settings, batch, tmp_path):
 
 
 def test_wrong_system_fails_the_job_and_pauses_the_robot(db, settings, batch):
-    job = request_zrsd001(db, QA, batch, "admin")
+    job = request_zrsd001(db, QA, batch, "admin")[0]
     called = []
     txn = Transaction(lambda ctx: called.append(1), False)
     prod = FakeSession(Info("PRD", "100", "ROBOT01"))
@@ -171,7 +175,7 @@ def test_wrong_system_fails_the_job_and_pauses_the_robot(db, settings, batch):
 
 
 def test_unknown_popup_needs_review_with_screenshot(db, settings, batch):
-    job = request_zrsd001(db, QA, batch, "admin")
+    job = request_zrsd001(db, QA, batch, "admin")[0]
     gui = _qa_session()
 
     def read(ctx):
@@ -196,7 +200,7 @@ def test_interruption_of_a_write_job_is_unknown_not_failed(db, settings):
 
 
 def test_sap_error_message_fails_read_job(db, settings, batch):
-    job = request_zrsd001(db, QA, batch, "admin")
+    job = request_zrsd001(db, QA, batch, "admin")[0]
     gui = _qa_session()
 
     def read(ctx):
@@ -210,7 +214,7 @@ def test_sap_error_message_fails_read_job(db, settings, batch):
 
 def test_bad_report_file_fails_without_storing_anything(db, settings, batch, tmp_path):
     bad = zrsd004_file(tmp_path / "wrong.xlsx", [zrsd004_row("19", "21", "1")])  # not zrsd001
-    job = request_zrsd001(db, QA, batch, "admin")
+    job = request_zrsd001(db, QA, batch, "admin")[0]
     txn = Transaction(lambda ctx: TransactionResult(file=bad), False)
     _worker(db, settings, _qa_session(), {queue.READ_ZRSD001: txn}).run_once()
     job = _job(db, job.id)
@@ -235,7 +239,7 @@ def test_missing_transaction_fails_and_three_failures_pause(db, settings):
 def test_guard_trip_fails_the_job_pauses_the_robot_and_keeps_a_screenshot(db, settings, batch):
     from shoponline.db.models import EventLog
 
-    job = request_zrsd001(db, QA, batch, "admin")
+    job = request_zrsd001(db, QA, batch, "admin")[0]
     gui = _qa_session()
     gui.Info.Transaction = "ZRSD001"
     gui.on_press = lambda element_id: setattr(gui.Info, "Transaction", "VA02")
@@ -257,7 +261,7 @@ def test_guard_trip_fails_the_job_pauses_the_robot_and_keeps_a_screenshot(db, se
 
 
 def test_session_left_on_a_foreign_tcode_stops_before_the_transaction(db, settings, batch):
-    job = request_zrsd001(db, QA, batch, "admin")
+    job = request_zrsd001(db, QA, batch, "admin")[0]
     gui = _qa_session()
     gui.Info.Transaction = "VA02"
     called = []
@@ -289,7 +293,7 @@ def test_logs_in_for_the_job_and_logs_off_right_after(db, settings, batch, tmp_p
         env=NO_ENV,
         login_provider=lambda _db: LOGIN,
     )
-    job = request_zrsd001(db, QA, batch, "admin")
+    job = request_zrsd001(db, QA, batch, "admin")[0]
     worker.run_once()
     assert _job(db, job.id).status == queue.DONE
     assert engine.opened == ["QA robot"]
@@ -297,7 +301,7 @@ def test_logs_in_for_the_job_and_logs_off_right_after(db, settings, batch, tmp_p
 
 
 def test_failed_job_still_logs_off_after_the_screenshot(db, settings, batch):
-    job = request_zrsd001(db, QA, batch, "admin")
+    job = request_zrsd001(db, QA, batch, "admin")[0]
     gui = _qa_session()
 
     def read(ctx):
@@ -365,7 +369,7 @@ def test_zrsd001_without_data_is_done_and_neutral_so_it_never_pauses_the_robot(d
     )
     jobs = []
     for _ in range(4):  # more than the failure threshold of three
-        jobs.append(request_zrsd001(db, QA, batch, "admin"))
+        jobs.append(request_zrsd001(db, QA, batch, "admin")[0])
         assert worker.run_once() is True
 
     job = _job(db, jobs[0].id)
@@ -392,7 +396,7 @@ def test_done_job_deletes_its_work_folder_and_the_spent_stored_report(
     db, settings, batch, tmp_path
 ):
     report = zrsd001_file(tmp_path / "z1.xlsx", [zrsd001_row("210000001", "A1", "100000001", 2)])
-    job = request_zrsd001(db, QA, batch, "admin")
+    job = request_zrsd001(db, QA, batch, "admin")[0]
     txn = _export_into_work_dir(report)
     _worker(db, settings, _qa_session(), {queue.READ_ZRSD001: txn}).run_once()
 
@@ -464,7 +468,7 @@ def test_zrsd004_read_for_an_open_run_keeps_its_stored_report(db, settings, batc
 
 def test_failed_job_keeps_its_work_folder(db, settings, batch, tmp_path):
     bad = zrsd004_file(tmp_path / "wrong.xlsx", [zrsd004_row("19", "21", "1")])  # not zrsd001
-    import_failed = request_zrsd001(db, QA, batch, "admin")
+    import_failed = request_zrsd001(db, QA, batch, "admin")[0]
     _worker(
         db, settings, _qa_session(), {queue.READ_ZRSD001: _export_into_work_dir(bad)}
     ).run_once()
@@ -476,6 +480,11 @@ def test_failed_job_keeps_its_work_folder(db, settings, batch, tmp_path):
         ctx.step()
 
     sap_failed = request_zrsd004(db, QA, batch.platform, batch.gi_date, "admin")
+    for other in db.scalars(
+        select(SapJob).where(SapJob.kind == queue.READ_ZRSD001, SapJob.status == queue.PENDING)
+    ):
+        other.status = queue.DONE  # the later days of the re-read are not under test
+    db.flush()
     _worker(db, settings, gui, {queue.READ_ZRSD004: Transaction(sap_error, False)}).run_once()
 
     for job_id in (import_failed.id, sap_failed.id):
@@ -486,13 +495,52 @@ def test_failed_job_keeps_its_work_folder(db, settings, batch, tmp_path):
 # ---------------------------------------------------------------- scope of a re-read and the lock
 
 
-def test_reading_zrsd001_again_covers_the_days_after_the_batch_day(db, batch, frozen_today):
-    job = request_zrsd001(db, QA, batch, "admin")
+def test_reading_zrsd001_again_queues_one_job_per_day_up_to_today(db, batch, frozen_today):
+    jobs = request_zrsd001(db, QA, batch, "admin")
 
-    payload = queue.payload_of(job)
+    payloads = [queue.payload_of(j) for j in jobs]
 
-    assert payload["date_from"] == "2026-11-11" and payload["date_to"] == "2026-11-13"
-    assert job.dedupe_key == f"read_zrsd001:batch:{batch.id}"  # still one job per batch
+    assert [(p["date_from"], p["date_to"]) for p in payloads] == [
+        ("2026-11-11", "2026-11-11"),
+        ("2026-11-12", "2026-11-12"),
+        ("2026-11-13", "2026-11-13"),
+    ]  # the robot reads one document day at a time
+    assert [j.dedupe_key for j in jobs] == [
+        f"read_zrsd001:batch:{batch.id}:2026-11-1{d}" for d in (1, 2, 3)
+    ]
+
+
+def test_reading_again_queues_only_the_days_without_an_open_job(db, batch, frozen_today):
+    first = request_zrsd001(db, QA, batch, "admin")
+    queue.claim(db)
+    queue.complete(db, first[0], {})
+
+    again = request_zrsd001(db, QA, batch, "admin")
+
+    assert [queue.payload_of(j)["date_from"] for j in again] == ["2026-11-11"]
+
+
+def test_reading_again_with_every_day_open_is_refused(db, batch, frozen_today):
+    request_zrsd001(db, QA, batch, "admin")
+
+    with pytest.raises(queue.DuplicateJob):
+        request_zrsd001(db, QA, batch, "admin")
+
+
+def test_a_later_day_without_an_so_of_the_batch_day_raises_no_warning(
+    db, settings, batch, frozen_today, tmp_path
+):
+    report = zrsd001_file(
+        tmp_path / "export.xlsx", [zrsd001_row("210000002", "A2", "100000001", 2, 200000)]
+    )
+    # The report's SO is dated the batch day; the job reads the day after, so no batch check.
+    job = request_zrsd001(db, QA, batch, "admin")[1]
+    txn = Transaction(lambda ctx: TransactionResult(file=report), False)
+    worker = _worker(db, settings, _qa_session(), {queue.READ_ZRSD001: txn})
+    worker.run_once()  # batch day
+    worker.run_once()  # next day
+    done = _job(db, job.id)
+    assert done.status == queue.DONE and not queue.result_of(done)["warnings"]
 
 
 def test_the_single_robot_lock_is_checked_and_reported_lost(db_engine):
